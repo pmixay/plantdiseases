@@ -15,6 +15,7 @@
         app:navigationIcon="@drawable/ic_back" />
 
     <androidx.core.widget.NestedScrollView
+        android:id="@+id/pro_scroll"
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="1"
@@ -33,7 +34,6 @@
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:background="@drawable/bg_hero_card"
                 android:gravity="center_horizontal"
                 android:orientation="vertical"
                 android:padding="@dimen/space_2xl">
@@ -45,7 +45,7 @@
                     android:contentDescription="@null"
                     android:padding="14dp"
                     android:src="@drawable/ic_moon"
-                    app:tint="@color/on_hero" />
+                    app:tint="@color/primary" />
 
                 <TextView
                     android:layout_width="match_parent"
@@ -55,7 +55,7 @@
                     android:gravity="center"
                     android:letterSpacing="0.08"
                     android:text="@string/pro_eyebrow"
-                    android:textColor="@color/on_hero_secondary"
+                    android:textColor="@color/on_surface"
                     android:textSize="@dimen/text_caption" />
 
                 <TextView
@@ -66,7 +66,7 @@
                     android:gravity="center"
                     android:letterSpacing="-0.02"
                     android:text="@string/pro_hero_title"
-                    android:textColor="@color/on_hero"
+                    android:textColor="@color/on_surface"
                     android:textSize="28sp" />
 
                 <TextView
@@ -76,7 +76,7 @@
                     android:gravity="center"
                     android:lineSpacingExtra="3dp"
                     android:text="@string/pro_hero_body"
-                    android:textColor="@color/on_hero_secondary"
+                    android:textColor="@color/on_surface"
                     android:textSize="@dimen/text_body" />
 
                 <TextView
@@ -89,7 +89,7 @@
                     android:paddingHorizontal="@dimen/space_md"
                     android:paddingVertical="@dimen/space_sm"
                     android:text="@string/pro_status_checking"
-                    android:textColor="@color/on_hero"
+                    android:textColor="@color/on_surface"
                     android:textSize="@dimen/text_body_sm" />
             </LinearLayout>
 
@@ -127,7 +127,7 @@
                         android:layout_marginStart="32dp"
                         android:layout_marginTop="@dimen/space_xs"
                         android:text="@string/pro_benefit_lunar_body"
-                        android:textColor="@color/on_surface_secondary"
+                        android:textColor="@color/on_surface"
                         android:textSize="@dimen/text_body_sm" />
 
                     <TextView
@@ -147,7 +147,7 @@
                         android:layout_marginStart="32dp"
                         android:layout_marginTop="@dimen/space_xs"
                         android:text="@string/pro_benefit_models_body"
-                        android:textColor="@color/on_surface_secondary"
+                        android:textColor="@color/on_surface"
                         android:textSize="@dimen/text_body_sm" />
 
                     <TextView
@@ -167,7 +167,7 @@
                         android:layout_marginStart="32dp"
                         android:layout_marginTop="@dimen/space_xs"
                         android:text="@string/pro_benefit_care_body"
-                        android:textColor="@color/on_surface_secondary"
+                        android:textColor="@color/on_surface"
                         android:textSize="@dimen/text_body_sm" />
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
@@ -201,7 +201,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="@dimen/space_xs"
-                        android:textColor="@color/on_surface_secondary"
+                        android:textColor="@color/on_surface"
                         android:textSize="@dimen/text_body_sm"
                         android:visibility="gone"
                         tools:text="Monthly subscription" />
@@ -246,7 +246,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="@dimen/space_xs"
-                        android:textColor="@color/on_surface_secondary"
+                        android:textColor="@color/on_surface"
                         android:textSize="@dimen/text_body_sm"
                         android:visibility="gone"
                         tools:text="Annual subscription" />
@@ -284,7 +284,7 @@
                 android:layout_height="wrap_content"
                 android:layout_marginTop="@dimen/space_md"
                 android:gravity="center"
-                android:textColor="@color/on_surface_secondary"
+                android:textColor="@color/on_surface"
                 android:textSize="@dimen/text_body_sm"
                 android:visibility="gone" />
 
@@ -328,7 +328,7 @@
                 android:gravity="center"
                 android:lineSpacingExtra="2dp"
                 android:text="@string/pro_renewal_disclosure"
-                android:textColor="@color/on_surface_secondary"
+                android:textColor="@color/on_surface"
                 android:textSize="@dimen/text_caption" />
         </LinearLayout>
     </androidx.core.widget.NestedScrollView>

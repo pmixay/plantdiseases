@@ -66,13 +66,14 @@ def test_inference_routes_answer_429_past_the_daily_quota(
 
 
 def test_plantnet_allowance_is_shared_by_analyze_and_identify(client, m, monkeypatch):
+    import plantnet
     calls: list[str] = []
 
     def fake_identify(image_bytes, *, organ="leaf", lang="en"):
         calls.append(organ)
         return {"available": False, "results": [], "source": "no_api_key"}
 
-    monkeypatch.setattr(m, "identify_species", fake_identify)
+    monkeypatch.setattr(plantnet, "identify_species", fake_identify)
     monkeypatch.setattr(m._plantnet_quota, "limit", 1)
 
     first = client.post("/api/analyze", files={"image": ("a.png", _png((40, 150, 60)), "image/png")})
@@ -91,6 +92,7 @@ def test_plantnet_allowance_is_shared_by_analyze_and_identify(client, m, monkeyp
 
 
 def test_chat_daily_quota_survives_new_session_ids(client, m, monkeypatch):
+    import routes_assistant
     monkeypatch.setattr(m._chat_quota, "limit", 1)
     client.post("/api/chat", json={"session_id": "s1", "message": "hi"})
 
@@ -100,32 +102,38 @@ def test_chat_daily_quota_survives_new_session_ids(client, m, monkeypatch):
     body = r.json()
     assert body["available"] is False
     assert body["reason"] == "daily_quota"
-    assert body["fallback"] == m._QUOTA_UNAVAILABLE_TEXT["ru"]
+    assert body["fallback"] == routes_assistant._QUOTA_UNAVAILABLE_TEXT["ru"]
 
 
 def test_care_plan_past_quota_drops_only_the_llm_polish(client, m, monkeypatch):
-    seen: list[bool] = []
+    import ai_services
+    import care_plan
+    seen: list[tuple[bool, bool]] = []
 
     def fake_plan(**kwargs):
-        seen.append(kwargs["polish"])
+        seen.append((kwargs["polish"], kwargs.get("cached_polish_only", False)))
         return {"summary_md": "rules"}
 
-    monkeypatch.setattr(m, "generate_care_plan", fake_plan)
+    monkeypatch.setattr(care_plan, "generate_care_plan", fake_plan)
+    monkeypatch.setattr(ai_services, "openrouter_configured", lambda: True)
     monkeypatch.setattr(m._care_plan_quota, "limit", 1)
     for _ in range(2):
         r = client.post("/api/care-plan", json={"disease": "leaf_spot"})
         assert r.status_code == 200, r.text
-    assert seen == [True, False]
+    # Each request first looks for a free (cached) summary; only the first
+    # one, still inside the per-IP allowance, goes on to a paid polish.
+    assert seen == [(True, True), (True, False), (True, True)]
 
 
 def test_species_ai_quota_is_shared_and_graceful(client, m, monkeypatch):
+    import species_ai
     llm_calls: list[str] = []
 
     def fake_diseases(name, *, common_name=None, lang="en"):
         llm_calls.append(name)
         return {"available": True, "diseases": []}
 
-    monkeypatch.setattr(m, "species_common_diseases", fake_diseases)
+    monkeypatch.setattr(species_ai, "species_common_diseases", fake_diseases)
     monkeypatch.setattr(m._species_ai_quota, "limit", 1)
 
     ok = client.get("/api/species-diseases", params={"name": "Ficus elastica"})
@@ -153,13 +161,14 @@ def test_a_quota_blanked_species_block_is_not_cached_for_everyone(client, m, mon
     """The analyze cache is shared by everyone uploading the same bytes; a
     species block blanked by one caller's PlantNet allowance must not be
     replayed to the next."""
+    import plantnet
     calls: list[str] = []
 
     def fake_identify(image_bytes, *, organ="leaf", lang="en"):
         calls.append(organ)
         return {"available": False, "results": [], "source": "no_api_key"}
 
-    monkeypatch.setattr(m, "identify_species", fake_identify)
+    monkeypatch.setattr(plantnet, "identify_species", fake_identify)
     monkeypatch.setattr(m._plantnet_quota, "limit", 1)
     first_photo = _png((40, 150, 60))
     client.post("/api/analyze", files={"image": ("a.png", _png((90, 90, 90)), "image/png")})

@@ -89,7 +89,7 @@
                     android:layout_weight="1"
                     android:gravity="center"
                     android:text="@string/lunar_dow_mon"
-                    android:textColor="@color/on_surface_secondary"
+                    android:textColor="@color/on_surface"
                     android:textSize="@dimen/text_body_sm" />
 
                 <TextView
@@ -98,7 +98,7 @@
                     android:layout_weight="1"
                     android:gravity="center"
                     android:text="@string/lunar_dow_tue"
-                    android:textColor="@color/on_surface_secondary"
+                    android:textColor="@color/on_surface"
                     android:textSize="@dimen/text_body_sm" />
 
                 <TextView
@@ -107,7 +107,7 @@
                     android:layout_weight="1"
                     android:gravity="center"
                     android:text="@string/lunar_dow_wed"
-                    android:textColor="@color/on_surface_secondary"
+                    android:textColor="@color/on_surface"
                     android:textSize="@dimen/text_body_sm" />
 
                 <TextView
@@ -116,7 +116,7 @@
                     android:layout_weight="1"
                     android:gravity="center"
                     android:text="@string/lunar_dow_thu"
-                    android:textColor="@color/on_surface_secondary"
+                    android:textColor="@color/on_surface"
                     android:textSize="@dimen/text_body_sm" />
 
                 <TextView
@@ -125,7 +125,7 @@
                     android:layout_weight="1"
                     android:gravity="center"
                     android:text="@string/lunar_dow_fri"
-                    android:textColor="@color/on_surface_secondary"
+                    android:textColor="@color/on_surface"
                     android:textSize="@dimen/text_body_sm" />
 
                 <TextView
@@ -134,7 +134,7 @@
                     android:layout_weight="1"
                     android:gravity="center"
                     android:text="@string/lunar_dow_sat"
-                    android:textColor="@color/on_surface_secondary"
+                    android:textColor="@color/on_surface"
                     android:textSize="@dimen/text_body_sm" />
 
                 <TextView
@@ -143,7 +143,7 @@
                     android:layout_weight="1"
                     android:gravity="center"
                     android:text="@string/lunar_dow_sun"
-                    android:textColor="@color/on_surface_secondary"
+                    android:textColor="@color/on_surface"
                     android:textSize="@dimen/text_body_sm" />
                     </LinearLayout>
 
@@ -190,7 +190,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="2dp"
-                    android:textColor="@color/on_surface_secondary"
+                    android:textColor="@color/on_surface"
                     android:textSize="@dimen/text_caption" />
 
                 <TextView

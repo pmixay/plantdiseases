@@ -3,7 +3,7 @@
 Effective: 16 August 2026
 Moderation contact: <mailto:gavel8980@gmail.com>
 
-These rules cover community scan photos, diagnoses, nicknames, and second-opinion replies. The same criteria are shown inside the RuStore release under **Community scans → Community Rules & safety**.
+These rules cover community scan photos, diagnoses, nicknames, and forum posts and answers. The same criteria are shown inside the RuStore release under **Community scans → Community Rules & safety**.
 
 ## Content rules
 
@@ -21,18 +21,21 @@ PlantDiseases may remove content that violates these rules. Repeated or severe c
 
 ## User controls
 
-- **Report:** available on every shared scan and individual reply. Reporting requires a signed account. The app sends an opaque content token and one fixed violation category; it never accepts a client-supplied account identifier or free-form report text.
-- **Block author:** available beside Report. The server resolves the verified author from the content token. For signed-in community use, blocking is mutual for feed visibility and interaction, applies across all devices signed into the account, and immediately hides that author's scans and replies from the blocker.
+- **Shared scans:** shown without an author, and a tap only expands the photo. Neither the app nor the API has a Report or Block control for a scan; a scan is flagged through **Contact moderation**.
+- **Report:** available on every forum post and answer. Reporting requires a signed account. The app sends an opaque content token and one fixed violation category; it never accepts a client-supplied account identifier or free-form report text.
+- **Block author:** available beside Report. The server resolves the verified author from the content token. For signed-in community use, blocking is mutual for feed visibility and interaction, applies across all devices signed into the account, and immediately hides that author's scans, posts and answers from the blocker.
 - **Unblock:** **Community scans → Community Rules & safety → Blocked authors**. The list contains only an opaque block ID and the last displayed community nickname.
 - **Contact moderation:** available in the same in-app safety dialog and links to the issue tracker above. Do not place access tokens, passwords, private photos, or other secrets in a moderation issue.
 
-Legacy content without a verified account author can be reported but cannot be used to create a block. This prevents an old installation identifier from being treated as a verified person.
-
 ## Moderation workflow
 
-The API writes reports to a private, account-bound queue. Duplicate reports from the same account for the same content are idempotent, the report taxonomy is fixed, and each account is limited to 20 new reports per rolling 24 hours. The public API exposes no moderation-list or moderation-action endpoint.
+Shared scans are moderated locally on the application server; the public API exposes no moderation-list or moderation-action endpoint for them. A scan flagged to the moderation contact is taken down by its public id (`cs…`, the start of its thumbnail filename):
 
-An operator reviews the oldest pending reports locally on the application server:
+```bash
+python server/tools/community_moderation.py remove-scan PUBLIC_ID --confirm-remove
+```
+
+Scan reports that older app versions filed stay in a private queue (no new ones arrive) until an operator resolves them:
 
 ```bash
 python server/tools/community_moderation.py list --limit 100
@@ -41,7 +44,7 @@ python server/tools/community_moderation.py resolve REPORT_ID \
   --action remove_content --confirm-remove
 ```
 
-The target and action must be checked before resolving a report. Removing a scan also removes its thumbnail, replies, opinion request, and view records. Removing a reply affects only that reply. Related pending reports are resolved consistently. The destructive action requires the explicit `--confirm-remove` flag.
+The target and action must be checked before removing a scan or resolving a report. Removing a scan also removes its thumbnail and view records. Related pending reports are resolved consistently. The destructive action requires the explicit `--confirm-remove` flag.
 
 Suggested operating targets:
 

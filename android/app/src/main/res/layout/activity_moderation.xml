@@ -10,7 +10,7 @@
         android:id="@+id/app_bar"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:background="@drawable/bg_toolbar_gradient"
+        android:background="@color/background"
         app:elevation="0dp">
 
         <com.google.android.material.appbar.MaterialToolbar
@@ -117,7 +117,7 @@
             android:layout_gravity="center"
             android:gravity="center"
             android:padding="@dimen/space_xl"
-            android:textColor="@color/on_surface_secondary"
+            android:textColor="@color/on_surface"
             android:visibility="gone" />
 
     </FrameLayout>

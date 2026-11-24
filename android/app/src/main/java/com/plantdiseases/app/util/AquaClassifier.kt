@@ -30,7 +30,8 @@ import kotlin.math.roundToInt
  * The model is single-stage (whole-frame classify, no on-device detector). It
  * expects a normalised float NHWC tensor; the class order + input size +
  * normalisation are read from the sidecar JSON so the app never hard-codes what
- * the notebook declared.
+ * the notebook declared. A sidecar that carries a MaxLogit floor
+ * (`ood`, [AquaOodGate]) also flags out-of-distribution frames.
  */
 class AquaClassifier private constructor(
     private val interpreter: Interpreter,
@@ -39,17 +40,25 @@ class AquaClassifier private constructor(
     private val mean: FloatArray,
     private val std: FloatArray,
     private val evalResizeRatio: Float,
+    private val oodGate: AquaOodGate?,
 ) {
 
-    /** Run inference on a full-frame bitmap. Returns per-class probabilities
-     *  (softmax) keyed by class name, in declared order. */
+    /** One on-device verdict: per-class probabilities (softmax, keyed by class
+     *  name in declared order) and whether the OOD gate refused the frame. */
+    data class Prediction(val probabilities: Map<String, Float>, val outOfDistribution: Boolean)
+
+    /** Run inference on a full-frame bitmap. */
     @Synchronized
-    fun classify(bitmap: Bitmap): Map<String, Float> {
+    fun classify(bitmap: Bitmap): Prediction {
         val input = preprocess(bitmap)
         val output = Array(1) { FloatArray(classNames.size) }
         interpreter.run(input, output)
-        val probs = softmax(output[0])
-        return classNames.indices.associate { classNames[it] to probs[it] }
+        val logits = output[0]
+        val probs = softmax(logits)
+        return Prediction(
+            probabilities = classNames.indices.associate { classNames[it] to probs[it] },
+            outOfDistribution = oodGate?.rejects(logits) == true,
+        )
     }
 
     private fun preprocess(bitmap: Bitmap): ByteBuffer {
@@ -140,11 +149,18 @@ class AquaClassifier private constructor(
                 require(std.all { it.isFinite() && it > 0f }) {
                     "normalize_std must contain finite positive values"
                 }
+                val oodGate = meta.optJSONObject("ood")?.let { ood ->
+                    AquaOodGate.fromSidecar(
+                        floor = if (ood.isNull("max_logit_floor")) null else ood.getDouble("max_logit_floor"),
+                        scope = ood.optString("max_logit_scope").takeIf { it.isNotEmpty() },
+                        classNames = classes,
+                    )
+                }
                 val opts = Interpreter.Options().apply { setNumThreads(2) }
                 val interpreter = Interpreter(model, opts)
                 try {
                     validateTensorContract(interpreter, classes.size, size)
-                    AquaClassifier(interpreter, classes, size, mean, std, resizeRatio)
+                    AquaClassifier(interpreter, classes, size, mean, std, resizeRatio, oodGate)
                 } catch (e: OutOfMemoryError) {
                     interpreter.close()
                     throw e

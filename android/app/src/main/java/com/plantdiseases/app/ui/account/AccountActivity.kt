@@ -14,7 +14,10 @@ import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.FileProvider
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.isVisible
+import androidx.core.view.updatePadding
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
@@ -28,8 +31,6 @@ import com.plantdiseases.app.R
 import com.plantdiseases.app.auth.AuthRepository
 import com.plantdiseases.app.auth.AuthState
 import com.plantdiseases.app.auth.InstallationIdProvider
-import com.plantdiseases.app.auth.LogoutNotDurableException
-import com.plantdiseases.app.auth.SignupAlreadyConfirmedException
 import com.plantdiseases.app.auth.SyntheticProviderToken
 import com.plantdiseases.app.billing.ProUi
 import com.plantdiseases.app.data.account.AccountApiException
@@ -156,6 +157,7 @@ class AccountActivity : AppCompatActivity() {
         }
         binding = ActivityAccountBinding.inflate(layoutInflater)
         setContentView(binding.root)
+        applyAccountWindowInsets(binding.root, binding.accountColumn, binding.accountScroll)
         pendingAvatarAccountId = savedInstanceState?.getString(STATE_AVATAR_ACCOUNT_ID)
         pendingAvatarSourceFile = savedInstanceState?.getString(STATE_AVATAR_SOURCE)?.let(::File)
         pendingAvatarOutputFile = savedInstanceState?.getString(STATE_AVATAR_OUTPUT)?.let(::File)
@@ -234,6 +236,7 @@ class AccountActivity : AppCompatActivity() {
         binding.guestGroup.isVisible = guestVisible
         if (!guestVisible) binding.etPassword.text?.clear()
         binding.btnLater.isVisible = onboardingEntry && guestVisible
+        binding.tvHeroSubtitle.isVisible = guestVisible
         binding.nicknameGroup.isVisible = state is AuthState.ProfileRequired
         binding.accountGroup.isVisible = state is AuthState.Authenticated
         binding.btnRetryAccount.isVisible = state is AuthState.Unavailable
@@ -246,7 +249,7 @@ class AccountActivity : AppCompatActivity() {
         }
         applySignupNicknameEditingPolicy(state)
         binding.tvState.text = when (state) {
-            AuthState.Guest -> getString(R.string.account_guest)
+            AuthState.Guest -> getString(R.string.account_login_title)
             AuthState.Restoring -> getString(R.string.account_restoring)
             is AuthState.Unavailable -> getString(R.string.account_temporarily_unavailable)
             is AuthState.ProfileRequired -> getString(R.string.account_finish_profile)
@@ -437,35 +440,8 @@ class AccountActivity : AppCompatActivity() {
         withAccountDisclosure { submitEmailAuthentication(action) }
     }
 
-    private fun withAccountDisclosure(continueSignIn: () -> Unit) {
-        if (accountDisclosurePrefs.acknowledged) {
-            continueSignIn()
-            return
-        }
-        val dialog = MaterialAlertDialogBuilder(this)
-            .setTitle(R.string.account_disclosure_title)
-            .setMessage(R.string.account_disclosure_body)
-            .setNegativeButton(android.R.string.cancel, null)
-            .setNeutralButton(R.string.account_disclosure_privacy, null)
-            .setPositiveButton(R.string.account_disclosure_acknowledge) { _, _ ->
-                val acknowledgementSaved = try {
-                    accountDisclosurePrefs.acknowledge()
-                    true
-                } catch (_: Exception) {
-                    false
-                }
-                if (acknowledgementSaved) {
-                    continueSignIn()
-                } else {
-                    Toast.makeText(this, R.string.account_disclosure_save_failed, Toast.LENGTH_LONG).show()
-                }
-            }
-            .create()
-        dialog.setOnShowListener {
-            dialog.getButton(DialogInterface.BUTTON_NEUTRAL).setOnClickListener { openPrivacyPolicy() }
-        }
-        dialog.show()
-    }
+    private fun withAccountDisclosure(continueSignIn: () -> Unit) =
+        withAccountDisclosure(this, accountDisclosurePrefs, continueSignIn)
 
     private fun submitEmailAuthentication(action: EmailAuthenticationAction) {
         val email = binding.etEmail.text?.toString()?.trim().orEmpty()
@@ -505,14 +481,6 @@ class AccountActivity : AppCompatActivity() {
             } finally {
                 setLoading(false)
             }
-        }
-    }
-
-    private fun openPrivacyPolicy() {
-        runCatching {
-            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(getString(R.string.consent_privacy_url))))
-        }.onFailure {
-            Toast.makeText(this, R.string.account_privacy_open_failed, Toast.LENGTH_LONG).show()
         }
     }
 
@@ -747,7 +715,6 @@ class AccountActivity : AppCompatActivity() {
         authRepository.deleteAccount(reauthToken)
             .onSuccess {
                 resetOAuthFlow()
-                stopAccountNotifications()
                 if (deletedAccountId != null) {
                     profileAvatarStore.clear(deletedAccountId)
                 }
@@ -959,7 +926,6 @@ class AccountActivity : AppCompatActivity() {
             } catch (failure: Exception) {
                 showError(failure)
             } finally {
-                stopAccountNotifications()
                 setLoading(false)
             }
         }
@@ -973,14 +939,6 @@ class AccountActivity : AppCompatActivity() {
             } finally {
                 setLoading(false)
             }
-        }
-    }
-
-    private fun stopAccountNotifications() {
-        com.plantdiseases.app.util.OpinionPrefs.setNotificationsEnabled(this, false)
-        androidx.work.WorkManager.getInstance(this).apply {
-            cancelUniqueWork("opinion_check")
-            cancelUniqueWork("opinion_check_now")
         }
     }
 
@@ -1020,8 +978,7 @@ class AccountActivity : AppCompatActivity() {
         setEnabledRecursively(binding.content, !active)
         if (!active) {
             // Recursive re-enabling must never turn an unavailable provider
-            // into a clickable control. VK remains a visible, disabled roadmap
-            // item in the Yandex-only 1.9 release.
+            // into a clickable control: re-apply provider visibility and state.
             configureSignInProviders()
             if (privateProfile == null) {
                 binding.btnLinkYandex.isEnabled = false
@@ -1059,11 +1016,9 @@ class AccountActivity : AppCompatActivity() {
         binding.btnEmailCreate.isEnabled = BuildConfig.EMAIL_PASSWORD_AUTH_ENABLED
         binding.btnYandex.isVisible = yandexAvailable
         binding.btnYandex.isEnabled = yandexAvailable
-        binding.btnVk.isVisible = true
+        // A provider that isn't configured in this build is not shown at all.
+        binding.btnVk.isVisible = vkAvailable
         binding.btnVk.isEnabled = vkAvailable
-        binding.btnVk.setText(
-            if (vkAvailable) R.string.account_continue_vk else R.string.account_vk_coming_soon,
-        )
     }
 
     private fun setEnabledRecursively(view: android.view.View, enabled: Boolean) {
@@ -1085,20 +1040,7 @@ class AccountActivity : AppCompatActivity() {
     }
 
     private fun showError(failure: Throwable?) {
-        val message = when (failure) {
-            is LogoutNotDurableException -> R.string.account_error_logout_not_durable
-            is SignupAlreadyConfirmedException -> R.string.account_signup_already_confirmed
-            is IOException -> R.string.account_error_retry_online
-            else -> when ((failure as? AccountApiException)?.errorCode) {
-                "nickname_invalid" -> R.string.account_error_nickname_invalid
-                "nickname_taken" -> R.string.account_error_nickname_taken
-                "nickname_cooldown" -> R.string.account_error_nickname_cooldown
-                "provider_unavailable" -> R.string.account_error_provider_unavailable
-                "identity_already_linked" -> R.string.account_error_identity_linked
-                else -> R.string.account_error_generic
-            }
-        }
-        Toast.makeText(this, message, Toast.LENGTH_LONG).show()
+        Toast.makeText(this, accountErrorMessage(failure), Toast.LENGTH_LONG).show()
     }
 
     private fun showEmailAuthenticationError(
@@ -1239,6 +1181,16 @@ internal fun emailAddressIsValid(email: String): Boolean {
         return false
     }
     return "$local@$domain".length <= EMAIL_MAX_LENGTH
+}
+
+/** Clears the status bar with the toolbar column and the navigation bar with the scroll. */
+internal fun applyAccountWindowInsets(root: View, column: View, scroll: View) {
+    ViewCompat.setOnApplyWindowInsetsListener(root) { _, insets ->
+        val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+        column.updatePadding(top = bars.top)
+        scroll.updatePadding(bottom = bars.bottom)
+        insets
+    }
 }
 
 internal fun emailAuthenticationError(

@@ -1,86 +1,248 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- The disclosure stays scrollable for small displays and large font sizes.
-     Both optional data uses default off; Continue is always available. -->
-<ScrollView
+<!-- First-launch privacy disclosure. Each fact is one icon row (title + one
+     short line); the full text lives in the privacy policy. The start button
+     and the agreement line under it stay pinned to the bottom while the rows
+     scroll on small displays and large font sizes. The root is padded by the
+     system-bar insets in OnboardingActivity (edge-to-edge). -->
+<LinearLayout
     xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/onboarding_root"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="@color/background"
-    android:fillViewport="true"
-    android:fitsSystemWindows="true"
-    android:scrollbars="none">
+    android:orientation="vertical">
+
+    <ScrollView
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:fillViewport="true"
+        android:scrollbars="none">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="vertical"
+            android:paddingHorizontal="@dimen/space_2xl"
+            android:paddingTop="@dimen/space_3xl"
+            android:paddingBottom="@dimen/space_lg">
+
+            <FrameLayout
+                android:layout_width="88dp"
+                android:layout_height="88dp"
+                android:layout_gravity="center_horizontal"
+                android:background="@drawable/bg_icon_circle">
+
+                <ImageView
+                    android:layout_width="44dp"
+                    android:layout_height="44dp"
+                    android:layout_gravity="center"
+                    android:contentDescription="@null"
+                    android:src="@drawable/ic_leaf"
+                    app:tint="@color/primary" />
+            </FrameLayout>
+
+            <TextView
+                android:id="@+id/onboarding_title"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_lg"
+                android:accessibilityHeading="true"
+                android:fontFamily="sans-serif-black"
+                android:gravity="center"
+                android:letterSpacing="-0.02"
+                android:text="@string/onboarding_title"
+                android:textColor="@color/on_surface"
+                android:textSize="@dimen/text_headline" />
+
+            <!-- Row: your data is secure -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_3xl"
+                android:orientation="horizontal">
+
+                <FrameLayout
+                    android:layout_width="48dp"
+                    android:layout_height="48dp"
+                    android:background="@drawable/bg_icon_circle">
+
+                    <ImageView
+                        android:layout_width="24dp"
+                        android:layout_height="24dp"
+                        android:layout_gravity="center"
+                        android:contentDescription="@null"
+                        android:src="@drawable/ic_shield_check"
+                        app:tint="@color/primary" />
+                </FrameLayout>
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_gravity="center_vertical"
+                    android:layout_marginStart="@dimen/space_lg"
+                    android:layout_weight="1"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="@string/onboarding_secure_title"
+                        android:textColor="@color/on_surface"
+                        android:textSize="@dimen/text_title_sm"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="@dimen/space_xxs"
+                        android:text="@string/onboarding_secure_body"
+                        android:textColor="@color/on_surface"
+                        android:textSize="@dimen/text_body" />
+                </LinearLayout>
+            </LinearLayout>
+
+            <!-- Row: nothing ties a photo to the user -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_xl"
+                android:orientation="horizontal">
+
+                <FrameLayout
+                    android:layout_width="48dp"
+                    android:layout_height="48dp"
+                    android:background="@drawable/bg_icon_circle">
+
+                    <ImageView
+                        android:layout_width="24dp"
+                        android:layout_height="24dp"
+                        android:layout_gravity="center"
+                        android:contentDescription="@null"
+                        android:src="@drawable/ic_lock"
+                        app:tint="@color/primary" />
+                </FrameLayout>
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_gravity="center_vertical"
+                    android:layout_marginStart="@dimen/space_lg"
+                    android:layout_weight="1"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="@string/onboarding_anonymous_title"
+                        android:textColor="@color/on_surface"
+                        android:textSize="@dimen/text_title_sm"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="@dimen/space_xxs"
+                        android:text="@string/onboarding_anonymous_body"
+                        android:textColor="@color/on_surface"
+                        android:textSize="@dimen/text_body" />
+                </LinearLayout>
+            </LinearLayout>
+
+            <!-- Row: photos improve the model (the required consent) -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_xl"
+                android:orientation="horizontal">
+
+                <FrameLayout
+                    android:layout_width="48dp"
+                    android:layout_height="48dp"
+                    android:background="@drawable/bg_icon_circle">
+
+                    <ImageView
+                        android:layout_width="24dp"
+                        android:layout_height="24dp"
+                        android:layout_gravity="center"
+                        android:contentDescription="@null"
+                        android:src="@drawable/ic_sparkle"
+                        app:tint="@color/primary" />
+                </FrameLayout>
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_gravity="center_vertical"
+                    android:layout_marginStart="@dimen/space_lg"
+                    android:layout_weight="1"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="@string/onboarding_improve_title"
+                        android:textColor="@color/on_surface"
+                        android:textSize="@dimen/text_title_sm"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="@dimen/space_xxs"
+                        android:text="@string/onboarding_improve_body"
+                        android:textColor="@color/on_surface"
+                        android:textSize="@dimen/text_body" />
+                </LinearLayout>
+            </LinearLayout>
+
+            <TextView
+                android:id="@+id/consent_privacy_link"
+                android:layout_width="wrap_content"
+                android:layout_height="48dp"
+                android:layout_gravity="center_horizontal"
+                android:layout_marginTop="@dimen/space_lg"
+                android:background="?attr/selectableItemBackground"
+                android:clickable="true"
+                android:focusable="true"
+                android:fontFamily="sans-serif-medium"
+                android:gravity="center"
+                android:paddingHorizontal="@dimen/space_md"
+                android:text="@string/consent_privacy_link"
+                android:textColor="@color/primary"
+                android:textSize="@dimen/text_title_sm" />
+
+        </LinearLayout>
+    </ScrollView>
 
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:gravity="center"
         android:orientation="vertical"
         android:paddingHorizontal="@dimen/space_2xl"
-        android:paddingTop="@dimen/space_lg"
+        android:paddingTop="@dimen/space_md"
         android:paddingBottom="@dimen/space_lg">
 
         <TextView
-            android:id="@+id/consent_title"
+            android:id="@+id/onboarding_agree_note"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="@dimen/space_lg"
-            android:accessibilityHeading="true"
-            android:fontFamily="sans-serif-medium"
             android:gravity="center"
-            android:text="@string/consent_title"
+            android:text="@string/onboarding_agree_note"
             android:textColor="@color/on_surface"
-            android:textSize="@dimen/text_headline" />
-
-        <TextView
-            android:id="@+id/consent_body"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="@dimen/space_lg"
-            android:lineSpacingExtra="4dp"
-            android:text="@string/consent_body"
-            android:textColor="@color/on_surface_secondary"
-            android:textSize="@dimen/text_body" />
-
-        <TextView
-            android:id="@+id/consent_privacy_link"
-            android:layout_width="wrap_content"
-            android:layout_height="48dp"
-            android:layout_marginTop="@dimen/space_md"
-            android:clickable="true"
-            android:focusable="true"
-            android:fontFamily="sans-serif-medium"
-            android:gravity="center"
-            android:paddingHorizontal="@dimen/space_md"
-            android:text="@string/consent_privacy_link"
-            android:textColor="@color/primary"
-            android:textSize="@dimen/text_title_sm" />
-
-        <TextView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="@dimen/space_md"
-            android:text="@string/training_consent_title"
-            android:textAppearance="@style/TextAppearance.App.Title" />
-
-        <TextView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="@dimen/space_xxs"
-            android:text="@string/training_consent_subtitle"
-            android:textColor="@color/on_surface_secondary"
-            android:textSize="@dimen/text_body_sm" />
+            android:textSize="@dimen/text_body_sm"
+            android:textStyle="bold" />
 
         <com.google.android.material.button.MaterialButton
-            android:id="@+id/consent_agree"
+            android:id="@+id/btn_start"
             android:layout_width="match_parent"
             android:layout_height="56dp"
-            android:layout_marginTop="@dimen/space_lg"
-            android:text="@string/consent_agree"
-            android:textSize="@dimen/text_title_sm"
-            app:backgroundTint="@color/primary"
-            app:cornerRadius="@dimen/radius_md" />
+            android:layout_marginTop="@dimen/space_md"
+            android:text="@string/onboarding_start"
+            android:textSize="@dimen/text_title_sm" />
 
     </LinearLayout>
 
-</ScrollView>
+</LinearLayout>

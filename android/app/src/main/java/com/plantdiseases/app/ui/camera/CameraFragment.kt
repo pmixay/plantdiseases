@@ -256,7 +256,7 @@ class CameraFragment : Fragment() {
     }
 
     private fun setupUI() {
-        shutterMotion = ShutterMotion(binding.btnCapture, binding.shutterBusy)
+        shutterMotion = ShutterMotion(binding.btnCapture)
         // A flat shutter: no elevation, no press lift, and no outline for the
         // system to cast a shadow from (it showed as dark corners).
         binding.btnCapture.apply {
@@ -313,8 +313,8 @@ class CameraFragment : Fragment() {
      *  run on — which offline is Aqua, not whatever the user last picked. */
     private fun refreshModelFamilyChip() {
         val family = effectiveFamily()
-        binding.btnModelFamily.setText(family.labelRes)
-        binding.btnModelFamily.setIconResource(family.iconRes)
+        binding.tvModelFamily.setText(family.labelRes)
+        binding.ivModelFamilyIcon.setImageResource(family.iconRes)
     }
 
     /**
@@ -552,9 +552,8 @@ class CameraFragment : Fragment() {
                     view?.display
                         ?: ContextCompat.getDisplayOrDefault(requireContext())
                     ).rotation
-                // Cap the capture to ~3 MP (2048×1536). The whole pipeline
-                // downscales to 2048 px on the long edge anyway
-                // (ImageUtils.downscaleForCropInPlace), so an uncapped full-res
+                // Cap the capture to ~3 MP (2048×1536). The cropper works at
+                // 2048 px on the long edge anyway (ImageUtils.CROP_MAX_EDGE), so an uncapped full-res
                 // shot on a 50–108 MP Samsung sensor just burned seconds on
                 // encode + file write + re-decode for zero quality gain — the
                 // "lagging camera" symptom. Closest-lower-then-higher keeps it
@@ -657,9 +656,8 @@ class CameraFragment : Fragment() {
             ContextCompat.getMainExecutor(requireContext()),
             object : ImageCapture.OnImageSavedCallback {
                 override fun onImageSaved(output: ImageCapture.OutputFileResults) {
-                    // Do NOT re-arm the shutter here. Capture continues into an
-                    // async downscale and then launchCrop(); re-enabling the
-                    // button in this gap let a fast second tap fire a whole
+                    // Do NOT re-arm the shutter here: re-enabling the button
+                    // before the cropper is up let a fast second tap fire a
                     // second capture + a second cropper. The shutter stays
                     // locked (captureInFlight = true, button disabled) until the
                     // crop returns — cropLauncher re-arms it on every outcome.
@@ -671,15 +669,9 @@ class CameraFragment : Fragment() {
                     // they help.
                     pendingSourceFile = photoFile
                     pendingFromCamera = true
-                    // Shrink the full-res capture off the main thread before
-                    // handing it to the cropper, then launch once it's done.
-                    viewLifecycleOwner.lifecycleScope.launch {
-                        withContext(Dispatchers.IO) {
-                            ImageUtils.downscaleForCropInPlace(photoFile.absolutePath)
-                        }
-                        if (_binding == null || !isAdded) return@launch
-                        launchCrop(Uri.fromFile(photoFile))
-                    }
+                    // Straight into the cropper: it downsamples and orients the
+                    // file itself, off the main thread, so no pre-pass here.
+                    launchCrop(Uri.fromFile(photoFile))
                 }
 
                 override fun onError(exception: ImageCaptureException) {
@@ -730,11 +722,8 @@ class CameraFragment : Fragment() {
         // would ANR if copied on the UI thread.
         viewLifecycleOwner.lifecycleScope.launch {
             val file = withContext(Dispatchers.IO) {
-                ImageUtils.copyUriToFile(requireContext(), uri)?.also {
-                    // Shrink before cropping so the cropper lays the image out
-                    // within its canvas instead of spilling under the toolbar.
-                    ImageUtils.downscaleForCropInPlace(it.absolutePath)
-                }
+                // The cropper downsamples to its canvas size itself.
+                ImageUtils.copyUriToFile(requireContext(), uri)
             }
             if (_binding == null || !isAdded) return@launch
             if (file != null) {

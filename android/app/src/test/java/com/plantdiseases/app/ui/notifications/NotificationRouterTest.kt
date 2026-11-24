@@ -4,7 +4,7 @@ import android.app.Application
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import com.google.common.truth.Truth.assertThat
-import com.plantdiseases.app.ui.community.MyScanRepliesActivity
+import com.plantdiseases.app.ui.community.forum.PostDetailActivity
 import com.plantdiseases.app.ui.garden.PlantDetailActivity
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -13,9 +13,9 @@ import org.robolectric.annotation.Config
 
 /**
  * Deeplink routing for notification-centre rows. The vocabulary is a plain
- * "prefix:id" string, so the risk is a typo'd or future-version prefix
- * reaching a build that doesn't know it: that must resolve to null ("open
- * Home") rather than throw on a user's tap.
+ * "prefix:id" string, so the risk is a typo'd, retired or future-version
+ * prefix reaching a build that doesn't know it: that must resolve to null
+ * ("open Home") rather than throw on a user's tap.
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [33], application = Application::class)
@@ -24,12 +24,15 @@ class NotificationRouterTest {
     private val ctx: Context = ApplicationProvider.getApplicationContext()
 
     @Test
-    fun communityPrefix_opensRepliesWithScanId() {
-        val intent = NotificationRouter.intentFor(ctx, "community:abc123")
-        assertThat(intent).isNotNull()
-        assertThat(intent!!.component?.className)
-            .isEqualTo(MyScanRepliesActivity::class.java.name)
-        assertThat(intent.getStringExtra(MyScanRepliesActivity.EXTRA_SCAN_ID)).isEqualTo("abc123")
+    fun forumPostPrefix_opensThePost_andKeepsTheAnswer() {
+        val plain = NotificationRouter.intentFor(ctx, "forum_post:p1")
+        assertThat(plain!!.component?.className).isEqualTo(PostDetailActivity::class.java.name)
+        assertThat(plain.getStringExtra("extra_forum_post_id")).isEqualTo("p1")
+        assertThat(plain.getStringExtra("extra_forum_answer_id")).isNull()
+
+        val answer = NotificationRouter.intentFor(ctx, "forum_post:p1:a9")
+        assertThat(answer!!.getStringExtra("extra_forum_post_id")).isEqualTo("p1")
+        assertThat(answer.getStringExtra("extra_forum_answer_id")).isEqualTo("a9")
     }
 
     @Test
@@ -43,19 +46,14 @@ class NotificationRouterTest {
 
     @Test
     fun unusableDeeplinks_resolveToNullInsteadOfThrowing() {
-        // null / blank / no separator / unknown prefix / non-numeric plant id
-        // all mean "just open Home" — none may throw.
+        // null / blank / no separator / unknown or retired prefix / non-numeric
+        // plant id all mean "just open Home" — none may throw. "community:" was
+        // the retired second-opinion replies screen; old rows still carry it.
         assertThat(NotificationRouter.intentFor(ctx, null)).isNull()
         assertThat(NotificationRouter.intentFor(ctx, "")).isNull()
         assertThat(NotificationRouter.intentFor(ctx, "community")).isNull()
+        assertThat(NotificationRouter.intentFor(ctx, "community:abc123")).isNull()
         assertThat(NotificationRouter.intentFor(ctx, "wormhole:1")).isNull()
         assertThat(NotificationRouter.intentFor(ctx, "plant:not-a-number")).isNull()
-    }
-
-    @Test
-    fun scanIdKeepsColons() {
-        // limit=2 split: an id containing a colon must survive intact.
-        val intent = NotificationRouter.intentFor(ctx, "community:cs:a:b")
-        assertThat(intent!!.getStringExtra(MyScanRepliesActivity.EXTRA_SCAN_ID)).isEqualTo("cs:a:b")
     }
 }

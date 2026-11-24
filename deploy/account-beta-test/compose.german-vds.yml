@@ -34,8 +34,8 @@ x-account-environment: &account-environment
   RUSTORE_NOTIFICATION_KEY_EPOCH: "${RUSTORE_NOTIFICATION_KEY_EPOCH:-staging-v1}"
   RUSTORE_NOTIFICATION_MAX_ATTEMPTS: "${RUSTORE_NOTIFICATION_MAX_ATTEMPTS:-8}"
   RUSTORE_NOTIFICATION_MAX_AGE_HOURS: "${RUSTORE_NOTIFICATION_MAX_AGE_HOURS:-168}"
-  ENTITLEMENT_QUOTA_POLICY_VERSION: "${ENTITLEMENT_QUOTA_POLICY_VERSION:-launch-2026-11-v1}"
-  ENTITLEMENT_FREE_DAILY_LIMITS: "${ENTITLEMENT_FREE_DAILY_LIMITS:-gamma_analysis=5,frontier_analysis=1,plant_identification=1,ai_doctor=3,care_plan=5}"
+  ENTITLEMENT_QUOTA_POLICY_VERSION: "${ENTITLEMENT_QUOTA_POLICY_VERSION:-launch-2026-11-v2}"
+  ENTITLEMENT_FREE_DAILY_LIMITS: "${ENTITLEMENT_FREE_DAILY_LIMITS:-gamma_analysis=15,frontier_analysis=5,plant_identification=30,ai_doctor=15,care_plan=30}"
   ENTITLEMENT_PRO_DAILY_LIMITS: "${ENTITLEMENT_PRO_DAILY_LIMITS:-gamma_analysis=30,frontier_analysis=3,plant_identification=3,ai_doctor=15,care_plan=20}"
   COMMUNITY_DELETION_URL: http://beta-app-api:8000/api/internal/account-deletions
   CORS_ORIGINS: ""
@@ -263,7 +263,6 @@ services:
       ACCOUNT_JWKS_URL: http://beta-account-api:8000/.well-known/jwks.json
       ACCOUNT_INTROSPECTION_URL: http://beta-account-api:8000/v1/internal/auth/verify
       # Push is intentionally disabled for this beta; owner updates are polled.
-      ACCOUNT_NOTIFICATION_URL: ""
       INTERNAL_SERVICE_TOKEN_FILE: /run/internal-token/internal.token
       MODELS_DIR: /app/models
       AQUA_STATIC_DIR: /app/models/aqua
@@ -279,7 +278,6 @@ services:
       AI_CACHE_DIR: /data/app-cache/ai
       PLANTNET_API_KEY: ""
       OPENROUTER_API_KEY: ""
-      FCM_CREDENTIALS_FILE: ""
       CORS_ORIGINS: ""
       TRUSTED_PROXIES: ${BETA_TRUSTED_PROXIES:?Set the exact trusted Docker proxy peer IPs}
       RATE_LIMIT_RPS: "25"

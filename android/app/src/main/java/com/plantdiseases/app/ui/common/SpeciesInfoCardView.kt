@@ -30,7 +30,7 @@ import com.google.android.material.R as MaterialR
 
 /**
  * The one species card used everywhere a specific species is referenced —
- * scan result, species identify, community opinion sheet.
+ * scan result, species identify.
  *
  * It shows only what identifies the plant: the Wikipedia lead photo, the
  * species name, the Wikipedia description, and a "more about this species"
@@ -56,8 +56,8 @@ class SpeciesInfoCardView @JvmOverloads constructor(
     defStyle: Int = 0,
 ) : MaterialCardView(context, attrs, defStyle) {
 
-    private val scanRepository by lazy(LazyThreadSafetyMode.NONE) {
-        appEntryPoint(context).scanRepository()
+    private val speciesRepository by lazy(LazyThreadSafetyMode.NONE) {
+        appEntryPoint(context).speciesRepository()
     }
 
     private val photo: ImageView
@@ -182,7 +182,7 @@ class SpeciesInfoCardView @JvmOverloads constructor(
         token: Int,
     ) {
         scope.launch {
-            val info = scanRepository
+            val info = speciesRepository
                 .getSpeciesInfo(scientific, if (isRu) "ru" else "en")
                 .getOrNull()
                 ?.takeIf { it.available }
@@ -205,6 +205,7 @@ class SpeciesInfoCardView @JvmOverloads constructor(
             info.imageUrl?.trim()?.takeIf { it.isNotEmpty() }?.let { url ->
                 Glide.with(context)
                     .load(ServerConfig.photoUrl(url))
+                    .timeout(ServerConfig.PHOTO_TIMEOUT_MS)
                     .diskCacheStrategy(DiskCacheStrategy.ALL)
                     .transform(CenterCrop(), RoundedCorners(PHOTO_CORNER_RADIUS_PX))
                     .into(photo)

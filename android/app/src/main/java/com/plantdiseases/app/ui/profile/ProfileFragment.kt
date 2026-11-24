@@ -30,23 +30,25 @@ import com.plantdiseases.app.billing.EntitlementRepository
 import com.plantdiseases.app.billing.EntitlementState
 import com.plantdiseases.app.billing.ProUi
 import com.plantdiseases.app.data.model.ScanHistoryItem
+import com.plantdiseases.app.data.repository.CommunityAvatarSync
+import com.plantdiseases.app.data.repository.ForumRepository
 import com.plantdiseases.app.data.repository.NotificationRepository
 import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.databinding.FragmentProfileBinding
-import com.plantdiseases.app.data.repository.ForumRepository
-import com.plantdiseases.app.data.repository.CommunityAvatarSync
 import com.plantdiseases.app.databinding.ItemProfileLinkRowBinding
+import com.plantdiseases.app.ui.account.AccountActivity
+import com.plantdiseases.app.ui.account.QuickSignIn
 import com.plantdiseases.app.ui.common.AvatarImage
 import com.plantdiseases.app.ui.community.forum.HelperProfileActivity
 import com.plantdiseases.app.ui.community.forum.ModerationActivity
-import com.plantdiseases.app.ui.gallery.MyScansActivity
-import com.plantdiseases.app.ui.account.AccountActivity
 import com.plantdiseases.app.ui.crop.CropContract
+import com.plantdiseases.app.ui.gallery.MyScansActivity
 import com.plantdiseases.app.ui.legal.PrivacyPolicyActivity
 import com.plantdiseases.app.ui.onboarding.guidance.OnboardingAnchorKey
 import com.plantdiseases.app.ui.pro.ProActivity
 import com.plantdiseases.app.ui.widget.BarChartView
 import com.plantdiseases.app.util.AutosavePrefs
+import com.plantdiseases.app.util.ForumNotificationPrefs
 import com.plantdiseases.app.util.LocaleHelper
 import com.plantdiseases.app.util.PrivacyConsentPrefs
 import com.plantdiseases.app.util.ProfileAvatarStore
@@ -55,9 +57,9 @@ import com.plantdiseases.app.util.applyStatusBarTopInset
 import dagger.hilt.android.AndroidEntryPoint
 import java.io.File
 import java.util.Calendar
+import javax.inject.Inject
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
-import javax.inject.Inject
 
 @AndroidEntryPoint
 class ProfileFragment : Fragment() {
@@ -102,6 +104,15 @@ class ProfileFragment : Fragment() {
     ) { uri ->
         if (uri != null) openAvatarEditor(uri)
     }
+
+    // Community-only rows (achievements) offer sign-in in place.
+    private val quickSignIn = QuickSignIn.of(this)
+
+    // Turning answer notifications on asks for the Android 13+ permission;
+    // without it the switch stays on and the notification centre still fills.
+    private val notificationPermission = registerForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.RequestPermission(),
+    ) { }
 
     private val avatarCropLauncher = registerForActivityResult(CropContract()) { result ->
         completeAvatarEdit(result)
@@ -186,6 +197,7 @@ class ProfileFragment : Fragment() {
 
         setupThemeChips()
         setupAutosaveToggle()
+        setupForumAnswerNotificationsToggle()
         setupPrivacyConsentToggles()
         binding.replayGuidanceRow.setOnClickListener {
             (activity as? MainActivity)?.replayAppGuidance()
@@ -205,14 +217,14 @@ class ProfileFragment : Fragment() {
             is AuthState.Unavailable -> state.lastAuthenticated
             else -> null
         }
-        // Signed in: the nickname with an edit button beside it. Otherwise the
-        // hero says where the account stands and offers the way in.
+        // The name beside the avatar: the nickname when signed in, "Guest"
+        // when not, or where the account stands while it resolves.
         binding.tvProfileHeroSubtitle.text = when {
-            authenticated != null -> getString(R.string.profile_subtitle)
+            authenticated != null -> authenticated.profile.nickname
             state is AuthState.Restoring -> getString(R.string.account_restoring)
             state is AuthState.Unavailable -> getString(R.string.account_temporarily_unavailable)
             state is AuthState.ProfileRequired -> getString(R.string.account_finish_profile)
-            else -> getString(R.string.profile_subtitle)
+            else -> getString(R.string.profile_guest_name)
         }
         binding.btnEditProfile.visibility = if (authenticated != null) View.VISIBLE else View.GONE
         binding.btnManageAccount.visibility = if (authenticated == null) View.VISIBLE else View.GONE
@@ -223,8 +235,7 @@ class ProfileFragment : Fragment() {
                 else -> R.string.account_manage
             },
         )
-        binding.tvProfileHeroTitle.text = authenticated?.profile?.nickname
-            ?: getString(R.string.tab_profile)
+        binding.tvProfileHeroTitle.setText(R.string.tab_profile)
 
         val accountId = authenticated?.profile?.communityActorId
         if (activeAvatarAccountId != accountId) {
@@ -530,7 +541,7 @@ class ProfileFragment : Fragment() {
         label.setTextColor(
             androidx.core.content.ContextCompat.getColor(
                 requireContext(),
-                if (active) R.color.on_primary else R.color.on_surface_secondary,
+                if (active) R.color.on_primary else R.color.on_surface,
             ),
         )
     }
@@ -565,6 +576,27 @@ class ProfileFragment : Fragment() {
         sw.isChecked = AutosavePrefs.enabled(requireContext())
         sw.setOnCheckedChangeListener { _, isChecked ->
             AutosavePrefs.setEnabled(requireContext(), isChecked)
+        }
+    }
+
+    /** Answers on the user's community posts: on by default; off stops the
+     *  background check (the in-app notification centre still lists them). */
+    private fun setupForumAnswerNotificationsToggle() {
+        val sw = binding.switchForumAnswerNotifs
+        sw.isChecked = ForumNotificationPrefs.answersEnabled(requireContext())
+        sw.setOnCheckedChangeListener { _, isChecked ->
+            val ctx = requireContext()
+            ForumNotificationPrefs.setAnswersEnabled(ctx, isChecked)
+            (ctx.applicationContext as com.plantdiseases.app.PlantDiseasesApp).scheduleForumAnswerChecks()
+            if (isChecked &&
+                android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU &&
+                androidx.core.content.ContextCompat.checkSelfPermission(
+                    ctx,
+                    android.Manifest.permission.POST_NOTIFICATIONS,
+                ) != android.content.pm.PackageManager.PERMISSION_GRANTED
+            ) {
+                notificationPermission.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+            }
         }
     }
 
@@ -648,7 +680,7 @@ class ProfileFragment : Fragment() {
             binding.barWeek.setBars(
                 weeklyBars(real),
                 barColor = color(R.color.primary),
-                labelColor = color(R.color.on_surface_secondary),
+                labelColor = color(R.color.on_surface),
                 valueColor = color(R.color.on_surface),
             )
             renderTopIssues(real)
@@ -667,7 +699,7 @@ class ProfileFragment : Fragment() {
             } else {
                 0
             }
-            binding.tvHealthRate.text = if (stats.totalScans > 0) "$ratePct%" else "—"
+            binding.tvHealthRate.text = if (stats.totalScans > 0) "$ratePct%" else "-"
             binding.progressHealthRing.max = 100
             binding.progressHealthRing.setProgressCompat(ratePct, true)
 
@@ -783,12 +815,7 @@ class ProfileFragment : Fragment() {
         }
     }
 
-    private fun requireCommunitySignIn(): Boolean {
-        if (forumRepository.isSignedIn) return true
-        Toast.makeText(requireContext(), R.string.community_sign_in_required, Toast.LENGTH_SHORT).show()
-        startActivity(AccountActivity.intent(requireContext()))
-        return false
-    }
+    private fun requireCommunitySignIn(): Boolean = quickSignIn.require()
 
     override fun onSaveInstanceState(outState: Bundle) {
         pendingAvatarAccountId?.let { outState.putString(STATE_AVATAR_ACCOUNT_ID, it) }

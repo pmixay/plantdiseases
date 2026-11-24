@@ -270,7 +270,6 @@ class ComposePostActivity : AppCompatActivity() {
                     binding.etSpecies.setText(post.species.orEmpty())
                     space = post.space
                     condition = post.condition
-                    binding.switchConsent.isChecked = post.trainingConsent == true
                     renderSpace()
                     renderCondition()
                     binding.cardSimilar.visibility = View.GONE
@@ -292,13 +291,13 @@ class ComposePostActivity : AppCompatActivity() {
         binding.tilTitle.error = null
         publishing = true
         binding.btnPost.isEnabled = false
+        // An edit leaves the post's training consent as it was published.
         val request = ForumPostEditRequest(
             title = title,
             body = binding.etBody.text?.toString()?.trim().orEmpty(),
             space = space,
             species = binding.etSpecies.text?.toString()?.trim().orEmpty(),
             condition = condition,
-            trainingConsent = binding.switchConsent.isChecked,
         )
         lifecycleScope.launch {
             forum.editPost(post.id, request)
@@ -343,7 +342,9 @@ class ComposePostActivity : AppCompatActivity() {
             mediaIds = photos.map { it.second },
             scanToken = scanToken,
             parentPostId = parentPostId,
-            trainingConsent = binding.switchConsent.isChecked,
+            // No switch: the photos of a post are always offered for training
+            // (the note under the form and the privacy policy say so).
+            trainingConsent = true,
             locale = if (LocaleHelper.isRussian(this)) "ru" else "en",
         )
         lifecycleScope.launch {

@@ -1,16 +1,19 @@
 package com.plantdiseases.app.ui.result
 
 import android.view.View
-import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.plantdiseases.app.R
+import com.plantdiseases.app.ui.account.QuickSignIn
+import com.plantdiseases.app.ui.community.CommunityJoin
+import com.plantdiseases.app.ui.community.lockNearbyPreview
+import com.plantdiseases.app.ui.community.openScanPhoto
 import com.plantdiseases.app.ui.community.forum.ComposePostActivity
 import com.plantdiseases.app.auth.AuthRepository
 import com.plantdiseases.app.auth.AuthState
 import com.plantdiseases.app.data.local.ScanEntity
-import com.plantdiseases.app.data.repository.CommunityUploader
+import com.plantdiseases.app.data.repository.CommunityScanRepository
 import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.databinding.ActivityResultBinding
 import com.plantdiseases.app.util.ConnectivityObserver
@@ -22,185 +25,52 @@ import kotlinx.coroutines.launch
 
 /**
  * Owns every community-facing surface on the result screen: the similar-scans
- * carousel (country/global scope resolved by the server), the second-opinion
- * ask/wait/view control, and the activity readout on the user's own shared
- * scan. Community upload happens here too: asking for a second opinion forces
- * the scan into the shared corpus.
- *
- * The notification permission launcher stays on the activity; this controller
- * drives it through [ensureNotificationPermission].
+ * carousel (country/global scope resolved by the server; scans from the user's
+ * own area once they join the community) and the "Ask the community" button,
+ * which posts the scan to the forum.
  */
 class CommunityController(
     private val activity: AppCompatActivity,
     private val binding: ActivityResultBinding,
     private val repository: ScanRepository,
-    private val communityUploader: CommunityUploader,
+    private val communityScans: CommunityScanRepository,
     private val authRepository: AuthRepository,
     private val connectivity: ConnectivityObserver,
-    private val ensureNotificationPermission: () -> Unit,
-    // Requests coarse location (+ notifications) and reports back whether
-    // location was granted. Owned by the activity because permission launchers
-    // must be registered before the activity starts. See ResultActivity.
-    private val requestCommunityOptIn: (onResult: (Boolean) -> Unit) -> Unit,
+    private val communityJoin: CommunityJoin,
+    private val quickSignIn: QuickSignIn,
 ) {
 
-    /**
-     * True from the moment an ask is sent until the server answers. The
-     * control must stay disabled across a STOPPED→STARTED cycle in that
-     * window: the button still reads "waiting…" but keeps `showAsk`'s
-     * listener, so re-enabling it fires a *second* request — a duplicate
-     * community upload and a duplicate ask.
-     */
-    private var opinionRequestInFlight = false
-
-    // Remembered so onResume() can re-probe the request/reply state after
-    // the user comes back from MyScanRepliesActivity (e.g. having tapped
-    // Stop) — that screen is a separate Activity now, not a bottom sheet
-    // over this one, so there's no Fragment Result callback to catch.
-    private var lastScan: ScanEntity? = null
-
-    fun onResume() {
-        val scan = lastScan ?: return
-        refreshSecondOpinion(scan)
-    }
-
-    /**
-     * The one writer of this button's enabled state.
-     *
-     * It has two independent reasons to be off — no server, or an ask already
-     * in flight — and they used to be owned by different code that overwrote
-     * each other in whichever order ran last. Everything that renders the
-     * control goes through here.
-     */
-    private fun applySecondOpinionEnabled() {
-        binding.btnSecondOpinion.isEnabled = connectivity.lastKnownOnline && !opinionRequestInFlight
+    /** The one writer of this button's enabled state: off while there is no server. */
+    private fun applyAskEnabled() {
+        binding.btnAskCommunity.isEnabled = connectivity.lastKnownOnline
     }
 
     private fun displayName(key: String, isRu: Boolean): String =
         DiseaseLabels.displayName(key, isRu) ?: key
 
     /** Fire-and-forget: record that the signed account opened someone else's
-     *  shared scan. Guests return before the repository is called; the server
+     *  shared scan photo. Guests return before the repository is called; the server
      *  deduplicates per actor and ignores owner self-views. */
     private fun recordView(scanId: String) {
         if (scanId.isBlank() || authRepository.state.value !is AuthState.Authenticated) return
-        activity.lifecycleScope.launch { repository.recordCommunityView(scanId) }
+        activity.lifecycleScope.launch { communityScans.recordCommunityView(scanId) }
     }
 
-    /** Opens login and deliberately drops the initiating mutation. */
-    private fun requireAuthenticatedAction(): Boolean {
-        if (authRepository.state.value is AuthState.Authenticated) return true
-        Toast.makeText(activity, R.string.community_sign_in_required, Toast.LENGTH_SHORT).show()
-        activity.startActivity(com.plantdiseases.app.ui.account.AccountActivity.intent(activity))
-        return false
-    }
+    /** Offers sign-in in place and deliberately drops the initiating mutation. */
+    private fun requireAuthenticatedAction(): Boolean = quickSignIn.require()
 
-    /**
-     * Wire the ONE second-opinion control (the separate "view opinions"
-     * button was folded into it — two buttons that both opened the replies
-     * sheet were redundant). Three states, probed from the server on load:
-     *
-     * - **Ask**: no live request → "Get a second opinion" (community-gated).
-     * - **Open request**: dynamic label with the reply count and the hours
-     *   left until the 72 h auto-expiry, gently pulsing while it waits.
-     *   Tapping opens [com.plantdiseases.app.ui.community.MyScanRepliesActivity],
-     *   which carries the "Stop request" action — reachable at ANY point of
-     *   the request's life, including after replies have arrived.
-     * - **Replies, request closed** (expired/stopped): "View second
-     *   opinions (N)".
-     *
-     * That screen is a separate Activity, not a bottom sheet over this one,
-     * so there's no result callback on return — [onResume] re-probes instead.
-     */
-    fun setupSecondOpinion(scan: ScanEntity) {
+    /** "Ask the community": posts the analysed photo and the AI verdict to the
+     *  forum (guests sign in first). Hidden for an abstained scan. */
+    fun setupAskCommunity(scan: ScanEntity) {
+        val btn = binding.btnAskCommunity
         if (repository.isAbstainedScan(scan)) {
-            binding.btnSecondOpinion.visibility = View.GONE
-            lastScan = null
+            btn.visibility = View.GONE
             return
         }
-        lastScan = scan
-        // This control is not in the activity's enableWhileOnline set — it
-        // needs the in-flight rule too, so it observes reachability itself.
-        activity.onConnectivityChanged(connectivity.isOnline) { applySecondOpinionEnabled() }
-        showAsk(scan)
-        refreshSecondOpinion(scan)
-    }
-
-    private fun refreshSecondOpinion(scan: ScanEntity) {
-        activity.lifecycleScope.launch {
-            repository.getCommunityOpinions(scan.clientScanId).onSuccess { resp ->
-                val n = resp.opinions.size
-                when {
-                    resp.wantsOpinion ->
-                        showOpenRequest(scan, n, resp.opinionRequestedAt)
-                    n > 0 -> showViewReplies(scan, n)
-                    else -> showAsk(scan)
-                }
-            }
-        }
-    }
-
-    private fun openReplies(scan: ScanEntity) {
-        activity.startActivity(
-            com.plantdiseases.app.ui.community.MyScanRepliesActivity.intentFor(activity, scan.clientScanId),
-        )
-    }
-
-    /** Hours until the 72 h expiry, floored at 1 so it never reads "0 h
-     *  left" while still live; null when the timestamp is unknown. */
-    private fun hoursLeft(requestedAtSec: Long?): Int? {
-        if (requestedAtSec == null || requestedAtSec <= 0L) return null
-        val expiresMs = (requestedAtSec + 72L * 3600L) * 1000L
-        val left = expiresMs - System.currentTimeMillis()
-        if (left <= 0L) return null
-        return ((left + 3_599_999L) / 3_600_000L).toInt().coerceIn(1, 72)
-    }
-
-    /** Live request: dynamic status label + a gentle pulse so the control
-     *  reads as "in progress", not a dead button. Tap opens the replies
-     *  sheet (which carries the Stop action). */
-    private fun showOpenRequest(
-        scan: ScanEntity,
-        replyCount: Int,
-        requestedAtSec: Long?,
-    ) {
-        val btn = binding.btnSecondOpinion
-        applySecondOpinionEnabled()
-        val hours = hoursLeft(requestedAtSec)
-        btn.text = when {
-            replyCount > 0 && hours != null ->
-                activity.getString(R.string.second_opinion_open_replies, replyCount, hours)
-            replyCount > 0 ->
-                activity.getString(R.string.result_second_opinion_view, replyCount)
-            hours != null ->
-                activity.getString(R.string.second_opinion_waiting_hours, hours)
-            else -> activity.getString(R.string.result_second_opinion_waiting)
-        }
-        // Soft breathing pulse — a view animation, so it dies with the view.
-        val pulse = android.view.animation.AlphaAnimation(1f, 0.55f).apply {
-            duration = 900L
-            repeatMode = android.view.animation.Animation.REVERSE
-            repeatCount = android.view.animation.Animation.INFINITE
-        }
-        btn.startAnimation(pulse)
-        btn.setOnClickListener { openReplies(scan) }
-    }
-
-    private fun showViewReplies(scan: ScanEntity, count: Int) {
-        val btn = binding.btnSecondOpinion
-        btn.clearAnimation()
-        applySecondOpinionEnabled()
-        btn.text = activity.getString(R.string.result_second_opinion_view, count)
-        btn.setOnClickListener { openReplies(scan) }
-    }
-
-    /** Ask state: new questions go to the community forum with the analysed
-     *  photo and the AI verdict attached. Requests opened before the forum
-     *  existed keep their waiting / replies states above. */
-    private fun showAsk(scan: ScanEntity) {
-        val btn = binding.btnSecondOpinion
-        btn.clearAnimation()
-        applySecondOpinionEnabled()
+        // This control is not in the activity's enableWhileOnline set, so it
+        // observes reachability itself.
+        activity.onConnectivityChanged(connectivity.isOnline) { applyAskEnabled() }
+        applyAskEnabled()
         btn.setText(R.string.result_ask_community)
         btn.setOnClickListener {
             if (!requireAuthenticatedAction()) return@setOnClickListener
@@ -212,13 +82,11 @@ class CommunityController(
         val card = binding.cardSimilarScans
         val rv = binding.rvSimilarScans
         val empty = binding.tvSimilarEmpty
-        // Default state: hidden until we know what to show. When community is
-        // OFF we render only the in-context opt-in (below) and fetch NO scans;
-        // when ON we fetch and show the read-only similar-scans strip.
+        // Default state: hidden until we know what to show. Members get the
+        // nearby strip; everyone else a blurred preview under the join button.
         card.visibility = View.GONE
-        rv.visibility = View.GONE
+        binding.similarStrip.visibility = View.GONE
         empty.visibility = View.GONE
-        binding.btnEnableSimilar.visibility = View.GONE
         if (repository.isAbstainedScan(scan)) return
 
         // Accepted scans use their probability-backed diagnostic class. An
@@ -227,52 +95,24 @@ class CommunityController(
             ?: scan.diseaseName.lowercase().replace(' ', '_')
         val adapter = SimilarScansAdapter(
             displayName = { key -> displayName(key, isRu) },
-            onAuthorClick = { item ->
-                item.authorToken?.let { token ->
-                    activity.startActivity(
-                        com.plantdiseases.app.ui.community.CommunityProfileActivity
-                            .intent(activity, token),
-                    )
-                }
-            },
-            onClick = { item ->
-                recordView(item.scanId)
-                activity.lifecycleScope.launch {
-                    val mine = repository.localClientScanIds()
-                    if (item.scanId in mine) {
-                        activity.startActivity(
-                            com.plantdiseases.app.ui.community.MyScanRepliesActivity
-                                .intentFor(activity, item.scanId),
-                        )
-                    } else if (authRepository.state.value is AuthState.Authenticated) {
-                        // localClientScanIds() suspends on Dispatchers.IO, so we
-                        // always resume a main-loop turn later. lifecycleScope
-                        // only cancels at DESTROYED, so a Home press mid-read
-                        // would land here after onSaveInstanceState and blow up
-                        // inside show()'s commit().
-                        if (activity.supportFragmentManager.isStateSaved) return@launch
-                        CommunityOpinionSheet.show(
-                            activity.supportFragmentManager,
-                            item,
-                            displayName(item.disease, isRu),
-                        )
-                    } else {
-                        if (activity.supportFragmentManager.isStateSaved) return@launch
-                        CommunityOpinionSheet.showReadOnly(
-                            activity.supportFragmentManager,
-                            item,
-                            displayName(item.disease, isRu),
-                        )
-                    }
-                }
+            // A shared scan has no detail screen: the tap expands its photo.
+            onClick = { item, thumb ->
+                if (openScanPhoto(activity, item, thumb)) recordView(item.scanId)
             },
         )
         rv.adapter = adapter
         rv.layoutManager = LinearLayoutManager(activity, LinearLayoutManager.HORIZONTAL, false)
 
-        // Public community reads remain available to guests. Sharing and
-        // opinions are gated separately at their explicit mutation buttons.
-        fetchAndRender(adapter, diseaseKey, scan.speciesScientific, isRu)
+        // Public community reads remain available to guests and non-members
+        // (country/global scope). Scans from the user's own area need location,
+        // which comes with joining the community, so that is an explicit tap.
+        val render = { fetchAndRender(adapter, diseaseKey, scan.speciesScientific, isRu) }
+        val join = View.OnClickListener {
+            communityJoin.ensureMember { joined -> if (joined) render() }
+        }
+        binding.btnSimilarJoin.setOnClickListener(join)
+        binding.similarLockOverlay.setOnClickListener(join)
+        render()
     }
 
     /**
@@ -288,14 +128,20 @@ class CommunityController(
         isRu: Boolean,
     ) {
         val card = binding.cardSimilarScans
-        val rv = binding.rvSimilarScans
+        val strip = binding.similarStrip
         val empty = binding.tvSimilarEmpty
+        val member = CommunityJoin.isMember(activity)
+        setPreviewLocked(!member)
         activity.lifecycleScope.launch {
-            // Best-effort coarse location for the nearby scope; if it's
-            // unavailable (e.g. the user never granted location), the server
-            // widens to country/global scope, so the carousel still fills.
-            val region = runCatching { RegionResolver.resolveRegion(activity) }.getOrNull()
-            repository.communityNearby(
+            // Members send their coarse location for the nearby scope. Without
+            // it the server widens to country/global scope, so the carousel
+            // still fills.
+            val region = if (member) {
+                runCatching { RegionResolver.resolveRegion(activity) }.getOrNull()
+            } else {
+                null
+            }
+            communityScans.communityNearby(
                 country = region?.country,
                 region = region?.locality,
                 lat = region?.lat,
@@ -324,7 +170,7 @@ class CommunityController(
                         activity.getString(R.string.similar_scans_subtitle_region, label)
                     empty.text = activity.getString(R.string.similar_scans_empty)
                     empty.visibility = View.VISIBLE
-                    rv.visibility = View.GONE
+                    strip.visibility = View.GONE
                 } else {
                     // Count what the strip actually SHOWS, not the regional
                     // all-disease total.
@@ -334,7 +180,7 @@ class CommunityController(
                         items.size,
                         label,
                     )
-                    rv.visibility = View.VISIBLE
+                    strip.visibility = View.VISIBLE
                     empty.visibility = View.GONE
                     adapter.submit(items)
                 }
@@ -344,4 +190,11 @@ class CommunityController(
             }
         }
     }
+
+    private fun setPreviewLocked(locked: Boolean) = lockNearbyPreview(
+        strip = binding.rvSimilarScans,
+        overlay = binding.similarLockOverlay,
+        joinButton = binding.btnSimilarJoin,
+        locked = locked,
+    )
 }

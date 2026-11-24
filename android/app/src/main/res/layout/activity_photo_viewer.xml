@@ -35,7 +35,7 @@
             android:layout_height="28dp"
             android:clickable="true"
             android:focusable="true"
-            android:src="@drawable/ic_back"
+            android:src="@drawable/ic_close"
             android:contentDescription="@string/close"
             app:tint="@android:color/white" />
 

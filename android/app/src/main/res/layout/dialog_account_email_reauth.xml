@@ -12,7 +12,7 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:text="@string/account_email_reauth_body"
-        android:textColor="@color/on_surface_secondary"
+        android:textColor="@color/on_surface"
         android:textSize="@dimen/text_body" />
 
     <com.google.android.material.textfield.TextInputLayout

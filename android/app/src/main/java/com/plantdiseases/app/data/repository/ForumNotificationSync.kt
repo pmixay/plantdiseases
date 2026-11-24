@@ -33,17 +33,22 @@ class ForumNotificationSync @Inject constructor(
     var notices: List<ModNotice> = emptyList()
         private set
 
+    /** What one [sync] stored: the new events, and whether this was the
+     *  first import (history, which must not pop up as notifications). */
+    class Imported(val events: List<Event>, val firstImport: Boolean)
+
     /** Fetches and stores new events. A no-op when signed out or offline. */
-    suspend fun sync() = lock.withLock {
-        if (!forum.isSignedIn) return@withLock
+    suspend fun sync(): Imported = lock.withLock {
+        val none = Imported(emptyList(), firstImport = false)
+        if (!forum.isSignedIn) return@withLock none
         val activity = forum.activity(since = 0).getOrNull()?.items
         val decisions = forum.notices().getOrNull()?.items
         decisions?.let { notices = it }
-        if (activity == null && decisions == null) return@withLock
+        if (activity == null && decisions == null) return@withLock none
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         val watermark = prefs.getLong(KEY_WATERMARK, 0L)
         val events = Plan.events(activity.orEmpty(), decisions.orEmpty(), watermark)
-        if (events.isEmpty()) return@withLock
+        if (events.isEmpty()) return@withLock none
         val now = System.currentTimeMillis() / MILLIS
         events.forEach { event ->
             // On the first sync, history older than a week arrives already read.
@@ -60,14 +65,19 @@ class ForumNotificationSync @Inject constructor(
             )
         }
         prefs.edit().putLong(KEY_WATERMARK, events.maxOf { it.createdAt }).apply()
+        Imported(events, firstImport = watermark == 0L)
     }
 
-    /** One Community event, ready to store. Times are in seconds. */
+    /** One Community event, ready to store. Times are in seconds. [postId],
+     *  [answerId] and [postTitle] are set for answer events. */
     class Event(
         val type: String,
         val title: Int,
         val deeplink: String,
         val createdAt: Long,
+        val postId: String? = null,
+        val answerId: String? = null,
+        val postTitle: String? = null,
         val body: (Context) -> String,
     )
 
@@ -83,8 +93,11 @@ class ForumNotificationSync @Inject constructor(
                 Event(
                     type = if (item.type == "answer_accepted") TYPE_ACCEPTED else TYPE_ANSWER,
                     title = title,
-                    deeplink = "$LINK_POST:${item.postId}",
+                    deeplink = postLink(item.postId, item.answerId),
                     createdAt = item.createdAt,
+                    postId = item.postId,
+                    answerId = item.answerId,
+                    postTitle = item.postTitle,
                 ) { context -> activityText(context, item) }
             }
             val moderation = decisions.filter { it.createdAt > watermark }.map { notice ->
@@ -115,6 +128,11 @@ class ForumNotificationSync @Inject constructor(
         const val LINK_POST = "forum_post"
         const val LINK_DECISION = "forum_decision"
         private const val PREFS = "forum_notifications"
+
+        /** "forum_post:<post>" or "forum_post:<post>:<answer>", which opens the
+         *  post scrolled to that answer (NotificationRouter). */
+        fun postLink(postId: String, answerId: String?): String =
+            if (answerId.isNullOrBlank()) "$LINK_POST:$postId" else "$LINK_POST:$postId:$answerId"
         private const val KEY_WATERMARK = "imported_until"
         private const val MILLIS = 1000L
         private const val FIRST_SYNC_UNREAD_S = 7 * 24 * 60 * 60L

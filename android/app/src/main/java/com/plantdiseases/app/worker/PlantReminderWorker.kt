@@ -64,7 +64,7 @@ class PlantReminderWorker(
         // never wrapped by LocaleHelper (applyLocale's result is only ever
         // attached via Activity.attachBaseContext), so getString() would fall
         // back to the SYSTEM locale and disagree with a Russian-in-app /
-        // English-system user. Same workaround OpinionNotifier documents.
+        // English-system user. ForumAnswerNotifier does the same.
         val localizedCtx = LocaleHelper.setLocale(context, LocaleHelper.getSavedLanguage(context))
 
         // Stable per-(plant, legacy-type) ids keep the historical dedupe
@@ -214,7 +214,7 @@ class PlantReminderWorker(
         ) {
             android.util.Log.w(
                 "PlantReminderWorker",
-                "POST_NOTIFICATIONS missing — recorded the reminder in the " +
+                "POST_NOTIFICATIONS missing - recorded the reminder in the " +
                     "notification centre but skipped the system notification " +
                     "for plant_id=$plantId type=$reminderType. Ask the user " +
                     "to re-grant the notification permission in Settings.",

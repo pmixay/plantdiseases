@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- One-time error-report question (MainActivity.maybeAskTelemetryChoice):
+     an icon in a circle, a short question and what is (not) sent. The
+     dialog's own Yes / No buttons answer it. -->
+<LinearLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:gravity="center_horizontal"
+    android:orientation="vertical"
+    android:paddingHorizontal="@dimen/space_2xl"
+    android:paddingTop="@dimen/space_2xl"
+    android:paddingBottom="@dimen/space_xs">
+
+    <FrameLayout
+        android:layout_width="64dp"
+        android:layout_height="64dp"
+        android:background="@drawable/bg_icon_circle">
+
+        <ImageView
+            android:layout_width="32dp"
+            android:layout_height="32dp"
+            android:layout_gravity="center"
+            android:contentDescription="@null"
+            android:src="@drawable/ic_shield_check"
+            app:tint="@color/primary" />
+    </FrameLayout>
+
+    <TextView
+        android:id="@+id/telemetry_title"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="@dimen/space_lg"
+        android:accessibilityHeading="true"
+        android:gravity="center"
+        android:text="@string/telemetry_prompt_title"
+        android:textColor="@color/on_surface"
+        android:textSize="@dimen/text_title"
+        android:textStyle="bold" />
+
+    <TextView
+        android:id="@+id/telemetry_body"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="@dimen/space_sm"
+        android:gravity="center"
+        android:lineSpacingExtra="2sp"
+        android:text="@string/telemetry_prompt_body"
+        android:textColor="@color/on_surface"
+        android:textSize="@dimen/text_body" />
+
+</LinearLayout>

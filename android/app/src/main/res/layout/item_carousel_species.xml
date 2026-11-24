@@ -51,7 +51,7 @@
                 android:layout_height="wrap_content"
                 android:layout_marginTop="2dp"
                 android:maxLines="1"
-                android:textColor="@color/on_surface_secondary"
+                android:textColor="@color/on_surface"
                 android:textSize="@dimen/text_caption" />
         </LinearLayout>
     </LinearLayout>

@@ -1,4 +1,4 @@
-"""Community: shared scans, second opinions, safety, map and feeds.
+"""Community: shared scans, safety, map and feeds.
 
 Moved out of ``main.py``. ``register(router, m)`` adds the routes to the
 ``/api`` router and receives the ``main`` module; every handler reaches shared
@@ -11,9 +11,132 @@ import asyncio
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel, Field, field_validator, model_validator
+
+# Collaborator modules (never names patched on ``main``) are imported here;
+# flat (``uvicorn main:app`` from ``server/``) or as ``server.*``.
+try:
+    from . import community_geo, config, feedback_labels
+except ImportError:
+    import community_geo
+    import config
+    import feedback_labels
+try:
+    from . import community_http
+except ImportError:
+    import community_http
+
+
+class CommunityScanRequest(BaseModel):
+    """Upload metadata for a single community-shared scan. The image
+    bytes ride on a separate multipart field on the upload endpoint
+    so a thin client never has to base64-encode anything.
+
+    Hierarchy: ``country`` is the canonical top bucket (ISO code or
+    country name); ``region`` is the optional sub-country locality
+    (city, admin area). Older clients that still send the legacy
+    composite as ``region`` get auto-split — the country tail lands
+    in ``country`` and the leading segment in ``region``.
+    """
+
+    scan_id: str = Field(..., min_length=8, max_length=64)
+    country: str | None = Field(default=None, min_length=2, max_length=80)
+    region: str = Field(default="", max_length=80)
+    disease: str = Field(..., min_length=1, max_length=64)
+    confidence: float | None = Field(default=None, ge=0.0, le=1.0)
+    species: str | None = Field(default=None, max_length=128)
+    species_score: float | None = Field(default=None, ge=0.0, le=1.0)
+    locale: str | None = Field(default=None, max_length=8)
+    @field_validator("scan_id")
+    @classmethod
+    def _safe_token(cls, v: str) -> str:
+        if any(ch not in feedback_labels.SCAN_ID_ALLOWED for ch in v):
+            raise ValueError("invalid characters in id; expected [A-Za-z0-9_-]")
+        return v
+
+    @field_validator("country")
+    @classmethod
+    def _safe_country(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        cleaned = community_geo.normalise_country(v)
+        if not cleaned:
+            raise ValueError(
+                "country must be a country name or ISO code (no control chars)"
+            )
+        return cleaned
+
+    @field_validator("region")
+    @classmethod
+    def _safe_region(cls, v: str) -> str:
+        # Empty is legal — country-only writes are supported.
+        cleaned = community_geo.normalise_locality(v)
+        if v and not cleaned:
+            raise ValueError("region contains invalid characters")
+        return cleaned
+
+    @field_validator("disease")
+    @classmethod
+    def _known_disease(cls, v: str) -> str:
+        cleaned = v.strip().lower()
+        # ``not_a_plant`` and the deferred physiological classes are
+        # legal community-share values too — they're still useful
+        # signals for the retraining loop.
+        if cleaned not in feedback_labels.FEEDBACK_ALLOWED_CORRECTIONS:
+            raise ValueError(
+                f"disease must be one of {sorted(feedback_labels.FEEDBACK_ALLOWED_CORRECTIONS)}"
+            )
+        return cleaned
+
+    @field_validator("locale")
+    @classmethod
+    def _normalise_locale(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        cleaned = v.strip().lower()[:8]
+        return cleaned or None
+
+
+class CommunityViewRequest(BaseModel):
+    # ``scan_id`` (singular) is the original single-open shape, kept required
+    # in name only — older installs still send it alone. ``scan_ids`` is the
+    # newer batch shape for reporting many feed impressions in one call. A
+    # request must carry at least one of the two; see the validator below.
+    scan_id: str | None = Field(None, max_length=128)
+    scan_ids: list[str] | None = Field(None, max_length=50)
+
+    @model_validator(mode="after")
+    def _require_a_target(self) -> "CommunityViewRequest":
+        if not (self.scan_id or "").strip() and not any(
+            (s or "").strip() for s in (self.scan_ids or [])
+        ):
+            raise ValueError("scan_id or scan_ids is required")
+        return self
+
+
+def _valid_bbox(
+    min_lat: float, min_lon: float, max_lat: float, max_lon: float,
+) -> tuple[float, float, float, float] | None:
+    """Sanity-check + clamp a map bbox. Returns ``(lo_lat, lo_lon, hi_lat,
+    hi_lon)`` within ±90/±180, or ``None`` when degenerate / out of range."""
+    try:
+        lo_lat, hi_lat = sorted((float(min_lat), float(max_lat)))
+        lo_lon, hi_lon = sorted((float(min_lon), float(max_lon)))
+    except (TypeError, ValueError):
+        return None
+    lo_lat, hi_lat = max(-90.0, lo_lat), min(90.0, hi_lat)
+    lo_lon, hi_lon = max(-180.0, lo_lon), min(180.0, hi_lon)
+    if hi_lat <= lo_lat or hi_lon <= lo_lon:
+        return None
+    return (lo_lat, lo_lon, hi_lat, hi_lon)
+
+
+COMMUNITY_DAILY_QUOTA = config.get_int("COMMUNITY_DAILY_QUOTA", 50)
 
 
 def register(router: APIRouter, m) -> None:
+    account = m.account_dependency
+
     @router.post("/community/scan", dependencies=[Depends(m.community_bearer)])
     async def community_scan_upload(
         request: Request,
@@ -42,7 +165,7 @@ def register(router: APIRouter, m) -> None:
 
         principal = await m._require_account(request)
         try:
-            payload = m.CommunityScanRequest(
+            payload = CommunityScanRequest(
                 scan_id=scan_id,
                 country=country,
                 region=region,
@@ -67,22 +190,22 @@ def register(router: APIRouter, m) -> None:
         # us ingesting its payload.
         issued = await asyncio.get_running_loop().run_in_executor(
             None,
-            lambda: m.community_analysis_token_issued(payload.scan_id),
+            lambda: m.community_scans.is_analysis_token_issued(payload.scan_id),
         )
         if not issued:
             m.logger.warning("Community publication capability rejected")
             raise HTTPException(
                 status_code=422,
-                detail="Unknown scan_id — re-scan before sharing to the community.",
+                detail="Unknown scan_id - re-scan before sharing to the community.",
             )
 
-        geo = m._client_location(payload.country, payload.region, lat, lon)
+        geo = community_geo.client_location(payload.country, payload.region, lat, lon)
 
         # Enforce the per-IP daily quota BEFORE reading the (up to 10 MB)
         # image body — an over-quota client should be rejected without us
         # ingesting its payload first.
         client_ip = m._client_ip(request)
-        if not m._consume_daily_write("community_scan", client_ip, m.COMMUNITY_DAILY_QUOTA):
+        if not m._consume_daily_write("community_scan", client_ip, COMMUNITY_DAILY_QUOTA):
             m.logger.warning("Community daily upload quota reached")
             raise HTTPException(
                 status_code=429,
@@ -111,7 +234,7 @@ def register(router: APIRouter, m) -> None:
         try:
             row_id = await asyncio.get_running_loop().run_in_executor(
                 None,
-                lambda: m.community_record_analysis_scan(
+                lambda: m.community_scans.record_analysis_scan(
                     scan_id=payload.scan_id,
                     account_actor_id=principal.actor_id,
                     country=geo["country"] or "",
@@ -128,17 +251,17 @@ def register(router: APIRouter, m) -> None:
                     locale=payload.locale,
                 ),
             )
-        except m.AnalysisTokenUnknownError as exc:
+        except m.community_scans.AnalysisTokenUnknownError as exc:
             raise HTTPException(
                 status_code=422,
-                detail="Unknown scan_id — re-scan before sharing to the community.",
+                detail="Unknown scan_id - re-scan before sharing to the community.",
             ) from exc
-        except m.AnalysisImageMismatchError as exc:
+        except m.community_scans.AnalysisImageMismatchError as exc:
             raise HTTPException(
                 status_code=422,
                 detail="Community image does not match the analyzed image.",
             ) from exc
-        except m.AnalysisTokenConflictError as exc:
+        except m.community_scans.AnalysisTokenConflictError as exc:
             raise HTTPException(
                 status_code=409,
                 detail="This scan_id has already been published.",
@@ -153,77 +276,13 @@ def register(router: APIRouter, m) -> None:
         return JSONResponse(content={"ok": True, "id": row_id})
 
 
-    @router.post(
-        "/community/safety/report", dependencies=[Depends(m.community_bearer)]
-    )
-    async def community_report_content(
-        payload: m.CommunityReportRequest, request: Request,
-    ):
-        """Queue a report bound to the signed actor and stored content author.
-
-        The request contains only an opaque public content token plus a fixed
-        reason.  It never accepts an actor id or free-form moderation text.
-        """
-        principal = await m._require_account(request)
-        kind = payload.target_type.strip().lower()
-        if kind not in {"scan", "opinion"}:
-            raise HTTPException(status_code=422, detail="invalid_target_type")
-        try:
-            created = await asyncio.get_running_loop().run_in_executor(
-                None,
-                lambda: m.community_record_content_report(
-                    reporter_actor_id=principal.actor_id,
-                    target_type=kind,
-                    target_id=payload.target_id.strip(),
-                    reason=payload.reason,
-                ),
-            )
-        except ValueError as exc:
-            m._raise_community_safety_error(exc)
-            raise AssertionError("unreachable") from exc
-        return JSONResponse(
-            content={"ok": True, "created": bool(created)},
-            headers={"Cache-Control": "no-store"},
-        )
-
-
-    @router.post(
-        "/community/safety/block", dependencies=[Depends(m.community_bearer)]
-    )
-    async def community_block_author(
-        payload: m.CommunityBlockRequest, request: Request,
-    ):
-        """Block the verified author resolved from an opaque content token."""
-        principal = await m._require_account(request)
-        kind = payload.target_type.strip().lower()
-        if kind not in {"scan", "opinion"}:
-            raise HTTPException(status_code=422, detail="invalid_target_type")
-        try:
-            result = await asyncio.get_running_loop().run_in_executor(
-                None,
-                lambda: m.community_block_content_author(
-                    blocker_actor_id=principal.actor_id,
-                    target_type=kind,
-                    target_id=payload.target_id.strip(),
-                ),
-            )
-        except ValueError as exc:
-            m._raise_community_safety_error(exc)
-            raise AssertionError("unreachable") from exc
-        return JSONResponse(
-            content={"ok": True, **result},
-            headers={"Cache-Control": "no-store"},
-        )
-
-
     @router.get(
         "/community/safety/blocks", dependencies=[Depends(m.community_bearer)]
     )
-    async def community_list_blocks(request: Request):
+    async def community_list_blocks(principal=Depends(account)):
         """List only the caller's blocks using unlinkable opaque block ids."""
-        principal = await m._require_account(request)
         items = await asyncio.get_running_loop().run_in_executor(
-            None, lambda: m.community_actor_blocks(principal.actor_id)
+            None, lambda: m.community_safety.actor_blocks(principal.actor_id)
         )
         return JSONResponse(
             content={"items": items}, headers={"Cache-Control": "no-store"}
@@ -234,13 +293,12 @@ def register(router: APIRouter, m) -> None:
         "/community/safety/blocks/{block_id}",
         dependencies=[Depends(m.community_bearer)],
     )
-    async def community_remove_block(block_id: str, request: Request):
+    async def community_remove_block(block_id: str, principal=Depends(account)):
         """Delete only a block owned by the signed caller."""
-        principal = await m._require_account(request)
         if len(block_id) != 32 or not block_id.startswith("cb"):
             raise HTTPException(status_code=422, detail="invalid_block_id")
         removed = await asyncio.get_running_loop().run_in_executor(
-            None, lambda: m.community_unblock_actor(principal.actor_id, block_id)
+            None, lambda: m.community_safety.unblock_actor(principal.actor_id, block_id)
         )
         if not removed:
             raise HTTPException(status_code=404, detail="block_not_found")
@@ -249,249 +307,8 @@ def register(router: APIRouter, m) -> None:
         )
 
 
-    @router.post("/community/opinion", dependencies=[Depends(m.community_bearer)])
-    async def community_opinion_submit(payload: m.CommunityOpinionRequest, request: Request):
-        """Record one community 'second opinion' on a shared scan.
-
-        The suggested disease must be a known classifier class so the consensus
-        tally stays clean; any free text lives only in the optional note.
-        """
-        principal = await m._require_account(request)
-        disease = payload.suggested_disease.strip()
-        if disease not in m.DISEASES_DATABASE:
-            raise HTTPException(status_code=422, detail="Unknown suggested disease")
-
-        client_ip = m._client_ip(request)
-        loop = asyncio.get_running_loop()
-        if not m._consume_daily_write(
-            "community_opinion", client_ip, m.COMMUNITY_OPINION_DAILY_QUOTA
-        ):
-            raise HTTPException(status_code=429, detail="Daily opinion quota reached.")
-
-        # Viewers arrive with the feed's public token; the scan's owner (and
-        # legacy cached feeds) with the real scan_id. Resolve to the real id
-        # and require the shared scan to exist — opinions against ids that
-        # were never shared are write-only noise in the consensus tally.
-        sid = await loop.run_in_executor(
-            None, lambda: m.community_resolve_scan_token(payload.scan_id.strip()),
-        )
-        known = await loop.run_in_executor(None, lambda: m.community_scan_exists(sid))
-        if not known:
-            raise HTTPException(status_code=422, detail="Unknown scan")
-        owner_actor = await loop.run_in_executor(
-            None, lambda: m.community_account_owner_of(sid)
-        )
-        if owner_actor is None:
-            raise HTTPException(status_code=409, detail="legacy_scan_read_only")
-        # A scan older than 30 days goes read-only so stale photos cannot keep
-        # collecting opinions. Its per-scan public read handle remains stable.
-        fresh = await loop.run_in_executor(None, lambda: m.community_opinion_open(sid))
-        if not fresh:
-            raise HTTPException(status_code=410, detail="Scan too old for new opinions")
-        try:
-            _opinion_id, created = await loop.run_in_executor(
-                None,
-                lambda: m.community_record_opinion(
-                    scan_id=sid,
-                    account_actor_id=principal.actor_id,
-                    suggested_disease=disease,
-                    note=payload.note,
-                    nickname=principal.nickname,
-                ),
-            )
-        except m.OpinionTargetUnavailableError as exc:
-            raise HTTPException(
-                status_code=410,
-                detail="Scan no longer accepts opinions",
-            ) from exc
-        except ValueError as exc:
-            if str(exc) == "blocked_interaction":
-                raise HTTPException(status_code=409, detail="blocked_interaction") from None
-            m.logger.error("Community opinion write failed")
-            raise HTTPException(status_code=500, detail="Failed to record opinion") from exc
-        except Exception as exc:  # noqa: BLE001
-            m.logger.error("Community opinion write failed")
-            raise HTTPException(status_code=500, detail="Failed to record opinion") from exc
-
-        # Push the scan's owner a notification (best-effort; no-op when push isn't
-        # configured). Skip self-opinions — you don't get pinged for your own note.
-        # Only owners who explicitly REQUESTED a second opinion get pushed: sharing
-        # a scan to the corpus is not a request to be notified.
-        author = principal.actor_id
-
-        def _push_owner() -> None:
-            try:
-                if not created:
-                    return
-                if not m.community_wants_opinion(sid):
-                    return
-                owner = owner_actor
-                if owner and owner != author:
-                    # Delivery is delegated to the account service, which resolves
-                    # encrypted device registrations privately. Wired below via
-                    # the internal notification client.
-                    m._send_account_opinion_notification(
-                        owner, sid, disease, payload.note, principal.nickname
-                    )
-            except Exception:  # noqa: BLE001
-                m.logger.debug("Opinion push failed")
-
-        # FCM is external HTTP — keep it off the default (DB-op) pool too.
-        await loop.run_in_executor(m._get_net_executor(), _push_owner)
-
-        result = await loop.run_in_executor(
-            None,
-            lambda: m.community_opinions_for(
-                sid, viewer_account_actor_id=principal.actor_id
-            ),
-        )
-        return JSONResponse(
-            content={"ok": True, "count": len(result["opinions"]), **result}
-        )
-
-
-    @router.post(
-        "/community/request-opinion", dependencies=[Depends(m.community_bearer)]
-    )
-    async def community_request_opinion(
-        payload: m.CommunityRequestOpinionRequest, request: Request,
-    ):
-        """Flag the scanner's own shared scan as wanting a second opinion.
-
-        Unlike ``/community/opinion`` (where a *viewer* suggests a diagnosis
-        for someone else's scan), this is the *scanner* raising their hand:
-        "I'm unsure — community, please weigh in." The flag is owner-scoped
-        (the update only matches the signed account actor) and
-        idempotent.
-
-        Degrades gracefully: the community upload is fire-and-forget and the
-        user may have opted out of sharing, so the owned row might not exist
-        yet. We still return 200 with ``flagged: false`` — the client shows
-        its local "waiting for the community" state regardless.
-        """
-        principal = await m._require_account(request)
-        sid = payload.scan_id.strip()
-        client_ip = m._client_ip(request)
-        loop = asyncio.get_running_loop()
-        if not m._consume_daily_write(
-            "community_request_opinion", client_ip, m.COMMUNITY_OPINION_DAILY_QUOTA
-        ):
-            raise HTTPException(status_code=429, detail="Daily opinion quota reached.")
-        try:
-            flagged = await loop.run_in_executor(
-                None,
-                lambda: m.community_set_wants_opinion(
-                    sid, account_actor_id=principal.actor_id
-                ),
-            )
-        except Exception as exc:  # noqa: BLE001
-            m.logger.error("Community request-opinion failed")
-            raise HTTPException(
-                status_code=500, detail="Failed to request opinion",
-            ) from exc
-        return JSONResponse(content={"ok": True, "flagged": bool(flagged)})
-
-
-    @router.post(
-        "/community/request-opinion/cancel", dependencies=[Depends(m.community_bearer)]
-    )
-    async def community_request_opinion_cancel(
-        payload: m.CommunityRequestOpinionRequest, request: Request,
-    ):
-        """Withdraw an open second-opinion request on the caller's own scan.
-
-        The inverse of ``/community/request-opinion``: drops the durable
-        request row + the feed badge, so the community stops seeing the ask
-        and the owner stops being notified about new opinions. Opinions
-        already left stay visible. Owner-scoped and idempotent — cancelling
-        a request that doesn't exist (or isn't yours) returns
-        ``cleared: false`` with 200.
-
-        (Requests also lapse on their own after
-        ``OPINION_REQUEST_TTL_HOURS`` — see ``community.py``.)
-        """
-        principal = await m._require_account(request)
-        sid = payload.scan_id.strip()
-        loop = asyncio.get_running_loop()
-        try:
-            cleared = await loop.run_in_executor(
-                None,
-                lambda: m.community_clear_wants_opinion(
-                    sid, account_actor_id=principal.actor_id
-                ),
-            )
-        except Exception as exc:  # noqa: BLE001
-            m.logger.error("Community cancel-request-opinion failed")
-            raise HTTPException(
-                status_code=500, detail="Failed to cancel opinion request",
-            ) from exc
-        return JSONResponse(content={"ok": True, "cleared": bool(cleared)})
-
-
-    @router.get("/community/opinions/{scan_id}")
-    async def community_opinions_list(scan_id: str, request: Request):
-        """List community opinions + a consensus tally for one shared scan.
-
-        Accepts the real scan_id (owner's own app) or the feed's public
-        token (viewers); echoes back whichever form the caller sent.
-        Authentication is optional for this public read. When present it adds
-        caller-specific fields such as ``liked_by_me`` and ``is_mine`` and applies
-        the caller's block list.
-        """
-        sid = (scan_id or "").strip()
-        if not sid or len(sid) > 128:
-            raise HTTPException(status_code=422, detail="Invalid scan id")
-        loop = asyncio.get_running_loop()
-        principal = await m._optional_account(request)
-        resolved = await loop.run_in_executor(
-            None, lambda: m.community_resolve_scan_token(sid),
-        )
-        result = await loop.run_in_executor(
-            None,
-            lambda: m.community_opinions_for(
-                resolved,
-                viewer_account_actor_id=principal.actor_id if principal else None,
-            ),
-        )
-        return JSONResponse(content={"scan_id": sid, **result})
-
-
-    @router.get("/community/profile/{author_token}")
-    async def community_author_profile(author_token: str, request: Request):
-        """Public community activity for one opaque account-author handle."""
-        if len(author_token) != 32 or not author_token.startswith("ca"):
-            raise HTTPException(status_code=404, detail="profile_not_found")
-        principal = await m._optional_account(request)
-        profile = await asyncio.get_running_loop().run_in_executor(
-            None,
-            lambda: m.community_public_account_profile(
-                author_token,
-                viewer_account_actor_id=principal.actor_id if principal else None,
-            ),
-        )
-        if profile is None:
-            raise HTTPException(status_code=404, detail="profile_not_found")
-        for item in profile.get("items", []):
-            m._localize_item_country(item)
-        return JSONResponse(content=profile, headers={"Cache-Control": "no-store"})
-
-
-    @router.get(
-        "/community/my-scan-opinions", dependencies=[Depends(m.community_bearer)]
-    )
-    async def community_my_scan_opinions(request: Request):
-        """Opinion counts on the caller's OWN shared scans. The client polls this
-        on a schedule to notify the user when someone leaves a second opinion on a
-        scan they shared (the per-scan view already exists via /opinions/{scan_id})."""
-        principal = await m._require_account(request)
-        result = await asyncio.get_running_loop().run_in_executor(
-            None, lambda: m.community_opinion_counts_for_actor(principal.actor_id),
-        )
-        return JSONResponse(content=result)
-
-
     @router.post("/community/view", dependencies=[Depends(m.community_bearer)])
-    async def community_record_scan_view(payload: m.CommunityViewRequest, request: Request):
+    async def community_record_scan_view(payload: CommunityViewRequest, request: Request):
         """Record that the caller opened (or merely scrolled past) someone
         else's shared scan — one id via ``scan_id``, or up to 50 via
         ``scan_ids`` for feed-scroll impressions. Deduped per viewer
@@ -508,69 +325,24 @@ def register(router: APIRouter, m) -> None:
         # The declared cap is per-field; ``scan_id`` + a full ``scan_ids`` can
         # exceed it, and a client may repeat an id across the two.
         ids = list(dict.fromkeys(ids))[:50]
-        # An explicit single-scan open keeps the read-only contract the opinion
-        # route states: a legacy (pre-account) row is readable but never mutable,
-        # and the caller is told so rather than being handed a silent no-op. A
+        # An explicit single-scan open keeps a read-only contract: a legacy
+        # (pre-account) row is readable but never mutable, and the caller is told so rather than being handed a silent no-op. A
         # feed-scroll batch stays lenient and just skips any such id.
         if payload.scan_id and payload.scan_id.strip() and not payload.scan_ids:
+            single_scan_id = payload.scan_id.strip()
             sid = await loop.run_in_executor(
-                None, lambda: m.community_resolve_scan_token(payload.scan_id.strip()),
+                None, lambda: m.community.resolve_scan_token(single_scan_id),
             )
             owner_actor = await loop.run_in_executor(
-                None, lambda: m.community_account_owner_of(sid)
+                None, lambda: m.community_scans.account_owner_of(sid)
             )
             if owner_actor is None:
                 raise HTTPException(status_code=409, detail="legacy_scan_read_only")
         counted = await loop.run_in_executor(
             None,
-            lambda: m.community_record_views(ids, account_actor_id=principal.actor_id),
+            lambda: m.community_views.record_views(ids, account_actor_id=principal.actor_id),
         )
         return JSONResponse(content={"ok": True, "counted": counted > 0, "counted_n": counted})
-
-
-    @router.post("/community/like", dependencies=[Depends(m.community_bearer)])
-    async def community_like_scan(payload: m.CommunityLikeRequest, request: Request):
-        """Like or unlike a shared scan. A self-like is refused (0 either way);
-        liking your own scan makes no more sense than viewing it does."""
-        principal = await m._require_account(request)
-        client_ip = m._client_ip(request)
-        loop = asyncio.get_running_loop()
-        if payload.liked and not m._consume_daily_write(
-            "community_like", client_ip, m.COMMUNITY_LIKE_DAILY_QUOTA
-        ):
-            raise HTTPException(status_code=429, detail="Daily like quota reached.")
-        sid = await loop.run_in_executor(
-            None, lambda: m.community_resolve_scan_token(payload.scan_id.strip()),
-        )
-        liked = await loop.run_in_executor(
-            None,
-            lambda: m.community_set_like(
-                sid,
-                liked=payload.liked,
-                account_actor_id=principal.actor_id,
-            ),
-        )
-        count = await loop.run_in_executor(
-            None, lambda: m.community_like_counts([sid]).get(sid, 0),
-        )
-        return JSONResponse(content={"ok": True, "liked": liked, "count": count})
-
-
-    @router.post("/community/scan-counts", dependencies=[Depends(m.community_bearer)])
-    async def community_scan_counts_endpoint(
-        payload: m.CommunityScanCountsRequest, request: Request,
-    ):
-        """Batched ``{opinions, views}`` per scan_id so the Gallery can badge the
-        caller's own rows in one round-trip. Unknown/zero scans are omitted."""
-        principal = await m._require_account(request)
-        ids = [s.strip() for s in payload.scan_ids if s and s.strip()][:500]
-        counts = (
-            await asyncio.get_running_loop().run_in_executor(
-                None, lambda: m.community_scan_counts_for_actor(principal.actor_id, ids),
-            )
-            if ids else {}
-        )
-        return JSONResponse(content={"counts": counts})
 
 
     @router.get("/community/nearby")
@@ -620,13 +392,13 @@ def register(router: APIRouter, m) -> None:
             )
         principal = await m._optional_account(request)
         try:
-            recommendation_cursor = m.community_decode_recommendation_cursor(cursor)
+            recommendation_cursor = m.community_feeds.decode_recommendation_cursor(cursor)
         except ValueError as exc:
             raise HTTPException(status_code=422, detail="Invalid community cursor.") from exc
         if ranking_norm == "recent" and recommendation_cursor is not None \
                 and recommendation_cursor[0] != 0:
             raise HTTPException(status_code=422, detail="Invalid recent community cursor.")
-        geo = m._client_location(country, region, lat, lon)
+        geo = community_geo.client_location(country, region, lat, lon)
         country_norm = geo["country"]
         scope_norm = (scope or "nearby").strip().lower()
         if scope_norm not in ("nearby", "country", "worldwide"):
@@ -651,7 +423,7 @@ def register(router: APIRouter, m) -> None:
         if ranking_norm == "recommended":
             rows = await loop.run_in_executor(
                 None,
-                lambda: m.community_recommended_scans(
+                lambda: m.community_feeds.recommended_scans(
                     country=country_norm,
                     lat=geo["lat"] if nearby else None,
                     lon=geo["lon"] if nearby else None,
@@ -665,7 +437,7 @@ def register(router: APIRouter, m) -> None:
         else:
             rows = await loop.run_in_executor(
                 None,
-                lambda: m.community_nearby_scans(
+                lambda: m.community_feeds.nearby_scans(
                     country=country_norm,
                     lat=geo["lat"] if nearby else None,
                     lon=geo["lon"] if nearby else None,
@@ -685,7 +457,7 @@ def register(router: APIRouter, m) -> None:
         next_cursor = None
         if rows and len(rows) >= effective_limit:
             last = rows[-1]
-            next_cursor = m.community_encode_recommendation_cursor(
+            next_cursor = m.community_feeds.encode_recommendation_cursor(
                 int(last.get("_cursor_score", 0)),
                 int(last["created_at"]),
                 int(last["_cursor_row_id"]),
@@ -696,40 +468,30 @@ def register(router: APIRouter, m) -> None:
         # surface the scan they just uploaded.
         summary = await loop.run_in_executor(
             None,
-            lambda: m.community_region_summary(
+            lambda: m.community_feeds.region_summary(
                 country_norm or "",
                 None,
                 exclude_account_actor_id=principal.actor_id if principal else None,
                 viewer_account_actor_id=principal.actor_id if principal else None,
             ),
         )
-        # Annotate each cell with how many second opinions it has so the carousel
-        # can show a badge, then swap the publication capability for its stable,
-        # per-scan public token. The author pseudonym rotates independently;
+        # Swap the publication capability for its stable, per-scan public token;
         # feedback uses a separate receipt.
         scan_ids = [str(r.get("scan_id")) for r in rows if r.get("scan_id")]
-        counts: dict = {}
         views: dict = {}
         if ranking_norm == "recent":
-            counts = await loop.run_in_executor(
-                None,
-                lambda: m.community_opinion_counts(
-                    scan_ids, viewer_account_actor_id=principal.actor_id if principal else None,
-                ),
-            )
             views = await loop.run_in_executor(
-                None, lambda: m.community_view_counts(scan_ids),
+                None, lambda: m.community_views.view_counts(scan_ids),
             )
         for r in rows:
             sid = str(r.get("scan_id"))
-            r.setdefault("opinion_count", counts.get(sid, 0))
             r.setdefault("view_count", views.get(sid, 0))
             r["scan_id"] = r.pop("public_id", None) or r["scan_id"]
             r.pop("_cursor_score", None)
             r.pop("_cursor_row_id", None)
             # Localize the per-row country so cards show "Poland"/"Польша", not "PL".
-            m._localize_item_country(r)
-        meta = m._country_display(country_norm)
+            community_geo.localize_item_country(r)
+        meta = community_geo.country_display(country_norm)
         # Tell the client which filter was actually served + the nearby label.
         if worldwide:
             meta["scope"] = "worldwide"
@@ -770,18 +532,17 @@ def register(router: APIRouter, m) -> None:
         """Individual community scans inside a bbox — the zoomed-in map markers.
 
         Each scan carries its ~1 km-rounded coords + the PUBLIC token (never the
-        real scan_id), so the app can pin a marker and open the existing opinion
-        sheet. Public (no opt-in to view); ``not_a_plant`` excluded; ``truncated``
+        real scan_id), so the app can pin a marker and open it. Public (no opt-in to view); ``not_a_plant`` excluded; ``truncated``
         signals an over-full bbox."""
         principal = await m._optional_account(request)
-        box = m._valid_bbox(min_lat, min_lon, max_lat, max_lon)
+        box = _valid_bbox(min_lat, min_lon, max_lat, max_lon)
         if box is None:
             raise HTTPException(status_code=422, detail="Invalid bbox")
         lo_lat, lo_lon, hi_lat, hi_lon = box
         loop = asyncio.get_running_loop()
         data = await loop.run_in_executor(
             None,
-            lambda: m.community_map_scans(
+            lambda: m.community_feeds.map_scans(
                 lo_lat, hi_lat, lo_lon, hi_lon,
                 disease=(disease or None),
                 days=days,
@@ -791,19 +552,11 @@ def register(router: APIRouter, m) -> None:
             ),
         )
         rows = data["items"]
-        # Same opinion-count annotation + public-token swap + country localization as
+        # Same public-token swap + country localization as
         # the nearby feed; here we KEEP lat/lon for the markers.
-        map_scan_ids = [str(r.get("scan_id")) for r in rows if r.get("scan_id")]
-        counts = await loop.run_in_executor(
-            None,
-            lambda: m.community_opinion_counts(
-                map_scan_ids, viewer_account_actor_id=principal.actor_id if principal else None,
-            ),
-        )
         for r in rows:
-            r["opinion_count"] = counts.get(str(r.get("scan_id")), 0)
             r["scan_id"] = r.pop("public_id", None) or r["scan_id"]
-            m._localize_item_country(r)
+            community_geo.localize_item_country(r)
         return JSONResponse(content={"items": rows, "truncated": data["truncated"]})
 
 
@@ -817,13 +570,13 @@ def register(router: APIRouter, m) -> None:
 
         Public; returns only cell centers + counts (each ≥ 3 scans), never per-scan
         coords; ``not_a_plant`` excluded."""
-        box = m._valid_bbox(min_lat, min_lon, max_lat, max_lon)
+        box = _valid_bbox(min_lat, min_lon, max_lat, max_lon)
         if box is None:
             raise HTTPException(status_code=422, detail="Invalid bbox")
         lo_lat, lo_lon, hi_lat, hi_lon = box
         data = await asyncio.get_running_loop().run_in_executor(
             None,
-            lambda: m.community_density_grid(
+            lambda: m.community_feeds.density_grid(
                 lo_lat, hi_lat, lo_lon, hi_lon,
                 disease=(disease or None),
                 days=days,
@@ -837,36 +590,39 @@ def register(router: APIRouter, m) -> None:
         request: Request,
         species: str | None = None,
         limit: int = 12,
+        country: str | None = None,
+        region: str | None = None,
+        lat: float | None = None,
+        lon: float | None = None,
     ):
-        """Community scans of one species (by scientific name), across all
-        regions — the result screen's 'other <species> in the community' strip."""
+        """Community scans of one species (by scientific name) — the species
+        page's "scans of this species near you" strip. A community member's
+        app sends its coarse location (``lat``/``lon`` + ``country``), which
+        orders the strip nearest first with a distance per row; without it
+        the strip spans all regions."""
         principal = await m._optional_account(request)
         sci = (species or "").strip()
         if not sci:
             raise HTTPException(status_code=422, detail="Invalid species")
+        geo = community_geo.client_location(country, region, lat, lon)
         loop = asyncio.get_running_loop()
         rows = await loop.run_in_executor(
             None,
-            lambda: m.community_scans_by_species(
+            lambda: m.community_feeds.scans_by_species(
                 sci,
                 limit=max(1, min(int(limit), 50)),
                 exclude_account_actor_id=principal.actor_id if principal else None,
                 viewer_account_actor_id=principal.actor_id if principal else None,
-            ),
-        )
-        species_scan_ids = [str(r.get("scan_id")) for r in rows if r.get("scan_id")]
-        counts = await loop.run_in_executor(
-            None,
-            lambda: m.community_opinion_counts(
-                species_scan_ids, viewer_account_actor_id=principal.actor_id if principal else None,
+                country=geo["country"],
+                lat=geo["lat"],
+                lon=geo["lon"],
             ),
         )
         for r in rows:
-            r["opinion_count"] = counts.get(str(r.get("scan_id")), 0)
             # Public token only — never the community publication capability.
             r["scan_id"] = r.pop("public_id", None) or r["scan_id"]
             # Localize the per-row country so cards show "Poland"/"Польша", not "PL".
-            m._localize_item_country(r)
+            community_geo.localize_item_country(r)
         return JSONResponse(content={"items": rows})
 
 
@@ -874,7 +630,7 @@ def register(router: APIRouter, m) -> None:
     async def community_scan_thumb(filename: str, request: Request):
         """Serve a community thumbnail by filename.
 
-        The corpus only ever stores filenames that ``community._save_thumbnail``
+        The corpus only ever stores filenames that ``community_scans._save_thumbnail``
         minted, but we still hard-guard against path traversal: any
         filename containing ``/`` or ``..`` is refused outright. Missing
         files return 404 instead of 500.
@@ -882,16 +638,16 @@ def register(router: APIRouter, m) -> None:
         if "/" in filename or "\\" in filename or ".." in filename:
             raise HTTPException(status_code=400, detail="Invalid thumbnail name")
         visible = await asyncio.get_running_loop().run_in_executor(
-            None, lambda: m.community_thumbnail_is_visible(filename)
+            None, lambda: m.community_scans.thumbnail_is_visible(filename)
         )
         if not visible:
             raise HTTPException(status_code=404, detail="Thumbnail not found")
-        path = m.COMMUNITY_THUMB_DIR / filename
+        path = m.community.COMMUNITY_THUMB_DIR / filename
         if not path.is_file():
             raise HTTPException(status_code=404, detail="Thumbnail not found")
         # Streams off the event loop; supports 304 revalidation. Thumbnails
-        # are always re-encoded to JPEG by community._save_thumbnail.
-        return m._cached_image_response(
+        # are always re-encoded to JPEG by community_scans._save_thumbnail.
+        return community_http.cached_image_response(
             request, path,
             media_type="image/jpeg",
             cache_control="public, max-age=300, must-revalidate",

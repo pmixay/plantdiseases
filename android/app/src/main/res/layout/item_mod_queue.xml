@@ -39,7 +39,7 @@
                 android:layout_marginTop="2dp"
                 android:ellipsize="end"
                 android:maxLines="4"
-                android:textColor="@color/on_surface_secondary"
+                android:textColor="@color/on_surface"
                 android:textSize="@dimen/text_body_sm" />
 
             <TextView

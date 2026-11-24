@@ -3,7 +3,7 @@ package com.plantdiseases.app.util
 /**
  * Single source of truth for turning a model class key (e.g.
  * ``powdery_mildew``) into a localised display label. Shared by the
- * result screen, the nearby-scans feed, and the community opinion sheet
+ * result screen, the nearby-scans strips, and the community map
  * so the same diagnosis never reads differently across screens.
  *
  * Returns ``null`` for keys we don't recognise; callers fall back to the

@@ -9,7 +9,6 @@ import com.google.android.material.bottomsheet.BottomSheetDialog
 import com.google.android.material.bottomsheet.BottomSheetDialogFragment
 import com.plantdiseases.app.data.GuideDataProvider
 import com.plantdiseases.app.databinding.SheetGuideDetailBinding
-import com.plantdiseases.app.util.LocaleHelper
 
 class GuideDetailSheet : BottomSheetDialogFragment() {
 
@@ -30,13 +29,12 @@ class GuideDetailSheet : BottomSheetDialogFragment() {
 
         val itemId = arguments?.getString(ARG_ITEM_ID) ?: return dismiss()
         val item = GuideDataProvider.getGuideItems().find { it.id == itemId } ?: return dismiss()
-        val isRu = LocaleHelper.isRussian(requireContext())
 
-        binding.tvTitle.text = if (isRu) item.titleRu else item.titleEn
+        binding.tvTitle.setText(item.title)
         binding.ivIcon.setImageResource(item.iconRes)
         binding.btnClose.setOnClickListener { dismiss() }
 
-        GuideContentRenderer.render(binding.llSections, if (isRu) item.contentRu else item.contentEn)
+        GuideContentRenderer.render(binding.llSections, getString(item.content))
         // Pin a single prominent example photo above the article cards so the
         // topic opens with "here's what it looks like" (omitted where none).
         GuideDataProvider.exampleImageUrl(item.id)?.let { url ->

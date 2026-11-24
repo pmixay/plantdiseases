@@ -141,7 +141,7 @@ def test_mock_and_weight_free_modes_are_explicitly_test_only():
     assert app_environment["ACCOUNT_INTROSPECTION_URL"].endswith(
         "/v1/internal/auth/verify"
     )
-    assert app_environment["ACCOUNT_NOTIFICATION_URL"] == ""
+    assert "ACCOUNT_NOTIFICATION_URL" not in app_environment
     assert app_environment["INTERNAL_SERVICE_TOKEN_FILE"] == (
         "/run/internal-token/internal.token"
     )

@@ -13,9 +13,7 @@ import com.plantdiseases.app.R
 import com.plantdiseases.app.databinding.ActivityWaterCalculatorBinding
 import com.plantdiseases.app.util.LocaleHelper
 import java.util.Calendar
-import kotlin.math.PI
 import kotlin.math.roundToInt
-import kotlin.math.sqrt
 
 /**
  * Water Calculator — an advisory tool that estimates how much water (ml) and
@@ -24,7 +22,7 @@ import kotlin.math.sqrt
  * is auto-detected from the launching plant's species (same genus→bucket
  * mapping the Light Meter uses) but stays user-overridable.
  *
- * Everything is a transparent heuristic ([computeWatering]); there is no
+ * Everything is a transparent heuristic ([WateringHeuristic]); there is no
  * sensor and no network. It mirrors the Light Meter's standalone-tool shape:
  * a gradient toolbar over a scrollable column of cards.
  */
@@ -32,9 +30,9 @@ class WaterCalculatorActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityWaterCalculatorBinding
 
-    private var potDiameterCm = DEFAULT_POT_CM
-    private var typeIndex = TYPE_GENERAL
-    private var lightLevel = LIGHT_MEDIUM
+    private var potDiameterCm = WateringHeuristic.DEFAULT_POT_CM
+    private var typeIndex = PlantTypes.GENERAL
+    private var lightLevel = WateringHeuristic.LIGHT_MEDIUM
     private var dormant = false
 
     companion object {
@@ -44,90 +42,6 @@ class WaterCalculatorActivity : AppCompatActivity() {
 
         /** Optional common / free-text name — auto-detection fallback. */
         const val EXTRA_COMMON_NAME = "extra_common_name"
-
-        // Plant-type indices. Deliberately identical in order to the Light
-        // Meter's SPECIES table so LightMeterActivity.pickSpeciesBucket()
-        // returns a value usable directly as an index here.
-        private const val TYPE_GENERAL = 0
-        private const val TYPE_SUCCULENT = 1
-        private const val TYPE_TROPICAL = 2
-        private const val TYPE_FERN = 3
-        private const val TYPE_VEGETABLE = 4
-
-        private const val LIGHT_LOW = 0
-        private const val LIGHT_MEDIUM = 1
-        private const val LIGHT_BRIGHT = 2
-
-        private const val MIN_POT_CM = 6
-        private const val MAX_POT_CM = 40
-        private const val DEFAULT_POT_CM = 15
-
-        // Pot height is taken as a fraction of its diameter — typical
-        // houseplant pots are a little shorter than they are wide.
-        private const val POT_HEIGHT_FACTOR = 0.7
-
-        // Fraction of the soil's volume delivered in a single thorough
-        // watering, per plant type. Succulents get a light drink; ferns the
-        // most. These are what map a pot's soil volume → millilitres.
-        private val WATER_FRACTION = doubleArrayOf(
-            0.15, // general
-            0.08, // succulent
-            0.18, // tropical
-            0.22, // fern
-            0.20, // vegetable
-        )
-
-        // Baseline days between waterings for a 15 cm pot in medium light
-        // during the growing season, per plant type.
-        private val BASE_DAYS = doubleArrayOf(
-            7.0, // general
-            14.0, // succulent
-            6.0, // tropical
-            4.0, // fern
-            3.0, // vegetable
-        )
-
-        private val LIGHT_FACTOR = doubleArrayOf(1.3, 1.0, 0.8) // low / medium / bright
-
-        /**
-         * Pure watering heuristic. Returns (millilitres per watering,
-         * interval in days). Extracted as a companion function with no Android
-         * dependencies so it is unit-testable.
-         *
-         * @param potDiameterCm pot diameter in centimetres
-         * @param typeIndex one of TYPE_* (0..4)
-         * @param lightLevel one of LIGHT_* (0 low, 1 medium, 2 bright)
-         * @param dormant true in the autumn/winter rest period
-         */
-        fun computeWatering(
-            potDiameterCm: Int,
-            typeIndex: Int,
-            lightLevel: Int,
-            dormant: Boolean,
-        ): Pair<Int, Int> {
-            val d = potDiameterCm.coerceIn(MIN_POT_CM, MAX_POT_CM).toDouble()
-            val type = typeIndex.coerceIn(TYPE_GENERAL, TYPE_VEGETABLE)
-            val light = lightLevel.coerceIn(LIGHT_LOW, LIGHT_BRIGHT)
-
-            // Soil volume of a cylinder ≈ π r² h, in cm³ (= ml).
-            val radius = d / 2.0
-            val height = d * POT_HEIGHT_FACTOR
-            val soilMl = PI * radius * radius * height
-
-            val ml = (soilMl * WATER_FRACTION[type])
-                .roundToInt()
-                .let { (it + 5) / 10 * 10 } // round to nearest 10 ml
-                .coerceIn(30, 2000)
-
-            // Bigger pots hold more water and dry slower → longer interval.
-            val sizeFactor = sqrt(d / DEFAULT_POT_CM)
-            val seasonFactor = if (dormant) 1.5 else 1.0
-            val days = (BASE_DAYS[type] * LIGHT_FACTOR[light] * seasonFactor * sizeFactor)
-                .roundToInt()
-                .coerceIn(1, 30)
-
-            return ml to days
-        }
 
         /** Northern-hemisphere default: treat Oct–Feb as the dormant rest
          *  period. The user can flip the Season chips either way. */
@@ -145,12 +59,12 @@ class WaterCalculatorActivity : AppCompatActivity() {
         // Auto-detect the plant type from the launching plant's species —
         // scientific name first, then the common/free-text name.
         val sci = intent.getStringExtra(EXTRA_SCIENTIFIC_NAME).orEmpty()
-        var pick = LightMeterActivity.pickSpeciesBucket(sci)
-        if (pick == TYPE_GENERAL) {
+        var pick = PlantTypes.fromName(sci)
+        if (pick == PlantTypes.GENERAL) {
             val common = intent.getStringExtra(EXTRA_COMMON_NAME).orEmpty()
-            if (common.isNotBlank()) pick = LightMeterActivity.pickSpeciesBucket(common)
+            if (common.isNotBlank()) pick = PlantTypes.fromName(common)
         }
-        typeIndex = pick.coerceIn(TYPE_GENERAL, TYPE_VEGETABLE)
+        typeIndex = pick.coerceIn(PlantTypes.GENERAL, PlantTypes.VEGETABLE)
         dormant = defaultDormant(Calendar.getInstance().get(Calendar.MONTH))
 
         WindowCompat.setDecorFitsSystemWindows(window, false)
@@ -183,8 +97,8 @@ class WaterCalculatorActivity : AppCompatActivity() {
 
     private fun setupPotSlider() {
         binding.potSlider.apply {
-            valueFrom = MIN_POT_CM.toFloat()
-            valueTo = MAX_POT_CM.toFloat()
+            valueFrom = WateringHeuristic.MIN_POT_CM.toFloat()
+            valueTo = WateringHeuristic.MAX_POT_CM.toFloat()
             stepSize = 1f
             value = potDiameterCm.toFloat()
             addOnChangeListener { _, v, _ ->
@@ -267,7 +181,7 @@ class WaterCalculatorActivity : AppCompatActivity() {
         // Season group: index 0 = growing, 1 = dormant.
         syncChecked(binding.seasonChips, if (dormant) 1 else 0)
 
-        val (ml, days) = computeWatering(potDiameterCm, typeIndex, lightLevel, dormant)
+        val (ml, days) = WateringHeuristic.compute(potDiameterCm, typeIndex, lightLevel, dormant)
         binding.waterAmount.text = ml.toString()
         binding.waterEvery.text = resources.getQuantityString(
             R.plurals.water_calc_every_days,
@@ -284,8 +198,8 @@ class WaterCalculatorActivity : AppCompatActivity() {
     }
 
     private fun tipForType(type: Int): Int = when (type) {
-        TYPE_SUCCULENT -> R.string.water_calc_tip_succulent
-        TYPE_FERN -> R.string.water_calc_tip_fern
+        PlantTypes.SUCCULENT -> R.string.water_calc_tip_succulent
+        PlantTypes.FERN -> R.string.water_calc_tip_fern
         else -> R.string.water_calc_tip_general
     }
 

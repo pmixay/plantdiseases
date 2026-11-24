@@ -14,7 +14,6 @@ import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.bottomsheet.BottomSheetDialog
 import com.google.android.material.chip.Chip
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
-import com.plantdiseases.app.MainActivity
 import com.plantdiseases.app.R
 import com.plantdiseases.app.data.model.ForumPost
 import com.plantdiseases.app.data.model.ForumSpace
@@ -24,8 +23,9 @@ import com.plantdiseases.app.data.repository.ForumNotificationSync
 import com.plantdiseases.app.data.repository.ForumRepository
 import com.plantdiseases.app.databinding.FragmentCommunityBinding
 import com.plantdiseases.app.databinding.SheetForumFiltersBinding
-import com.plantdiseases.app.ui.account.AccountActivity
+import com.plantdiseases.app.ui.account.QuickSignIn
 import com.plantdiseases.app.ui.community.CommunityMapActivity
+import com.plantdiseases.app.util.applyStatusBarTopInset
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
@@ -53,6 +53,9 @@ class CommunityFragment : Fragment() {
     private var _binding: FragmentCommunityBinding? = null
     private val binding get() = _binding!!
 
+    // Guests sign in from a sheet over the feed, then carry on here.
+    private val quickSignIn = QuickSignIn.of(this) { onSignedIn() }
+
     private lateinit var adapter: ForumPostAdapter
     private var tab = TAB_ALL
     private var sort = SORT_HOT
@@ -70,12 +73,16 @@ class CommunityFragment : Fragment() {
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
+        binding.root.applyStatusBarTopInset()
         adapter = ForumPostAdapter(
             mediaUrl = forum::mediaUrl,
             avatarUrl = forum::avatarUrl,
-            onOpen = { post -> startActivity(PostDetailActivity.intent(requireContext(), post.id)) },
+            onOpen = ::openPost,
             onLike = ::toggleLike,
+            // Answering is taking part: a guest is offered sign-in first.
+            onAnswers = { post -> if (requireSignIn()) openPost(post) },
         )
+        adapter.guest = !forum.isSignedIn
         val layoutManager = LinearLayoutManager(requireContext())
         binding.rvPosts.layoutManager = layoutManager
         binding.rvPosts.adapter = adapter
@@ -99,6 +106,7 @@ class CommunityFragment : Fragment() {
 
     override fun onResume() {
         super.onResume()
+        if (_binding != null) adapter.guest = !forum.isSignedIn
         refreshActivity()
         refreshStaff()
         offerProfilePhoto()
@@ -315,13 +323,12 @@ class CommunityFragment : Fragment() {
 
     // ── activity, staff, menu ───────────────────────────────────────────
 
-    /** Pulls Community events into the notification centre (Home's bell) and
-     *  updates the Главная tab's dot; a new moderator decision pops up here. */
+    /** Pulls Community events into the notification centre (Home's bell and
+     *  the Главная tab's dot follow it); a new moderator decision pops up here. */
     private fun refreshActivity() {
         if (!forum.isSignedIn) return
         viewLifecycleOwner.lifecycleScope.launch {
             forumSync.sync()
-            (activity as? MainActivity)?.refreshHomeBadge()
             showNewDecision()
         }
     }
@@ -388,11 +395,18 @@ class CommunityFragment : Fragment() {
         ForumMenu(binding.btnMore).show(items)
     }
 
-    private fun requireSignIn(): Boolean {
-        if (forum.isSignedIn) return true
-        toast(getString(R.string.community_sign_in_required))
-        startActivity(AccountActivity.intent(requireContext()))
-        return false
+    private fun requireSignIn(): Boolean = quickSignIn.require()
+
+    private fun openPost(post: ForumPost) {
+        startActivity(PostDetailActivity.intent(requireContext(), post.id))
+    }
+
+    /** Signed in from the sheet: likes and answers unlock, personal data loads. */
+    private fun onSignedIn() {
+        if (_binding == null) return
+        adapter.guest = false
+        refreshStaff()
+        reload()
     }
 
     private fun toast(message: String) {

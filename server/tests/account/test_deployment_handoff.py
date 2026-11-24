@@ -173,7 +173,7 @@ def test_german_staging_uses_real_providers_and_model_with_isolated_state():
     )
     assert account["RUSTORE_ALLOW_SANDBOX"] == "${RUSTORE_ALLOW_SANDBOX:-false}"
     assert account["ENTITLEMENT_QUOTA_POLICY_VERSION"] == (
-        "${ENTITLEMENT_QUOTA_POLICY_VERSION:-launch-2026-11-v1}"
+        "${ENTITLEMENT_QUOTA_POLICY_VERSION:-launch-2026-11-v2}"
     )
     assert "beta_account_runtime" in account["ACCOUNT_DATABASE_URL"]
     assert "beta_account_migrator" in services["beta-account-migrate"]["environment"][
@@ -193,8 +193,6 @@ def test_german_staging_uses_real_providers_and_model_with_isolated_state():
     assert app["TELEMETRY_ENABLED"] == "false"
     assert app["PLANTNET_API_KEY"] == ""
     assert app["OPENROUTER_API_KEY"] == ""
-    assert app["FCM_CREDENTIALS_FILE"] == ""
-    assert app["ACCOUNT_NOTIFICATION_URL"] == ""
     assert app["INTERNAL_SERVICE_TOKEN_FILE"] == (
         "/run/internal-token/internal.token"
     )
@@ -490,7 +488,7 @@ def test_privacy_policy_matches_account_release():
         "RuStore",
     ):
         assert not_live not in privacy, f"policy still describes {not_live}"
-    assert "Publishing a scan or submitting an opinion requires sign-in" in privacy
+    assert "Publishing a scan or a forum post requires sign-in" in privacy
     assert "It currently has no automatic expiry" not in privacy
     assert "It is kept for 30 days after deletion and then erased" in privacy
     assert "Do not post identifiers, tokens or account details in a public issue" in privacy

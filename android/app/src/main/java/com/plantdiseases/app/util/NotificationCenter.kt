@@ -11,7 +11,6 @@ import com.plantdiseases.app.di.appEntryPoint
  * inside the app.
  *
  * Call this from every producer of a user-facing notification:
- *   • [com.plantdiseases.app.push.OpinionNotifier] — type "community"
  *   • [com.plantdiseases.app.worker.PlantReminderWorker] — type "reminder"
  *   • [com.plantdiseases.app.ui.garden.detail.DetailExtraCardsController]
  *     (progression alert) — type "garden"

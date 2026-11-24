@@ -11,7 +11,7 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:minHeight="?attr/actionBarSize"
-        android:background="@drawable/bg_toolbar_gradient"
+        android:background="@color/background"
         android:gravity="center_vertical"
         android:orientation="horizontal"
         android:paddingHorizontal="@dimen/space_sm">
@@ -176,7 +176,7 @@
             android:gravity="center"
             android:padding="@dimen/space_xl"
             android:text="@string/forum_search_prompt"
-            android:textColor="@color/on_surface_secondary" />
+            android:textColor="@color/on_surface" />
 
         <com.google.android.material.progressindicator.CircularProgressIndicator
             android:id="@+id/progress"

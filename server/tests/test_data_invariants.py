@@ -1162,6 +1162,22 @@ def test_aqua_sidecar_declares_preprocessing_and_logit_semantics():
     assert "'output_semantics': 'logits'" in aqua.group(0)
 
 
+def test_aqua_sidecar_carries_a_maxlogit_ood_floor_fit_on_served_preprocessing():
+    """§5 fits Aqua's OOD floor like §6's: plant-only scope, 5th percentile of
+    temperature_cal plants, the app's resize + centre crop, off when it does
+    not separate from not_a_plant; the sidecar carries it as ``ood``."""
+    src = _notebook_source()
+    assert "AQUA_OOD_TARGET_PLANT_FPR = 0.05" in src
+    assert "_aq_scope = 'plant_only' if _aq_nap is not None else 'all_classes'" in src
+    assert "T.Resize(int(STUDENT_IMG * EVAL_RESIZE_RATIO)), T.CenterCrop(STUDENT_IMG)" in src
+    assert "_aqua_served_logits(TEMP_CAL)" in src
+    assert "elif _aq_sep < 0:" in src
+    aqua = re.search(
+        r"\(AQUA_DIR / 'classes\.json'\).*?(?=print\(f'Aqua TFLite written)",
+        src, re.DOTALL)
+    assert aqua and "'ood': AQUA_OOD" in aqua.group(0)
+
+
 def test_aqua_export_requires_one_float32_graph_and_never_substitutes_quantized():
     src = _notebook_source()
     assert "_float32_emitted = [p for p in _emitted if 'float32' in p.name.lower()]" in src

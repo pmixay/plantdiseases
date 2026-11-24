@@ -21,9 +21,10 @@ keep the old spelling — don't rename `classifier_name: "plantvision"`,
 `plantvision_*.tar` / `plantvision_export_*` names or the `plantvision-aqua-bundle-v1`
 digest tag.
 
-**Privacy policy:** `android/app/src/main/assets/privacy_policy.html` (shown by
-`ui/legal/PrivacyPolicyActivity`) is the canonical data-disclosure surface: it must work
-offline and describe the build the reader is running. The hosted copy is root
+**Privacy policy:** `android/app/src/main/assets/privacy_policy.html` (parsed by
+`ui/legal/PrivacyPolicyParser` and rendered as native views by `PrivacyPolicyActivity`, no
+WebView) is the canonical data-disclosure surface: it must work offline and describe the
+build the reader is running. Keep its `h1`/`h2`/`p`/`li` + `data-ru`/`data-en` structure. The hosted copy is root
 `privacy.html`; its structured markers (contact, deleted-actor disclosure) must match
 `deploy/account-beta-test/release-policy-gates.json` (checked by
 `server/tests/account/test_deployment_handoff.py`) — change them together.
@@ -57,6 +58,7 @@ true across releases.
 ```bash
 pip install -r requirements-dev.txt
 ruff check .
+mypy --config-file server/pyproject.toml   # type check; run from the REPO ROOT, not server/ (config in pyproject.toml)
 pytest tests -q -n auto                        # full suite in parallel (pytest-xdist); no model weights needed
 pytest tests/test_endpoints.py::test_name -q   # single test
 ./start.sh                                     # venv + uvicorn; refuses to start without a bundle
@@ -70,8 +72,16 @@ pytest tests/test_endpoints.py::test_name -q   # single test
   takes `community_store` / `community_http_store` — never `importlib.reload(community)`,
   which re-creates classes `main` already holds. New pipeline behaviour means keeping
   `FakePipeline`'s response shape in sync, or patching `main.pipeline`.
+- Both test clients check every 2xx JSON response from a route the app calls
+  against the app's Kotlin DTOs (`tests/app_contract.py`, `ROUTES`): a dropped
+  required field or a changed type fails the test that produced it. A new app
+  endpoint gets a `ROUTES` entry; the DTOs are read from `android/` at test time.
 - Run as a flat package from `server/` (`uvicorn main:app`); `main.py` resolves imports
   both flat and as `server.*` via try/except.
+- mypy checks the `server.*` spelling of every module. A new top-level module goes
+  into two lists in `server/pyproject.toml`'s `[tool.mypy]` overrides: the flat
+  fallback names (`ignore_missing_imports`) and, if it has the try/except import
+  fallback, the `no-redef` list. Its `from .x import` lines need no `type: ignore`.
 
 ### Account server (`account-server/`, tests live in `server/tests/account/`)
 ```bash
@@ -96,7 +106,7 @@ cd server && pytest tests/account -q          # account tests; also part of the 
 ```
 - `assembleRelease` is CI-only for agents. The CI android job signs the release and
   APK with the permanent key from repository secrets, checks the certificate
-  and uploads them as the `app-release-apk` artifact (`DEPLOYMENT.md` §8).
+  and uploads the APK unzipped as the `app-release.apk` artifact (`DEPLOYMENT.md` §8).
 - Every build targets the production server (URLs fixed in `app/build.gradle.kts`);
   there is no staging variant. Only a local mock-stack build overrides them, as above.
   `connectedDebugAndroidTest` needs a device and CI never runs it.
@@ -158,11 +168,14 @@ Safety gates (the reason for the architecture):
 pipeline instance. Preserve: an unknown family string falls back to the default; an
 unavailable family answers HTTP 200 `available:false`, not an error. Details: `README.md`.
 
-**Server layout:** `main.py` is the HTTP layer (app, middleware, shared state, helpers) and
-wires the flat modules beside it (`ls server/`). The route handlers live in `routes_*.py`;
-each `register(router, m)` gets the `main` module and must reach anything defined in or
-imported by `main` as `m.name` at call time — never `from main import …` — because the
-tests patch names on `main`. That is also why `main.py` is exempt from F401. Privacy-sensitive: `training_store.py` and `telemetry.py` are
+**Server layout:** `main.py` is the HTTP layer (app, middleware, admission, limiter and quota
+state, metrics, lifespan) and wires the flat modules beside it (`ls server/`). The route
+handlers live in `routes_*.py`, each with its own request models and helpers; each
+`register(router, m)` gets the `main` module and reaches `main`'s state as `m.name` and other
+modules as `m.module.name` at call time — never `from main import …` — so a test's patch is
+seen. Tests patch the module that owns a name (`community`, `ai_services`, `routes_forum`, …);
+code moved out of `main` that needs its state takes `m` as its first argument (`analysis.py`).
+Shared route dependencies live in `deps.py`. Privacy-sensitive: `training_store.py` and `telemetry.py` are
 consent-gated and de-identified (no account, actor, device or IP data; no free text).
 `account_*.py` are fail-closed clients to the account service. `beta_runtime.py` /
 `synthetic_pipeline.py` are a weight-free pipeline for local/staging only — never a
@@ -182,7 +195,9 @@ the app or server may mention it. The app
 API and Community only see an Ed25519 access token (random community actor + nickname),
 verify it locally against the service's JWKS, then confirm the session is still current
 with the account service. Diagnosis and Community reading need no account; Community
-writes and metered features do. Entitlements/quotas are server-authoritative: the app never
+writes and metered features do. A guest's tap on a community action opens
+`ui/account/QuickSignIn` (a sheet that signs in with Yandex ID in place), never a toast
+plus the account screen; report and block are hidden from guests. Entitlements/quotas are server-authoritative: the app never
 trusts a billing result, and the inference service asks the account service to consume a
 unit before cost-bearing work. Deletion tombstones public content via an outbox before the private account rows are erased.
 
@@ -213,6 +228,20 @@ detail screen only.
 - **Optional integrations degrade gracefully, never crash.** Missing `PLANTNET_API_KEY` /
   `OPENROUTER_API_KEY` / FCM creds → endpoints return `available:false` and the app shows a
   specific "not configured" UX. Preserve this.
+- **Typography: no grey text, plain punctuation.** Text uses `@color/on_surface`; the muted
+  ink `on_surface_secondary` (also `colorOnSurfaceVariant`) is for icon tints only, never
+  text; don't fade text with alpha to make it secondary. The one gray is `guest_locked`,
+  the disabled ink of a guest's locked community actions (like/answer icons and counts,
+  locked inputs). Captions are 12sp minimum and bold. UI text
+  (strings, layouts, Kotlin literals, server content) has no middle dot, em dash or en
+  dash: use `-`, `,` or `:`. `DesignSystemRulesTest` (app) and `tests/test_text_style.py`
+  (server) enforce this; LLM and Wikipedia text is normalised by `server/text_style.py`.
+- **Plain page headers, no hero blocks.** Every screen's header follows the Home and Community
+  tabs: page background, a 20sp black title in page ink (`TextAppearance.App.Toolbar` for
+  toolbars, whose colour is `toolbar_title` = page ink), actions beside it, supporting text
+  below. No green gradient bands or cards behind headers; `DesignSystemRulesTest` fails if a
+  hero drawable or colour comes back. Light pages use dark status-bar icons; screens that draw
+  a photo or the camera under the status bar switch to light icons themselves.
 - **Bilingual everywhere.** New diagnosis content, error cards and UI strings need EN and
   RU (server: `diseases_data.py`; app: `strings.xml` + `values-ru`).
 - **Lint is zero-tolerance.** Server: ruff (`server/pyproject.toml`). Android: ktlint +
@@ -220,11 +249,13 @@ detail screen only.
   (`android/config/detekt/baseline.xml`, `android/app/config/ktlint/baseline.xml`) — never
   baseline a new violation. Android Lint is deliberately not the gate; ktlint relaxations
   live in `android/.editorconfig`.
-- **Dual-annotated DTOs.** kotlinx.serialization is the wire format, but Gson is still live
-  (Room field JSON, `util/ResponseCache.kt`, intent payloads). DTOs in `data/model/Models.kt`
-  carry both `@SerialName` and `@SerializedName`, and `proguard-rules.pro` keeps both —
-  drop either and R8 builds break silently. `data/remote/ApiService.kt` has no Retrofit
-  interface: it is `RetryInterceptor` + the Ktor `PlantApiClient`.
+- **One JSON library: kotlinx.serialization.** The Ktor client decodes the wire;
+  `util/AppJson` handles Room field JSON and `util/ResponseCache` (lenient, so rows
+  and cache files from the Gson-era app still decode). `@SerialName` is the JSON
+  name for both, so renaming one changes stored data too. Cache reads are typed
+  (`ResponseCache.get<T>(key)`), with no reflection for R8 to break.
+  `data/remote/ApiService.kt` has no Retrofit interface: it is `RetryInterceptor`
+  + the Ktor `PlantApiClient`.
 - **No `HiltWorkerFactory`, on purpose** (`hilt-work` would double-initialise WorkManager
   against `androidx.startup`). Workers get DI via `di/AppEntryPoint.kt`.
 - **Room `exportSchema = false`.** Every migration is hand-written and registered

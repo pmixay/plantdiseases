@@ -9,7 +9,10 @@ import android.os.Bundle
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.isVisible
+import androidx.core.view.updatePadding
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
@@ -69,6 +72,12 @@ class ProActivity : AppCompatActivity() {
         }
         binding = ActivityProBinding.inflate(layoutInflater)
         setContentView(binding.root)
+        ViewCompat.setOnApplyWindowInsetsListener(binding.root) { view, insets ->
+            val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+            view.updatePadding(top = bars.top)
+            binding.proScroll.updatePadding(bottom = bars.bottom)
+            insets
+        }
         binding.toolbar.setNavigationOnClickListener { finish() }
         binding.btnSignIn.setOnClickListener { startActivity(AccountActivity.intent(this)) }
         binding.btnMonthly.setOnClickListener {

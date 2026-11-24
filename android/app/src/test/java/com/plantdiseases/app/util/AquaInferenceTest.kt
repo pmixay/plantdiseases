@@ -54,6 +54,35 @@ class AquaInferenceTest {
     }
 
     @Test
+    fun out_of_distribution_frame_is_an_ood_abstention_with_raw_diagnostics() {
+        val probs = CANONICAL_ANALYSIS_CLASS_KEYS.associateWith { 0f }.toMutableMap().apply {
+            this["leaf_spot"] = 0.6f
+            this["healthy"] = 0.4f
+        }
+        val r = AquaInference.buildResponse(probs, outOfDistribution = true)
+        assertThat(r.abstained).isTrue()
+        assertThat(r.effectiveAbstentionReason()).isEqualTo(AnalysisAbstentionReasons.OOD)
+        assertThat(r.isHealthy).isFalse()
+        assertThat(r.diseaseName).isEqualTo("Unidentified condition")
+        assertThat(r.treatment).isEmpty()
+        assertThat(r.warnings).containsExactly("offline_aqua", "aqua_ood_gated")
+        // Like the server's OOD rejection: the raw argmax stays as diagnostics.
+        assertThat(r.classKey).isEqualTo("leaf_spot")
+        assertThat(r.diagnosticContractViolation()).isNull()
+    }
+
+    @Test
+    fun a_natural_not_a_plant_keeps_its_own_rejection_over_the_ood_gate() {
+        val probs = CANONICAL_ANALYSIS_CLASS_KEYS.associateWith { 0f }.toMutableMap().apply {
+            this["not_a_plant"] = 0.9f
+            this["healthy"] = 0.1f
+        }
+        val r = AquaInference.buildResponse(probs, outOfDistribution = true)
+        assertThat(r.effectiveAbstentionReason()).isEqualTo(AnalysisAbstentionReasons.NOT_A_PLANT)
+        assertThat(r.warnings).doesNotContain("aqua_ood_gated")
+    }
+
+    @Test
     fun buildResponse_fills_bilingual_card_content_from_local_table() {
         val r = AquaInference.buildResponse(mapOf("powdery_mildew" to 0.8f, "healthy" to 0.2f))
         // Offline scans must not render blank: description / treatment /

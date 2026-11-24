@@ -35,7 +35,9 @@ import com.plantdiseases.app.billing.ProUi
 import com.plantdiseases.app.data.model.CarePlanRequest
 import com.plantdiseases.app.data.model.CarePlanResponse
 import com.plantdiseases.app.data.model.SpeciesDiseaseItem
-import com.plantdiseases.app.data.repository.ScanRepository
+import com.plantdiseases.app.data.repository.AssistantRepository
+import com.plantdiseases.app.data.repository.CommunityScanRepository
+import com.plantdiseases.app.data.repository.SpeciesRepository
 import com.plantdiseases.app.databinding.ActivitySpeciesDetailBinding
 import com.plantdiseases.app.ui.common.CarePlanCardView
 import com.plantdiseases.app.ui.common.ExpandableSectionAnimator
@@ -46,16 +48,17 @@ import com.plantdiseases.app.ui.common.cardHeading
 import com.plantdiseases.app.ui.common.factRow
 import com.plantdiseases.app.ui.common.rowDivider
 import com.plantdiseases.app.ui.common.sectionCard
+import com.plantdiseases.app.ui.community.CommunityJoin
+import com.plantdiseases.app.ui.community.lockNearbyPreview
+import com.plantdiseases.app.ui.community.openScanPhoto
 import com.plantdiseases.app.ui.guide.GuideDetailActivity
 import com.plantdiseases.app.ui.onboarding.guidance.OnboardingAnchorKey
 import com.plantdiseases.app.ui.onboarding.guidance.OnboardingContext
 import com.plantdiseases.app.ui.onboarding.guidance.OnboardingCoordinator
-import com.plantdiseases.app.ui.result.CommunityOpinionSheet
 import com.plantdiseases.app.ui.result.SimilarScansAdapter
 import com.plantdiseases.app.ui.pro.ProActivity
 import com.plantdiseases.app.ui.widget.WorldMapView
 import com.plantdiseases.app.util.ConnectivityObserver
-import com.plantdiseases.app.util.CommunityPrefs
 import com.plantdiseases.app.util.DiseaseCatalog
 import com.plantdiseases.app.util.DiseaseLabels
 import com.plantdiseases.app.util.FertiliserGuide
@@ -65,6 +68,7 @@ import com.plantdiseases.app.util.PlantCategory
 import com.plantdiseases.app.util.PlantCategoryClassifier
 import com.plantdiseases.app.util.PlantFacts
 import com.plantdiseases.app.util.PlantTips
+import com.plantdiseases.app.util.RegionResolver
 import com.plantdiseases.app.util.onConnectivityChanged
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
@@ -86,7 +90,13 @@ class SpeciesDetailActivity : AppCompatActivity() {
     private lateinit var binding: ActivitySpeciesDetailBinding
 
     @Inject
-    lateinit var scanRepository: ScanRepository
+    lateinit var speciesRepository: SpeciesRepository
+
+    @Inject
+    lateinit var communityScans: CommunityScanRepository
+
+    @Inject
+    lateinit var assistantRepository: AssistantRepository
 
     @Inject
     lateinit var connectivity: ConnectivityObserver
@@ -120,6 +130,10 @@ class SpeciesDetailActivity : AppCompatActivity() {
 
     private val plantCategory: PlantCategory
         get() = PlantCategoryClassifier.classify(scientificName, commonName)
+
+    // Nearby scans are members-only; registers a permission launcher, so it
+    // is built with the activity.
+    private val communityJoin = CommunityJoin(this)
 
     override fun attachBaseContext(newBase: Context) {
         super.attachBaseContext(LocaleHelper.applyLocale(newBase))
@@ -531,56 +545,63 @@ class SpeciesDetailActivity : AppCompatActivity() {
     }
 
     /**
-     * "Other scans of this species" — moved here from the scan result screen
-     * so every species surface lives on this page. Best-effort: the strip
-     * stays hidden when the community has nothing for this species.
+     * "Scans of this species near you". Community members get them nearest
+     * first (their coarse location goes with the request). Everyone else sees
+     * the join button over a blurred preview of the same strip, like the
+     * result screen's nearby scans; joining reloads it with location. The
+     * section hides only when the request fails.
      */
     private fun loadCommunityScans() {
-        if (!CommunityPrefs.uploadsEnabled(this)) {
-            binding.tvSpeciesCommunityLabel.visibility = View.GONE
-            binding.rvSpeciesCommunity.visibility = View.GONE
-            return
-        }
         val adapter = SimilarScansAdapter(
             displayName = { key -> DiseaseLabels.displayName(key, isRu) ?: key },
-            // Compact preview cells; tapping opens the sheet — commenting is
-            // unlocked here too (Community v2), guarded below for scans that
-            // turn out to be this install's own.
+            // Compact preview cells; a tap expands the scan photo.
             preview = true,
-            onClick = { item ->
-                if (item.scanId.isNotBlank()) {
-                    lifecycleScope.launch { scanRepository.recordCommunityView(item.scanId) }
-                }
-                val label = DiseaseLabels.displayName(item.disease, isRu) ?: item.disease
-                lifecycleScope.launch {
-                    val mine = scanRepository.localClientScanIds()
-                    if (item.scanId in mine) {
-                        startActivity(
-                            com.plantdiseases.app.ui.community.MyScanRepliesActivity
-                                .intentFor(this@SpeciesDetailActivity, item.scanId),
-                        )
-                    } else {
-                        // localClientScanIds() suspends on Dispatchers.IO, so we
-                        // always resume a main-loop turn later. lifecycleScope
-                        // only cancels at DESTROYED, so a Home press mid-read
-                        // would land here after onSaveInstanceState and blow up
-                        // inside show()'s commit().
-                        if (supportFragmentManager.isStateSaved) return@launch
-                        CommunityOpinionSheet.show(supportFragmentManager, item, label)
-                    }
+            onClick = { item, thumb ->
+                if (openScanPhoto(this, item, thumb) && item.scanId.isNotBlank()) {
+                    lifecycleScope.launch { communityScans.recordCommunityView(item.scanId) }
                 }
             },
         )
         binding.rvSpeciesCommunity.layoutManager =
             LinearLayoutManager(this, LinearLayoutManager.HORIZONTAL, false)
         binding.rvSpeciesCommunity.adapter = adapter
+        val join = View.OnClickListener {
+            communityJoin.ensureMember { joined -> if (joined) fetchCommunityScans(adapter) }
+        }
+        binding.btnSpeciesCommunityJoin.setOnClickListener(join)
+        binding.speciesCommunityLockOverlay.setOnClickListener(join)
+        fetchCommunityScans(adapter)
+    }
+
+    private fun fetchCommunityScans(adapter: SimilarScansAdapter) {
+        val member = CommunityJoin.isMember(this)
+        lockNearbyPreview(
+            strip = binding.rvSpeciesCommunity,
+            overlay = binding.speciesCommunityLockOverlay,
+            joinButton = binding.btnSpeciesCommunityJoin,
+            locked = !member,
+        )
         lifecycleScope.launch {
-            scanRepository.communityScansBySpecies(scientificName).onSuccess { resp ->
-                if (resp.items.isEmpty()) return@onSuccess
-                adapter.submit(resp.items)
-                binding.tvSpeciesCommunityLabel.visibility = View.VISIBLE
-                binding.rvSpeciesCommunity.visibility = View.VISIBLE
+            val region = if (member) {
+                runCatching { RegionResolver.resolveRegion(this@SpeciesDetailActivity) }.getOrNull()
+            } else {
+                null
             }
+            communityScans.communityScansBySpecies(scientificName, region = region)
+                .onSuccess { resp ->
+                    adapter.submit(resp.items)
+                    binding.tvSpeciesCommunityLabel.visibility = View.VISIBLE
+                    binding.tvSpeciesCommunityEmpty.visibility =
+                        if (resp.items.isEmpty()) View.VISIBLE else View.GONE
+                    binding.speciesCommunityStrip.visibility =
+                        if (resp.items.isEmpty()) View.GONE else View.VISIBLE
+                }
+                .onFailure {
+                    binding.tvSpeciesCommunityLabel.visibility = View.GONE
+                    binding.btnSpeciesCommunityJoin.visibility = View.GONE
+                    binding.tvSpeciesCommunityEmpty.visibility = View.GONE
+                    binding.speciesCommunityStrip.visibility = View.GONE
+                }
         }
     }
 
@@ -590,7 +611,7 @@ class SpeciesDetailActivity : AppCompatActivity() {
         lifecycleScope.launch {
             // Cached per (name, locale) — reopening the same species serves
             // the stored Wikipedia blurb/photo instead of re-fetching.
-            val info = scanRepository.getSpeciesInfo(scientificName, locale).getOrNull()
+            val info = speciesRepository.getSpeciesInfo(scientificName, locale).getOrNull()
             binding.progress.visibility = View.GONE
             hasSpeciesContent = info?.available == true
             applySavedDataNote()
@@ -602,6 +623,7 @@ class SpeciesDetailActivity : AppCompatActivity() {
                 info.imageUrl?.let { url ->
                     Glide.with(this@SpeciesDetailActivity)
                         .load(com.plantdiseases.app.util.ServerConfig.photoUrl(url))
+                        .timeout(com.plantdiseases.app.util.ServerConfig.PHOTO_TIMEOUT_MS)
                         .placeholder(R.drawable.ic_plant_placeholder)
                         .diskCacheStrategy(DiskCacheStrategy.ALL)
                         .into(binding.ivSpeciesHero)
@@ -697,8 +719,13 @@ class SpeciesDetailActivity : AppCompatActivity() {
         val speciesDisplay = commonName ?: scientificName
         careCard.showLoading(speciesDisplay)
         lifecycleScope.launch {
-            val plan = scanRepository.fetchCarePlan(
-                CarePlanRequest(disease = "healthy", species = scientificName, locale = locale),
+            val plan = assistantRepository.fetchCarePlan(
+                CarePlanRequest(
+                    disease = "healthy",
+                    species = scientificName,
+                    locale = locale,
+                    purpose = CarePlanRequest.PURPOSE_SPECIES,
+                ),
             ).getOrNull()
             if (plan != null) {
                 careCard.bind(
@@ -791,6 +818,7 @@ class SpeciesDetailActivity : AppCompatActivity() {
             }
             Glide.with(this)
                 .load(com.plantdiseases.app.util.ServerConfig.photoUrl(url))
+                .timeout(com.plantdiseases.app.util.ServerConfig.PHOTO_TIMEOUT_MS)
                 .placeholder(R.drawable.ic_plant_placeholder)
                 .diskCacheStrategy(DiskCacheStrategy.ALL)
                 // Decode straight to the 120dp thumbnail size instead of the
@@ -832,7 +860,7 @@ class SpeciesDetailActivity : AppCompatActivity() {
             // Peek the client cache first: a previously-opened species renders
             // instantly with NO loading flash, so reopening clearly feels cached
             // rather than re-fetched. Only a genuine miss shows the loading state.
-            val cached = scanRepository.cachedSpeciesDiseases(scientificName, locale)
+            val cached = speciesRepository.cachedSpeciesDiseases(scientificName, locale)
             if (cached != null) {
                 // Render straight from the client cache — either a real AI list
                 // or a cached "unavailable" marker that renders the bundled
@@ -851,7 +879,7 @@ class SpeciesDetailActivity : AppCompatActivity() {
             // time) AI lookup reads as "finding problems…", not an empty gap.
             binding.tvDiseasesTitle.visibility = View.VISIBLE
             binding.pbDiseases.visibility = View.VISIBLE
-            val resp = scanRepository
+            val resp = speciesRepository
                 .fetchSpeciesDiseases(scientificName, commonName, locale)
                 .getOrNull()
             val aiItems = if (resp?.available == true) {
@@ -874,7 +902,7 @@ class SpeciesDetailActivity : AppCompatActivity() {
     private fun loadSpeciesProfile() {
         showSpeciesProfileLoading()
         lifecycleScope.launch {
-            val profile = scanRepository
+            val profile = speciesRepository
                 .fetchSpeciesProfile(scientificName, commonName, locale)
                 .getOrNull()
             if (profile?.available != true) {
@@ -996,7 +1024,7 @@ class SpeciesDetailActivity : AppCompatActivity() {
                 // exact guide-title match is the same words, so it cannot be
                 // a near miss; the key stays as the fallback for names the
                 // guide words differently, and for other languages.
-                val guide = DiseaseCatalog.guideItemForName(item.name)
+                val guide = DiseaseCatalog.guideItemForName(this, item.name)
                     ?: item.docKey?.let { DiseaseCatalog.guideItemForClass(it) }
                 addDiseaseRow(
                     name = item.name.orEmpty(),
@@ -1008,8 +1036,8 @@ class SpeciesDetailActivity : AppCompatActivity() {
         } else {
             DiseaseCatalog.diseaseGuideItems().forEach { g ->
                 addDiseaseRow(
-                    name = if (isRu) g.titleRu else g.titleEn,
-                    note = if (isRu) g.descriptionRu else g.descriptionEn,
+                    name = getString(g.title),
+                    note = getString(g.description),
                     iconRes = g.iconRes,
                     guideId = g.id,
                 )

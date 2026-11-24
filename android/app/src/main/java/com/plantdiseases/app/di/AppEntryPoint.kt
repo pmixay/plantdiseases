@@ -2,10 +2,13 @@ package com.plantdiseases.app.di
 
 import android.content.Context
 import com.plantdiseases.app.auth.AuthRepository
+import com.plantdiseases.app.auth.InstallationIdProvider
 import com.plantdiseases.app.auth.LogoutRetryScheduler
+import com.plantdiseases.app.data.repository.ForumNotificationSync
 import com.plantdiseases.app.data.repository.NotificationRepository
 import com.plantdiseases.app.data.repository.PlantRepository
-import com.plantdiseases.app.data.repository.ScanRepository
+import com.plantdiseases.app.data.repository.SpeciesRepository
+import com.plantdiseases.app.util.AccountDisclosurePrefs
 import dagger.hilt.EntryPoint
 import dagger.hilt.InstallIn
 import dagger.hilt.android.EntryPointAccessors
@@ -14,10 +17,10 @@ import dagger.hilt.components.SingletonComponent
 /**
  * Manual DI escape hatch for classes Hilt can't (or shouldn't) field-inject
  * via `@AndroidEntryPoint`:
- *   * `CoroutineWorker` subclasses (`OpinionCheckWorker`, `PlantReminderWorker`)
+ *   * `CoroutineWorker` subclasses (`ForumAnswerCheckWorker`, `PlantReminderWorker`)
  *     — see the note on `androidx.hilt:hilt-work` below.
  *   * the plain Kotlin `object` singletons in `push/`/`util/` that aren't
- *     Android framework components at all (`OpinionNotifier`, `PushManager`,
+ *     Android framework components at all (`ForumAnswerNotifier`, `PushManager`,
  *     `NotificationCenter`).
  *   * [com.plantdiseases.app.ui.common.SpeciesInfoCardView] — a custom View
  *     that IS eligible for `@AndroidEntryPoint`, but `SpeciesInfoCardViewTest`
@@ -48,11 +51,17 @@ interface AppEntryPoint {
 
     fun logoutRetryScheduler(): LogoutRetryScheduler
 
-    fun scanRepository(): ScanRepository
+    fun speciesRepository(): SpeciesRepository
 
     fun plantRepository(): PlantRepository
 
     fun notificationRepository(): NotificationRepository
+
+    fun accountDisclosurePrefs(): AccountDisclosurePrefs
+
+    fun installationIdProvider(): InstallationIdProvider
+
+    fun forumNotificationSync(): ForumNotificationSync
 }
 
 /** `EntryPointAccessors.fromApplication` against the given context's

@@ -156,7 +156,7 @@ class SpeciesIdentifyActivity : AppCompatActivity() {
                 }
             }.onFailure { error ->
                 if (MeteredAccessUi.handles(error)) {
-                    showStatus(getString(MeteredAccessUi.message(error)))
+                    showStatus(getString(MeteredAccessUi.title(error)))
                     binding.btnRetryIdentify.visibility = View.VISIBLE
                     MeteredAccessUi.showDialog(this@SpeciesIdentifyActivity, error)
                 } else {

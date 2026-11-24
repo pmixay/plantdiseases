@@ -221,7 +221,7 @@ class ModerationActivity : AppCompatActivity() {
                 item.author?.nickname?.takeIf { it.isNotBlank() },
                 item.space,
                 item.state?.takeIf { it != "visible" }?.let { getString(R.string.mod_state, it) },
-            ).joinToString(" · ")
+            ).joinToString(", ")
         }
     }
 

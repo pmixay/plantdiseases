@@ -29,10 +29,11 @@
     "fold_whole_frame_vote": true,
     "_fold_note": "Classify the whole frame alongside the detected crops and fold it into the mean vote as one extra member (see MODEL_CARD.md). On by default \u2014 it is what recovers an over-cropped leaf shot. Turning it off saves one full ViT forward per scan and is the first latency lever to reach for, at the cost of that recovery.",
     "guest_gamma_analysis_daily_quota": 5,
-    "guest_identify_daily_quota": 1,
-    "guest_ai_doctor_daily_quota": 3,
-    "guest_care_plan_daily_quota": 5,
-    "_pro_quota_note": "These process-local guest limits protect paid server work without forcing registration. Signed-in Free/PRO limits are authoritative in the account service; Aqua remains unlimited on-device."
+    "guest_frontier_analysis_daily_quota": 1,
+    "guest_identify_daily_quota": 10,
+    "guest_ai_doctor_daily_quota": 5,
+    "guest_care_plan_daily_quota": 10,
+    "_pro_quota_note": "These process-local guest limits protect paid server work without forcing registration. Signed-in limits are authoritative in the account service; Aqua remains unlimited on-device. Only uncached work counts: a repeated photo, a cached identification or a cached care-plan summary is free."
   },
   "ai": {
     "species_info_contact": "",
@@ -42,7 +43,7 @@
     "openrouter_model": "openai/gpt-6-luna",
     "openrouter_base_url": "https://openrouter.ai/api/v1",
     "openrouter_provider_only": "openai",
-    "_provider_note": "Only an explicit test/development environment accepts openrouter_api_key. In production-like environments leave it blank and use an absolute owner-only openrouter_api_key_file; simultaneous/direct secrets fail closed. Comma-separated OpenRouter provider slugs this model may be routed to; blank lets OpenRouter route freely. Every request requires supported parameters, data_collection=deny, and a zero-data-retention endpoint. The configured model/provider/region and an aggregate cost ceiling remain release gates; see DEPLOYMENT.md and the PRO operations runbook.",
+    "_provider_note": "Only an explicit test/development environment accepts openrouter_api_key. In production-like environments leave it blank and use an absolute owner-only openrouter_api_key_file; simultaneous/direct secrets fail closed. Comma-separated OpenRouter provider slugs this model may be routed to; blank lets OpenRouter route freely. Every request requires supported parameters and data_collection=deny. The configured model/provider/region and an aggregate cost ceiling remain release gates; see DEPLOYMENT.md and the PRO operations runbook.",
     "openrouter_total_timeout": 30.0,
     "openrouter_reasoning_effort": "medium",
     "_reasoning_note": "gpt-5.6 treats effort as a CEILING, not a floor — an easy prompt may use no reasoning tokens even at 'high', so a higher setting costs nothing on the calls that don't need it. Levels: max/xhigh/high/medium/low/none ('minimal' is gpt-5.0-era and is mapped to 'low'), or 'omit' to send no reasoning field. Per-task overrides below win over this global default; medium is the floor because this content is factual and gets cached for days. Raising any of these means raising the matching *_max_tokens too — the hidden trace bills against max_tokens.",
@@ -90,9 +91,5 @@
     "training_healthy_keep_rate": 0.1,
     "training_daily_cap_per_class": 50,
     "telemetry_consent_version": "telemetry-errors-v1"
-  },
-  "push": {
-    "fcm_credentials_file": "",
-    "_fcm_note": "Path to a Firebase service-account JSON for FCM HTTP v1 push (opinion notifications). Empty => push is a no-op. Keep this file OUT of git. The Android FCM *client* values (FCM_APP_ID / API_KEY / PROJECT_ID / SENDER_ID) are NOT server config — they live in the app build (see DEPLOYMENT.md)."
   }
 }

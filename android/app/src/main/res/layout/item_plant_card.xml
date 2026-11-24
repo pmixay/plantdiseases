@@ -83,10 +83,10 @@
                 android:layout_marginTop="@dimen/space_xxs"
                 android:maxLines="1"
                 android:ellipsize="end"
-                android:textColor="@color/on_surface_secondary"
+                android:textColor="@color/on_surface"
                 android:textSize="@dimen/text_body_sm"
                 android:fontFamily="sans-serif-medium"
-                tools:text="Healthy · 92%" />
+                tools:text="Healthy, 92%" />
 
         </LinearLayout>
 

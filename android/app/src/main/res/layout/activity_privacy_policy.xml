@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-    Privacy policy, served from assets/privacy_policy.html rather than a
-    hosted page, so the consent screen's link works with no network and the
-    text can never drift from the build the user is running. Same
-    toolbar/inset pattern as NotificationsActivity.
+    Privacy policy as native views. The text is not in this layout or in
+    strings.xml: PrivacyPolicyActivity parses assets/privacy_policy.html and
+    fills @+id/policy_content. Same toolbar/inset pattern as
+    NotificationsActivity.
 -->
 <androidx.coordinatorlayout.widget.CoordinatorLayout
     xmlns:android="http://schemas.android.com/apk/res/android"
@@ -16,7 +16,7 @@
         android:id="@+id/app_bar"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:background="@drawable/bg_toolbar_gradient"
+        android:background="@color/background"
         app:elevation="0dp">
 
         <com.google.android.material.appbar.MaterialToolbar
@@ -32,10 +32,59 @@
 
     </com.google.android.material.appbar.AppBarLayout>
 
-    <WebView
-        android:id="@+id/privacy_web"
+    <androidx.core.widget.NestedScrollView
+        android:id="@+id/policy_scroll"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        app:layout_behavior="@string/appbar_scrolling_view_behavior" />
+        android:clipToPadding="false"
+        android:paddingBottom="@dimen/space_xl"
+        app:layout_behavior="@string/appbar_scrolling_view_behavior">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:paddingHorizontal="@dimen/content_gutter">
+
+            <com.google.android.material.chip.ChipGroup
+                android:id="@+id/language_group"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                app:chipSpacingHorizontal="@dimen/space_sm"
+                app:selectionRequired="true"
+                app:singleSelection="true">
+
+                <com.google.android.material.chip.Chip
+                    android:id="@+id/chip_lang_ru"
+                    style="@style/Widget.Material3.Chip.Filter"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/privacy_lang_ru"
+                    android:textColor="@color/on_surface"
+                    android:textStyle="bold"
+                    app:checkedIconEnabled="false"
+                    app:chipBackgroundColor="@color/chip_bg_color" />
+
+                <com.google.android.material.chip.Chip
+                    android:id="@+id/chip_lang_en"
+                    style="@style/Widget.Material3.Chip.Filter"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/privacy_lang_en"
+                    android:textColor="@color/on_surface"
+                    android:textStyle="bold"
+                    app:checkedIconEnabled="false"
+                    app:chipBackgroundColor="@color/chip_bg_color" />
+
+            </com.google.android.material.chip.ChipGroup>
+
+            <LinearLayout
+                android:id="@+id/policy_content"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical" />
+
+        </LinearLayout>
+    </androidx.core.widget.NestedScrollView>
 
 </androidx.coordinatorlayout.widget.CoordinatorLayout>

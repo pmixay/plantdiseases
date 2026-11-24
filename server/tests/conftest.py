@@ -109,7 +109,26 @@ class _AccountAwareTestClientMixin:
             )
             nickname = data.get("nickname") or body.get("nickname") or "Test Fern"
             headers["Authorization"] = f"Bearer {_test_access_token(str(identity), str(nickname))}"
-        return super().request(method, url, headers=headers, **kwargs)
+        response = super().request(method, url, headers=headers, **kwargs)
+        _assert_app_can_decode(method, request_path, response)
+        return response
+
+
+def _assert_app_can_decode(method: str, path: str, response) -> None:
+    """Fail the test when a 2xx JSON response from a route the Android app
+    calls would not decode into the app's model (``tests/app_contract.py``):
+    a server change that breaks installed apps fails CI here."""
+    from tests import app_contract
+
+    if not 200 <= response.status_code < 300:
+        return
+    if "application/json" not in response.headers.get("content-type", ""):
+        return
+    class_name = app_contract.class_for(method, path)
+    if class_name is None:
+        return
+    problems = app_contract.violations(response.json(), class_name)
+    assert not problems, f"{method} {path} would not decode in the app ({class_name}): {problems}"
 
 
 @pytest.fixture(autouse=True)
@@ -120,7 +139,20 @@ def _reset_abuse_counters():
     per-IP daily quotas would otherwise trip partway through the run.
     """
     import main as server_main
+    import plant_photos
 
+    # Background photo warming would make real Wikimedia requests from tests.
+    # The real function stays reachable for the tests of warming itself.
+    if not hasattr(plant_photos, "_real_warm"):
+        plant_photos._real_warm = plant_photos.warm
+    plant_photos.warm = lambda urls: None
+    # The anonymous popularity tally is written by every accepted analysis;
+    # start each test from an empty one so popular-feed tests stay isolated.
+    import community as community_module
+
+    community_module.init_db()
+    with community_module._connect() as conn:
+        conn.execute("DELETE FROM popular_scan_counts")
     for quota in server_main._DAILY_QUOTAS:
         quota.reset()
     with server_main._admission_lock:
@@ -230,7 +262,6 @@ def _stub_pipeline_for_lifespan(tmp_path_factory):
     import community
     import main as server_main
     import pipeline as pipeline_module
-    import push
     import telemetry
     import training_store
 
@@ -240,7 +271,6 @@ def _stub_pipeline_for_lifespan(tmp_path_factory):
     # layer) has nothing to instantiate. Tests use
     # ``pipeline._RealPipelineForTests``; nothing in production reads it.
     pipeline_module._RealPipelineForTests = pipeline_module.PlantDiseasePipeline
-    server_main.PlantDiseasePipeline = FakePipeline  # type: ignore[assignment]
     pipeline_module.PlantDiseasePipeline = FakePipeline  # type: ignore[assignment]
     server_main.account_authenticator = _TestAccountAuthenticator()
 
@@ -253,21 +283,16 @@ def _stub_pipeline_for_lifespan(tmp_path_factory):
     community.COMMUNITY_DB_PATH = state_dir / "community.db"
     community.COMMUNITY_THUMB_DIR = state_dir / "community-thumbs"
     community._initialised = False
-    # main imports this path by value for the thumbnail response endpoint.
-    server_main.COMMUNITY_THUMB_DIR = community.COMMUNITY_THUMB_DIR
 
     # Same story for the proxied-photo cache: a route that fetches one would
     # otherwise create ``server/plant_photo_cache/`` in the working tree. The
-    # env var matters because a per-test ``importlib.reload`` re-reads it.
+    # env var covers anything that reads the setting afresh.
     import plant_photos
     plant_photos.PHOTO_CACHE_DIR = state_dir / "plant-photos"
     os.environ["PLANT_PHOTO_CACHE_DIR"] = str(plant_photos.PHOTO_CACHE_DIR)
 
     telemetry.TELEMETRY_DB_PATH = state_dir / "telemetry.db"
     telemetry._initialised = False
-
-    push.PUSH_DB_PATH = state_dir / "push.db"
-    push._initialised = False
 
     async def _skip_external_warmup() -> None:
         return None
@@ -295,19 +320,25 @@ def community_store(tmp_path, monkeypatch):
     to re-bind on ``main`` by hand (some thirty names) and nothing restored.
     """
     import community
-    import main as server_main
 
     monkeypatch.setattr(community, "COMMUNITY_DB_PATH", tmp_path / "community.db")
     monkeypatch.setattr(community, "COMMUNITY_THUMB_DIR", tmp_path / "thumbs")
     monkeypatch.setattr(community, "_initialised", False)
-    monkeypatch.setattr(community, "_last_expiry_sweep", 0.0)
-    # main imports this path by value for the thumbnail response endpoint.
-    monkeypatch.setattr(server_main, "COMMUNITY_THUMB_DIR", tmp_path / "thumbs")
     return community
 
 
 @pytest.fixture
-def community_http_store(community_store, monkeypatch):
+def community_strict_http_store(community_store):
+    """``community_store`` for HTTP tests that run the real analysis-token and
+    scan-write checks: nothing is patched on ``community``."""
+    import main as server_main
+
+    server_main._daily_write_counts.clear()
+    return community_store
+
+
+@pytest.fixture
+def community_http_store(community_strict_http_store, monkeypatch):
     """``community_store`` for HTTP tests that post synthetic scan ids.
 
     ``/api/community/scan`` publishes a scan the server itself analysed: it
@@ -316,12 +347,12 @@ def community_http_store(community_store, monkeypatch):
     every id counts as issued and the write goes through ``record_scan`` with
     the client's values. The rejection paths are tested explicitly elsewhere.
     """
-    import main as server_main
+    import community_scans
 
-    comm = community_store
+    comm = community_strict_http_store
 
     def legacy_analysis_write(**kwargs):
-        return comm.record_scan(
+        return community_scans.record_scan(
             scan_id=kwargs["scan_id"],
             account_actor_id=kwargs["account_actor_id"],
             country=kwargs["country"],
@@ -338,9 +369,8 @@ def community_http_store(community_store, monkeypatch):
             nickname=kwargs.get("nickname"),
         )
 
-    monkeypatch.setattr(server_main, "community_record_analysis_scan", legacy_analysis_write)
-    monkeypatch.setattr(server_main, "community_analysis_token_issued", lambda *a, **k: True)
-    server_main._daily_write_counts.clear()
+    monkeypatch.setattr(community_scans, "record_analysis_scan", legacy_analysis_write)
+    monkeypatch.setattr(community_scans, "is_analysis_token_issued", lambda *a, **k: True)
     return comm
 
 

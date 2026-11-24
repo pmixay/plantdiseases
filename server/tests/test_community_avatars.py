@@ -14,6 +14,7 @@ import uuid
 import pytest
 from PIL import Image
 
+import community_deletion
 from tests.conftest import _test_access_token
 from tests.test_community_moderation import FakeRoles
 
@@ -117,10 +118,10 @@ def test_account_deletion_purges_the_avatar(forum, community_store):
     published = forum.set_avatar(actor_id=_actor("leaver"), image_bytes=_png())
     path, _ = forum.avatar_file(published["author_token"])
 
-    community_store.request_actor_deletion(_actor("leaver"))
+    community_deletion.request_actor_deletion(_actor("leaver"))
     # Hidden as soon as the tombstone exists, before the cleanup job runs.
     assert forum.avatar_file(published["author_token"]) is None
-    assert community_store.process_cleanup_jobs() == {"completed": 1, "retried": 0}
+    assert community_deletion.process_cleanup_jobs() == {"completed": 1, "retried": 0}
 
     assert not path.exists()
     with community_store._connect() as conn:
@@ -234,9 +235,9 @@ def test_http_avatar_requires_an_account_and_a_real_image(client, community_stor
 
 
 def test_http_avatar_quota(client, community_store, monkeypatch):
-    import main
+    import routes_forum
 
-    monkeypatch.setattr(main, "FORUM_AVATAR_DAILY_QUOTA", 1)
+    monkeypatch.setattr(routes_forum, "FORUM_AVATAR_DAILY_QUOTA", 1)
     assert _put_avatar(client, "busy").status_code == 200
     assert _put_avatar(client, "busy").status_code == 429
 

@@ -32,7 +32,7 @@
     <dimen name="glass_elevation_soft">0dp</dimen>
 
     <!-- ─── Typography ──────────────────────────────────────────── -->
-    <dimen name="text_caption">11sp</dimen>
+    <dimen name="text_caption">12sp</dimen>
     <dimen name="text_body_sm">13sp</dimen>
     <dimen name="text_body">14sp</dimen>
     <dimen name="text_title_sm">16sp</dimen>

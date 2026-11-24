@@ -28,7 +28,6 @@
         android:orientation="horizontal"
         android:gravity="center_vertical"
         android:layout_marginHorizontal="@dimen/space_lg"
-        android:background="@drawable/bg_hero_card"
         android:padding="@dimen/space_xl">
 
         <FrameLayout
@@ -56,7 +55,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="@string/reminders"
-                android:textColor="@color/on_hero"
+                android:textColor="@color/on_surface"
                 android:textSize="@dimen/text_title"
                 android:fontFamily="sans-serif-medium" />
 
@@ -64,7 +63,7 @@
                 android:id="@+id/reminder_plant_name"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:textColor="@color/on_hero_secondary"
+                android:textColor="@color/on_surface"
                 android:textSize="@dimen/text_body"
                 tools:text="Monstera" />
 
@@ -79,7 +78,7 @@
         android:paddingTop="@dimen/space_md"
         android:paddingBottom="@dimen/space_xxs"
         android:text="@string/reminder_subtitle"
-        android:textColor="@color/on_surface_secondary"
+        android:textColor="@color/on_surface"
         android:textSize="@dimen/text_body_sm" />
 
     <androidx.core.widget.NestedScrollView
@@ -107,7 +106,7 @@
                 android:paddingVertical="@dimen/space_xl"
                 android:gravity="center"
                 android:text="@string/reminder_empty_list"
-                android:textColor="@color/on_surface_secondary"
+                android:textColor="@color/on_surface"
                 android:textSize="@dimen/text_body"
                 android:visibility="gone"
                 tools:visibility="visible" />

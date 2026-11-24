@@ -8,18 +8,19 @@ addresses are used only by the HTTP layer's in-memory abuse limiter.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import re
 import sqlite3
 import threading
-from collections.abc import Iterator
-from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 try:
-    from .config import get_str  # type: ignore[import-not-found]
+    from . import sqlite_store
+    from .config import get_str
 except ImportError:
+    import sqlite_store
     from config import get_str
 
 
@@ -115,38 +116,17 @@ class TelemetryValueError(ValueError):
     pass
 
 
-@contextmanager
-def _connect(*, read_only: bool = False) -> Iterator[sqlite3.Connection]:
-    """Yield a short-lived connection and always close its file handles.
-
-    ``sqlite3.Connection.__exit__`` commits or rolls back but does not close
-    the connection, so closure is explicit (Windows file locks, WAL handles
-    in long-running workers).
-    """
-    if read_only:
-        connection = sqlite3.connect(
-            f"file:{TELEMETRY_DB_PATH.resolve()}?mode=ro",
-            uri=True,
-            isolation_level=None,
-        )
-    else:
-        connection = sqlite3.connect(
-            str(TELEMETRY_DB_PATH), isolation_level=None, check_same_thread=False
-        )
-    try:
-        if read_only:
-            connection.execute("PRAGMA query_only=ON")
-        else:
-            connection.execute("PRAGMA journal_mode=WAL")
-            connection.execute("PRAGMA synchronous=NORMAL")
-        connection.row_factory = sqlite3.Row
-        yield connection
-        connection.commit()
-    except BaseException:
-        connection.rollback()
-        raise
-    finally:
-        connection.close()
+def _connect(
+    *, read_only: bool = False
+) -> contextlib.AbstractContextManager[sqlite3.Connection]:
+    """A short-lived connection (see ``sqlite_store.connect``); read-only ones
+    are also ``query_only``."""
+    return sqlite_store.connect(
+        TELEMETRY_DB_PATH,
+        read_only=read_only,
+        query_only=read_only,
+        row_factory=sqlite3.Row,
+    )
 
 
 def init_db() -> None:

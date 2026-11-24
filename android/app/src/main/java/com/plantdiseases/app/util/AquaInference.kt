@@ -37,7 +37,13 @@ object AquaInference {
         verdictStatus = "abstained",
     )
 
-    fun buildResponse(probs: Map<String, Float>): AnalysisResponse {
+    /**
+     * [outOfDistribution]: the sidecar's MaxLogit floor ([AquaOodGate]) refused
+     * the frame. Like the server's OOD rejection, the class/probability fields
+     * stay as raw diagnostics while every accepted-diagnosis claim (name, care,
+     * health) is neutralised. A natural `not_a_plant` argmax keeps its own copy.
+     */
+    fun buildResponse(probs: Map<String, Float>, outOfDistribution: Boolean = false): AnalysisResponse {
         require(probs.isNotEmpty()) { "Aqua probability map is empty" }
         require(probs.keys.all { it.isNotBlank() }) { "Aqua probability map has a blank class key" }
         require(probs.values.all { it.isFinite() && it >= 0f }) {
@@ -73,6 +79,23 @@ object AquaInference {
         // supply description / treatment / prevention for an offline scan.
         val card = OfflineScanContent.careCard(topKey)
         val naturalNap = topKey == "not_a_plant"
+        if (outOfDistribution && !naturalNap) {
+            return AnalysisResponse(
+                classKey = topKey,
+                family = ModelFamily.AQUA.id,
+                diseaseName = "Unidentified condition",
+                diseaseNameRu = "Не удалось определить",
+                confidence = topConf,
+                isHealthy = false,
+                severity = "low",
+                allProbs = safeProbs,
+                topK = topK,
+                warnings = listOf("offline_aqua", "aqua_ood_gated"),
+                abstained = true,
+                abstentionReason = AnalysisAbstentionReasons.OOD,
+                verdictStatus = "abstained",
+            )
+        }
 
         return AnalysisResponse(
             classKey = topKey,

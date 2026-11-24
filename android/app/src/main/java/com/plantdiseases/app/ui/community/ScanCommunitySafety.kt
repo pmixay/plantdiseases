@@ -6,15 +6,11 @@ import android.widget.Toast
 import androidx.annotation.StringRes
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
-import androidx.work.WorkManager
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.plantdiseases.app.R
-import com.plantdiseases.app.auth.AuthRepository
-import com.plantdiseases.app.auth.AuthState
-import com.plantdiseases.app.data.repository.ScanRepository
-import com.plantdiseases.app.ui.account.AccountActivity
+import com.plantdiseases.app.data.repository.CommunityScanRepository
+import com.plantdiseases.app.ui.account.QuickSignIn
 import com.plantdiseases.app.util.CommunityPrefs
-import com.plantdiseases.app.util.OpinionPrefs
 import kotlinx.coroutines.launch
 
 /**
@@ -25,8 +21,8 @@ import kotlinx.coroutines.launch
  */
 class ScanCommunitySafety(
     private val activity: AppCompatActivity,
-    private val scanRepository: ScanRepository,
-    private val authRepository: AuthRepository,
+    private val communityScans: CommunityScanRepository,
+    private val quickSignIn: QuickSignIn,
     private val onChanged: () -> Unit,
 ) {
 
@@ -46,8 +42,7 @@ class ScanCommunitySafety(
             .show()
     }
 
-    /** Stops sharing new scans and receiving opinions on them. Scans already
-     *  shared stay in the community. */
+    /** Stops sharing new scans. Scans already shared stay in the community. */
     fun confirmLeave() {
         MaterialAlertDialogBuilder(activity)
             .setTitle(R.string.community_disable_title)
@@ -55,25 +50,15 @@ class ScanCommunitySafety(
             .setNegativeButton(R.string.cancel, null)
             .setPositiveButton(R.string.community_disable_confirm) { _, _ ->
                 CommunityPrefs.setUploadsEnabled(activity, false)
-                OpinionPrefs.setNotificationsEnabled(activity, false)
-                activity.lifecycleScope.launch { authRepository.disablePush() }
-                WorkManager.getInstance(activity).apply {
-                    cancelUniqueWork("opinion_check")
-                    cancelUniqueWork("opinion_check_now")
-                }
                 onChanged()
             }
             .show()
     }
 
     private fun showBlockedAuthors() {
-        if (authRepository.state.value !is AuthState.Authenticated) {
-            toast(R.string.community_sign_in_required)
-            activity.startActivity(AccountActivity.intent(activity))
-            return
-        }
+        if (!quickSignIn.require()) return
         activity.lifecycleScope.launch {
-            scanRepository.communityBlocks()
+            communityScans.communityBlocks()
                 .onSuccess { blocks ->
                     if (blocks.isEmpty()) {
                         toast(R.string.community_blocks_empty)
@@ -99,7 +84,7 @@ class ScanCommunitySafety(
             .setNegativeButton(R.string.cancel, null)
             .setPositiveButton(R.string.community_unblock_confirm) { _, _ ->
                 activity.lifecycleScope.launch {
-                    scanRepository.unblockCommunityAuthor(blockId)
+                    communityScans.unblockCommunityAuthor(blockId)
                         .onSuccess {
                             toast(R.string.community_author_unblocked)
                             onChanged()

@@ -13,7 +13,84 @@ import time
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from starlette.responses import Response as StarletteResponse
+
+# Imports work flat (``uvicorn main:app`` from ``server/``) or as ``server.*``.
+try:
+    from . import telemetry
+except ImportError:
+    import telemetry
+try:
+    from . import diseases_data
+except ImportError:
+    import diseases_data
+
+
+_PROM_LABEL_ESCAPE = str.maketrans({"\\": r"\\", "\"": r"\"", "\n": r"\n"})
+
+
+def _prom_label(value: str) -> str:
+    return value.translate(_PROM_LABEL_ESCAPE)
+
+
+class TelemetryErrorRequest(BaseModel):
+    """One consented report containing only allowlisted technical enums."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    telemetry_consent: bool = False
+    telemetry_consent_version: str | None = Field(default=None, max_length=32)
+    stage: str = Field(..., min_length=1, max_length=32)
+    kind: str = Field(..., min_length=1, max_length=32)
+    fatal: bool = False
+    http_status: int | None = Field(default=None, ge=100, le=599)
+    family: str | None = Field(default=None, max_length=16)
+    app_version: str | None = Field(default=None, max_length=32)
+    android_api: int | None = Field(default=None, ge=1, le=100)
+    breadcrumbs: list[str] | None = Field(default=None, max_length=20)
+
+    @field_validator("stage")
+    @classmethod
+    def _known_stage(cls, value: str) -> str:
+        if value not in telemetry.ALLOWED_STAGES:
+            raise ValueError("stage is not allowlisted")
+        return value
+
+    @field_validator("kind")
+    @classmethod
+    def _known_kind(cls, value: str) -> str:
+        if value not in telemetry.ALLOWED_KINDS:
+            raise ValueError("kind is not allowlisted")
+        return value
+
+    @field_validator("family")
+    @classmethod
+    def _known_family(cls, value: str | None) -> str | None:
+        if value is not None and value not in telemetry.ALLOWED_FAMILIES:
+            raise ValueError("family is not allowlisted")
+        return value
+
+    @field_validator("app_version")
+    @classmethod
+    def _safe_app_version(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        if not value or any(
+            character not in "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz._+-"
+            for character in value
+        ):
+            raise ValueError("app_version is invalid")
+        return value
+
+    @field_validator("breadcrumbs")
+    @classmethod
+    def _known_breadcrumbs(cls, values: list[str] | None) -> list[str] | None:
+        if values is None:
+            return None
+        if any(value not in telemetry.ALLOWED_BREADCRUMBS for value in values):
+            raise ValueError("breadcrumb is not allowlisted")
+        return values
 
 
 def register(router: APIRouter, m) -> None:
@@ -25,7 +102,7 @@ def register(router: APIRouter, m) -> None:
         uptime = time.time() - m.SERVER_START_TIME if m.SERVER_START_TIME else 0
         return {
             "status": "ok",
-            "version": m.APP_VERSION,
+            "version": m.app_version.APP_VERSION,
             "num_classes": len(m.pipeline.classifier.CLASS_NAMES),
             "uptime_seconds": round(uptime, 1),
             "total_requests": m._snapshot_metrics()["total_requests"],
@@ -110,7 +187,7 @@ def register(router: APIRouter, m) -> None:
                 "int8_artifact": int8_artifact,
             }
             for name in clf.CLASS_NAMES:
-                info = m.DISEASES_DATABASE.get(name, {})
+                info = diseases_data.DISEASES_DATABASE.get(name, {})
                 classes_list.append({
                     "class": name,
                     "name_en": info.get("name_en", name.replace("_", " ").title()),
@@ -125,8 +202,8 @@ def register(router: APIRouter, m) -> None:
                 "expected": m.ACCOUNT_FEATURE_EXPECTED,
                 "available": bool(getattr(m.account_authenticator, "configured", False)),
             },
-            "version": m.APP_VERSION,
-            "server_version": m.APP_VERSION,
+            "version": m.app_version.APP_VERSION,
+            "server_version": m.app_version.APP_VERSION,
             "model_version": model_version,
             "model": model,
             "classes": classes_list,
@@ -145,12 +222,12 @@ def register(router: APIRouter, m) -> None:
         return {
             "uptime_seconds": round(uptime, 1),
             **snap,
-            "ai_doctor": m.chat_metrics_snapshot(),
+            "ai_doctor": m.plant_doctor.chat_metrics_snapshot(),
             # Across every OpenRouter caller, not just the doctor — the number that
             # answers "is prompt caching engaging at all" after a model switch.
-            "prompt_cache": m.prompt_cache_metrics_snapshot(),
-            "care_plan_polish": m.care_plan_metrics_snapshot(),
-            "plantnet": m.plantnet_metrics_snapshot(),
+            "prompt_cache": m.ai_services.prompt_cache_metrics_snapshot(),
+            "care_plan_polish": m.care_plan.care_plan_metrics_snapshot(),
+            "plantnet": m.plantnet.plantnet_metrics_snapshot(),
             "training": training_snapshot,
             "community": community_snapshot,
         }
@@ -160,9 +237,9 @@ def register(router: APIRouter, m) -> None:
     async def metrics_prometheus():
         """Prometheus text exposition (v0.0.4) of the same counters as /api/metrics."""
         snap = m._snapshot_metrics()
-        plantnet = m.plantnet_metrics_snapshot()
+        plantnet = m.plantnet.plantnet_metrics_snapshot()
         uptime = time.time() - m.SERVER_START_TIME if m.SERVER_START_TIME else 0
-        version = m._prom_label(m.APP_VERSION)
+        version = _prom_label(m.app_version.APP_VERSION)
 
         lines = [
             "# HELP plantdiseases_uptime_seconds Seconds since the server started.",
@@ -194,7 +271,7 @@ def register(router: APIRouter, m) -> None:
         ]
         for class_name, count in sorted(snap["class_counts"].items()):
             lines.append(
-                f'plantdiseases_class_predictions_total{{class="{m._prom_label(class_name)}"}} {count}'
+                f'plantdiseases_class_predictions_total{{class="{_prom_label(class_name)}"}} {count}'
             )
 
         lines.extend(
@@ -231,7 +308,7 @@ def register(router: APIRouter, m) -> None:
 
 
     @router.post("/telemetry/errors")
-    async def telemetry_errors(payload: m.TelemetryErrorRequest, request: Request):
+    async def telemetry_errors(payload: TelemetryErrorRequest, request: Request):
         """Record minimized error telemetry only under the current consent text."""
         if not m.TELEMETRY_ENABLED or not payload.telemetry_consent:
             return JSONResponse(content={"ok": True, "recorded": False})
@@ -249,16 +326,16 @@ def register(router: APIRouter, m) -> None:
         try:
             rid = await loop.run_in_executor(
                 None,
-                lambda: m.telemetry_record_error(
+                lambda: m.telemetry.record_error(
                     stage=payload.stage,
                     kind=payload.kind,
                     fatal=payload.fatal,
-                    http_status_bucket=m.telemetry_http_status_bucket(
+                    http_status_bucket=m.telemetry.http_status_bucket(
                         payload.http_status
                     ),
                     family=payload.family,
                     app_version=payload.app_version,
-                    android_api_bucket=m.telemetry_android_api_bucket(
+                    android_api_bucket=m.telemetry.android_api_bucket(
                         payload.android_api
                     ),
                     breadcrumbs=payload.breadcrumbs,

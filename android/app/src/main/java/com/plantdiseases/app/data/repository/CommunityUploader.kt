@@ -9,10 +9,8 @@ import com.plantdiseases.app.data.model.AnalysisResponse
 import com.plantdiseases.app.data.model.AnalysisAbstentionReasons
 import com.plantdiseases.app.data.model.effectiveAbstentionReason
 import com.plantdiseases.app.util.CommunityPrefs
-import com.plantdiseases.app.util.DefaultUploadImageSanitizer
 import com.plantdiseases.app.util.LocaleHelper
 import com.plantdiseases.app.util.RegionResolver
-import com.plantdiseases.app.util.UploadImageSanitizer
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -25,7 +23,7 @@ import kotlinx.coroutines.withContext
  *      enables community in-context; see [CommunityPrefs]).
  *   2. Load the exact metadata-free JPEG bytes submitted to /api/analyze.
  *      Publication is SHA-bound, so a second JPEG encode is invalid.
- *   3. POST the row + retained image via [ScanRepository.uploadCommunityScan].
+ *   3. POST the row + retained image via [CommunityScanRepository.uploadCommunityScan].
  *      Location is client-supplied (coarse country/city + rounded coords);
  *      there is no server-side IP geolocation. Only scans with a
  *      server-issued scan_id are shared — on-device Aqua scans stay private.
@@ -36,12 +34,8 @@ import kotlinx.coroutines.withContext
 class CommunityUploader(
     private val context: Context,
     private val scanRepository: ScanRepository,
+    private val communityScans: CommunityScanRepository,
     private val authRepository: AuthRepository,
-    // Source-compatible until the independently owned DI module is updated.
-    // Never call this here: a second encode cannot satisfy the server's
-    // byte-for-byte /api/analyze publication binding.
-    @Suppress("UNUSED_PARAMETER")
-    imageSanitizer: UploadImageSanitizer = DefaultUploadImageSanitizer,
 ) {
     suspend fun uploadIfEnabled(
         scan: ScanEntity,
@@ -92,7 +86,7 @@ class CommunityUploader(
         // was taken so it can be grouped by the 30 km nearby radius.
         val region = runCatching { RegionResolver.resolveRegion(context) }.getOrNull()
 
-        val result = scanRepository.uploadCommunityScan(
+        val result = communityScans.uploadCommunityScan(
             scanId = scanId,
             country = region?.country,
             region = region?.locality.orEmpty(),
@@ -109,73 +103,6 @@ class CommunityUploader(
             onSuccess = { UploadOutcome.Uploaded },
             onFailure = {
                 Log.i(TAG, "Community upload skipped")
-                UploadOutcome.Failed
-            },
-        )
-    }
-
-    /**
-     * Upload one already-saved scan on demand, deriving everything from
-     * the persisted [ScanEntity] (no live [AnalysisResponse] needed).
-     *
-     * Used when the scanner explicitly asks for a second opinion: that
-     * tap is consent to share THIS scan, so [force] bypasses the global
-     * uploads-enabled toggle. Abstained rows return before the persisted
-     * probability argmax can be uploaded as an accepted diagnosis. The server
-     * dedups by scan_id, so calling this for an accepted scan that already
-     * uploaded is a harmless no-op.
-     */
-    suspend fun uploadFromEntity(
-        scan: ScanEntity,
-        force: Boolean = false,
-    ): UploadOutcome = withContext(Dispatchers.IO) {
-        if (!force && !CommunityPrefs.uploadsEnabled(context)) {
-            return@withContext UploadOutcome.OptedOut
-        }
-        when (scanRepository.abstentionReason(scan)) {
-            AnalysisAbstentionReasons.NOT_A_PLANT -> {
-                return@withContext UploadOutcome.HiddenDisease
-            }
-            null -> Unit
-            else -> return@withContext UploadOutcome.Abstained
-        }
-        if (authRepository.state.value !is AuthState.Authenticated) {
-            return@withContext UploadOutcome.AuthRequired
-        }
-        // On-device (Aqua) scans are private by default — an offline scan has
-        // no server-issued scan_id, so sharing it would only send the image
-        // for a guaranteed server-side rejection. The persisted ``offline_aqua``
-        // warning is the entity-side marker for those.
-        if ("offline_aqua" in scanRepository.parseWarnings(scan.warnings)) {
-            return@withContext UploadOutcome.NotServerBacked
-        }
-        val disease = scan.displayedClassKey?.takeIf { it.isNotBlank() }
-            ?: scan.diseaseName
-        if (disease in HIDDEN_COMMUNITY_DISEASES) {
-            return@withContext UploadOutcome.HiddenDisease
-        }
-        val scanId = scan.clientScanId.ifBlank { return@withContext UploadOutcome.MissingScanId }
-        val analysisImage = scanRepository.retainedAnalysisImage(scan)
-            ?: return@withContext UploadOutcome.MissingAnalysisImage
-        val locale = if (LocaleHelper.isRussian(context)) "ru" else "en"
-        val region = runCatching { RegionResolver.resolveRegion(context) }.getOrNull()
-        val result = scanRepository.uploadCommunityScan(
-            scanId = scanId,
-            country = region?.country,
-            region = region?.locality.orEmpty(),
-            lat = region?.lat,
-            lon = region?.lon,
-            disease = disease,
-            confidence = scan.confidence,
-            species = scan.speciesScientific,
-            speciesScore = scan.speciesScore,
-            locale = locale,
-            analysisImage = analysisImage,
-        )
-        result.fold(
-            onSuccess = { UploadOutcome.Uploaded },
-            onFailure = {
-                Log.i(TAG, "Community on-demand upload skipped")
                 UploadOutcome.Failed
             },
         )

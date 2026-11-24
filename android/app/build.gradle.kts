@@ -439,8 +439,8 @@ android {
             // FooTest.kt:42" costs a whole round-trip to diagnose — the HTML
             // report it points at lives on the runner, not in the log.
             all {
-                // Fan the test classes out over the machine's cores: ~58
-                // Robolectric classes, each CPU-bound instrumenting
+                // Fan the test classes out over the machine's cores: most
+                // test classes run under Robolectric, each CPU-bound instrumenting
                 // android-all into its own sandbox classloader, and one fork
                 // means one core. Forks are separate JVMs, so this makes the
                 // tests MORE isolated than the shared-JVM default, not less.
@@ -545,10 +545,6 @@ dependencies {
     // Material Design 3
     implementation("com.google.android.material:material:1.14.0")
 
-    // Navigation
-    implementation("androidx.navigation:navigation-fragment-ktx:2.9.8")
-    implementation("androidx.navigation:navigation-ui-ktx:2.9.8")
-
     // CameraX
     val cameraxVersion = "1.6.1"
     implementation("androidx.camera:camera-core:$cameraxVersion")
@@ -563,8 +559,8 @@ dependencies {
     ksp("androidx.room:room-compiler:$roomVersion")
 
     // OkHttp — the engine the Ktor client runs on (shared RetryInterceptor).
-    // Retrofit/converter-gson were removed once the last endpoint
-    // moved to the Ktor client; Gson itself stays for Room field + cache JSON.
+    // Retrofit and Gson are gone: the Ktor client and kotlinx.serialization
+    // (util/AppJson for Room field + cache JSON) cover all JSON.
     // OkHttp 5 keeps the OkHttpClient/Interceptor API this project uses, and
     // com.squareup.okhttp3:mockwebserver still ships the legacy
     // okhttp3.mockwebserver package, so the network tests below are unchanged.
@@ -625,9 +621,6 @@ dependencies {
     // source of displayed subscription prices.
     implementation("ru.rustore.sdk:pay:11.1.0")
 
-    // Gson
-    implementation("com.google.code.gson:gson:2.14.0")
-
     // Glide for images. On 5.x — the app only uses the plain
     // Glide.with(...).load(...) surface (no @GlideModule / generated GlideApp),
     // which is the part Glide 5 kept source-compatible. The Glide KSP
@@ -685,9 +678,9 @@ dependencies {
     // prebuilt .so libs aren't 16 KB page-aligned (Google Play's Nov 2025
     // requirement). LiteRT keeps the org.tensorflow.lite Interpreter API, so
     // AquaClassifier's code is unchanged; only the artefact coordinate moves.
-    // The model artefact (assets/models/aqua_classifier.tflite) is provisioned
-    // out of band like the server weights, never committed; AquaClassifier
-    // gates on its presence and the app degrades to the server when absent.
+    // The model is never bundled in the APK: the app downloads it from the
+    // server (/api/aqua/model) into filesDir/aqua/ (AquaModelManager), and
+    // AquaClassifier falls back to the server while none is installed.
     // Was held at 2.1.3 — the newest release the old Kotlin 2.1.21 compiler
     // could read, since 2.1.4+ moved its bundled Kotlin metadata to 2.3.0 and
     // failed with "Module was compiled with an incompatible version of

@@ -411,8 +411,8 @@ class ForumRepository(
     }
 
     private fun normalize(error: Throwable): Throwable = when (error) {
-        is SocketTimeoutException, is java.net.ConnectException -> ScanRepository.ServerTimeoutException()
-        is UnknownHostException -> ScanRepository.NoNetworkException()
+        is SocketTimeoutException, is java.net.ConnectException -> ServerTimeoutException()
+        is UnknownHostException -> NoNetworkException()
         else -> error
     }
 

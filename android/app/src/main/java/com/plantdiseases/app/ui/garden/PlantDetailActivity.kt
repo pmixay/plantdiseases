@@ -35,6 +35,7 @@ import com.plantdiseases.app.data.local.PlantJournalEntity
 import com.plantdiseases.app.data.local.ScanEntity
 import com.plantdiseases.app.data.repository.CareRepository
 import com.plantdiseases.app.data.repository.PlantRepository
+import com.plantdiseases.app.data.repository.AssistantRepository
 import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.databinding.ActivityPlantDetailBinding
 import com.plantdiseases.app.ui.garden.detail.DetailExtraCardsController
@@ -109,6 +110,9 @@ class PlantDetailActivity : AppCompatActivity() {
     lateinit var scanRepository: ScanRepository
 
     @Inject
+    lateinit var assistantRepository: AssistantRepository
+
+    @Inject
     lateinit var careRepository: CareRepository
 
     @Inject
@@ -133,6 +137,7 @@ class PlantDetailActivity : AppCompatActivity() {
             activity = this,
             plantRepository = plantRepository,
             scanRepository = scanRepository,
+            assistant = assistantRepository,
             careRepository = careRepository,
             content = content,
             onReload = ::loadPlant,
@@ -251,7 +256,7 @@ class PlantDetailActivity : AppCompatActivity() {
             TextView(this).apply {
                 text = getString(R.string.new_scan_hint)
                 textSize = 13f
-                setTextColor(getColor(R.color.on_surface_secondary))
+                setTextColor(getColor(R.color.on_surface))
                 setPadding(0, 0, 0, 12.dp(this@PlantDetailActivity))
             },
         )
@@ -624,9 +629,9 @@ class PlantDetailActivity : AppCompatActivity() {
 
     private fun sectionLabel(@StringRes textRes: Int): View = TextView(this).apply {
         text = getString(textRes).uppercase()
-        textSize = 11f
+        textSize = 12f
         letterSpacing = 0.06f
-        setTextColor(getColor(R.color.on_surface_secondary))
+        setTextColor(getColor(R.color.on_surface))
         typeface = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL)
         layoutParams = LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT,

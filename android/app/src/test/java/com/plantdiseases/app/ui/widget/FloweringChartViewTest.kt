@@ -80,7 +80,7 @@ class FloweringChartViewTest {
             FloweringChartView.BloomStatus.NextBloom(monthIndex = 2),
         )
 
-        assertThat(text).isEqualTo("Следующее цветение — в марте")
+        assertThat(text).isEqualTo("Следующее цветение - в марте")
     }
 
     @Test

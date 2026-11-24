@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- CarePlanCardView: every size the card used to compute in code. Spacing
+     that already has a shared token (2, 4, 8, 12, 20) uses it from dimens.xml;
+     the rest lives here. -->
+<resources>
+    <!-- Type -->
+    <dimen name="care_plan_text_title">18sp</dimen>
+    <dimen name="care_plan_text_item">15sp</dimen>
+    <dimen name="care_plan_text_pill_value">16sp</dimen>
+
+    <!-- Header row -->
+    <dimen name="care_plan_header_min_height">48dp</dimen>
+    <dimen name="care_plan_header_icon_box">44dp</dimen>
+    <dimen name="care_plan_header_icon">24dp</dimen>
+    <dimen name="care_plan_chevron">20dp</dimen>
+    <dimen name="care_plan_progress">22dp</dimen>
+
+    <!-- Summary section -->
+    <dimen name="care_plan_summary_padding_bottom">18dp</dimen>
+    <dimen name="care_plan_status_margin_top">16dp</dimen>
+    <dimen name="care_plan_corner">14dp</dimen>
+    <dimen name="care_plan_button_gap_top">14dp</dimen>
+    <dimen name="care_plan_retry_gap_top">10dp</dimen>
+    <dimen name="care_plan_follow_up_gap_top">10dp</dimen>
+    <dimen name="care_plan_toggle_margin_start">-12dp</dimen>
+
+    <!-- Summary pills and the disease note -->
+    <dimen name="care_plan_pill_padding_h">14dp</dimen>
+    <dimen name="care_plan_pill_padding_v">12dp</dimen>
+    <dimen name="care_plan_pill_gap">5dp</dimen>
+    <dimen name="care_plan_pill_row_gap">10dp</dimen>
+    <dimen name="care_plan_pill_icon">15dp</dimen>
+    <dimen name="care_plan_pill_label_gap">6dp</dimen>
+    <dimen name="care_plan_note_padding_top">10dp</dimen>
+    <dimen name="care_plan_line_extra">3dp</dimen>
+    <dimen name="care_plan_line_extra_item">4dp</dimen>
+    <dimen name="care_plan_line_extra_note">2dp</dimen>
+
+    <!-- Details panel -->
+    <dimen name="care_plan_details_padding_top">4dp</dimen>
+    <dimen name="care_plan_section_icon">16dp</dimen>
+    <dimen name="care_plan_section_gap">20dp</dimen>
+    <dimen name="care_plan_red_flags_gap">14dp</dimen>
+    <dimen name="care_plan_red_flags_padding_top">12dp</dimen>
+    <dimen name="care_plan_red_flags_item_gap">4dp</dimen>
+    <dimen name="care_plan_climate_gap">18dp</dimen>
+    <dimen name="care_plan_chip_gap">8dp</dimen>
+    <dimen name="care_plan_chip_corner">12dp</dimen>
+    <dimen name="care_plan_chip_padding_v">10dp</dimen>
+    <dimen name="care_plan_chip_icon">18dp</dimen>
+    <dimen name="care_plan_chip_text_gap">10dp</dimen>
+    <dimen name="care_plan_chip_value_gap">1dp</dimen>
+    <dimen name="care_plan_checklist_item_gap">5dp</dimen>
+    <dimen name="care_plan_isolation_padding_v">8dp</dimen>
+    <dimen name="care_plan_row_gap">8dp</dimen>
+    <dimen name="care_plan_badge_min_width">42dp</dimen>
+    <dimen name="care_plan_badge_padding_v">5dp</dimen>
+    <dimen name="care_plan_season_gap">16dp</dimen>
+</resources>

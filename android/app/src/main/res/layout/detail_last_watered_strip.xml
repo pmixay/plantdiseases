@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- One-line "Last watered N days ago" strip under the plant-detail action row. -->
+<TextView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_marginTop="@dimen/detail_strip_gap"
+    android:paddingHorizontal="@dimen/detail_strip_pad_h"
+    android:textAppearance="@style/TextAppearance.Detail.Caption" />

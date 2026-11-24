@@ -61,7 +61,12 @@ class CommunityUploaderExactImageTest {
             imageSanitizer = sanitizer,
             authRepository = authRepository,
         )
-        uploader = CommunityUploader(context, repository, authRepository, sanitizer)
+        uploader = CommunityUploader(
+            context,
+            repository,
+            CommunityScanRepository(PlantApiClient(server.url("/").toString()), authRepository),
+            authRepository,
+        )
         source = File.createTempFile("community-source-", ".jpg", context.cacheDir)
             .apply { writeText("private-unsanitized-source") }
     }

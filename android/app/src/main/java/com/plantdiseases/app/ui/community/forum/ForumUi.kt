@@ -14,7 +14,8 @@ import com.plantdiseases.app.data.account.AccountApiException
 import com.plantdiseases.app.data.model.ForumSpace
 import com.plantdiseases.app.data.model.ModNotice
 import com.plantdiseases.app.data.repository.ForumRepository
-import com.plantdiseases.app.data.repository.ScanRepository
+import com.plantdiseases.app.data.repository.NoNetworkException
+import com.plantdiseases.app.data.repository.ServerTimeoutException
 import com.plantdiseases.app.util.DiseaseLabels
 import com.plantdiseases.app.util.LocaleHelper
 
@@ -61,7 +62,7 @@ object ForumUi {
         "other_rules" to R.string.mod_reason_other,
     )
 
-    /** "Post removed · Spam": what a moderator did and why. */
+    /** "Post removed, Spam": what a moderator did and why. */
     fun modNoticeHeading(context: Context, notice: ModNotice): String {
         val reason = MOD_REASONS.firstOrNull { it.first == notice.reasonCode }?.second ?: R.string.mod_reason_reports
         return context.getString(R.string.mod_notice_heading, modActionText(context, notice), context.getString(reason))
@@ -117,14 +118,6 @@ object ForumUi {
         else -> R.string.forum_kind_question
     }
 
-    @DrawableRes
-    fun kindIcon(kind: String): Int = when (kind) {
-        "scan" -> R.drawable.ic_scan
-        "recovery" -> R.drawable.ic_rotate
-        "tip" -> R.drawable.ic_tips
-        else -> R.drawable.ic_question
-    }
-
     fun relativeTime(epochSeconds: Long): CharSequence = DateUtils.getRelativeTimeSpanString(
         epochSeconds * 1000L,
         System.currentTimeMillis(),
@@ -145,8 +138,8 @@ object ForumUi {
         val res = when (error) {
             is AuthenticationRequiredException -> R.string.community_sign_in_required
             is AccountApiException -> R.string.community_sign_in_required
-            is ScanRepository.NoNetworkException -> R.string.forum_error_offline
-            is ScanRepository.ServerTimeoutException -> R.string.forum_error_offline
+            is NoNetworkException -> R.string.forum_error_offline
+            is ServerTimeoutException -> R.string.forum_error_offline
             is ForumRepository.ForumException -> errorRes(error.code)
             else -> R.string.forum_error_generic
         }

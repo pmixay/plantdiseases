@@ -2,10 +2,9 @@
 <!--
     Single cell in the "Similar scans near you" carousel.
 
-    Each cell is a 160dp-wide card: thumbnail on top, publisher nickname +
-    approximate distance ("≈ N km near you") + relative time below — no
-    place name (geo stays server-side). Tapping opens a read-only browse of
-    the community discussion; leaving a second opinion is not possible here.
+    Each cell is a 160dp-wide card: thumbnail on top, then the diagnosis,
+    the approximate distance ("≈ N km") and relative time below. No author
+    and no place name (geo stays server-side). Tapping expands the photo.
     Width is fixed so the horizontal RecyclerView snaps evenly regardless of
     label length.
 -->
@@ -69,7 +68,7 @@
                 android:layout_height="wrap_content"
                 android:layout_marginTop="2dp"
                 android:textAppearance="@style/TextAppearance.App.Caption"
-                android:textColor="?attr/colorOnSurfaceVariant"
+                android:textColor="@color/on_surface"
                 android:maxLines="1"
                 android:ellipsize="end" />
 
@@ -79,39 +78,7 @@
                 android:layout_height="wrap_content"
                 android:layout_marginTop="2dp"
                 android:textAppearance="@style/TextAppearance.App.Caption"
-                android:textColor="?attr/colorOnSurfaceVariant" />
-
-            <TextView
-                android:id="@+id/tv_similar_opinions"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="@dimen/space_xs"
-                android:textAppearance="@style/TextAppearance.App.Caption"
-                android:textColor="@color/primary"
-                android:fontFamily="sans-serif-medium"
-                android:visibility="gone" />
-
-            <!-- Informational: the scanner flagged this scan as wanting a
-                 community second opinion. The strip is read-only, so this is a
-                 label, not a call to action. -->
-            <TextView
-                android:id="@+id/tv_similar_wants_opinion"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="@dimen/space_xs"
-                android:maxLines="1"
-                android:ellipsize="end"
-                android:drawablePadding="4dp"
-                android:gravity="center_vertical"
-                android:text="@string/community_wants_opinion_badge"
-                android:textAppearance="@style/TextAppearance.App.Caption"
-                android:textAllCaps="false"
-                android:letterSpacing="0"
-                android:textColor="@color/warning_amber"
-                android:fontFamily="sans-serif-medium"
-                app:drawableStartCompat="@drawable/ic_community"
-                app:drawableTint="@color/warning_amber"
-                android:visibility="gone" />
+                android:textColor="@color/on_surface" />
 
         </LinearLayout>
 

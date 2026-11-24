@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- ─── Brand · Vivid leaf-green palette ───────────────────────
+    <!-- ─── Brand: Vivid leaf-green palette ───────────────────────
          PictureThis-style: a saturated, fresh green that pops on
          white surfaces. The primary is Tailwind green-600 — vivid
          enough to read as a brand identity, dark enough for AAA
@@ -25,33 +25,11 @@
     <color name="primary_dark">#15803D</color>
     <color name="secondary">#4ADE80</color>
     <color name="on_secondary">#052E16</color>
-    <!-- Gradient stops (ordered dark -> medium -> light). The hero
-         leans bright so the green reads as "fresh leaf" rather than
-         "deep forest" — PictureThis-style bold header. -->
-    <color name="gradient_start">#15803D</color>
-    <color name="gradient_mid">#16A34A</color>
-    <color name="gradient_end">#4ADE80</color>
-    <color name="hero_gradient_start">#15803D</color>
-    <color name="hero_gradient_mid">#22C55E</color>
-    <color name="hero_gradient_end">#4ADE80</color>
-    <color name="hero_solid">#16A34A</color>
-    <!-- Text/icon colours for content sitting ON the hero gradient
-         (bg_garden_hero / bg_care_plan_gradient). Unlike ``on_primary``
-         — which tracks the *button* primary and flips dark in night
-         mode — these stay light in both themes because the hero
-         gradient stays green in both. -->
-    <color name="on_hero">#FFFFFF</color>
-    <color name="on_hero_secondary">#CCFFFFFF</color>
-    <color name="hero_stat_bg">#29FFFFFF</color>
-    <color name="hero_stat_stroke">#52FFFFFF</color>
-    <color name="hero_stat_text">#FFFFFF</color>
+    <!-- Toolbars are plain page headers (no coloured band): the title and
+         icons use the page ink. -->
+    <color name="toolbar_title">@color/on_surface</color>
 
-    <!-- Toolbar background (subtle vertical gradient with mid stop). -->
-    <color name="toolbar_top">#16A34A</color>
-    <color name="toolbar_bottom">#22C55E</color>
-    <color name="toolbar_title">#FFFFFF</color>
-
-    <!-- ─── Surface · Light theme ──────────────────────────────────
+    <!-- ─── Surface: Light theme ──────────────────────────────────
          True white surfaces with a very subtle green tint on
          ``surface_variant`` for grouped panels. Body text is a deep
          botanical green-black so dark-on-white reads botanical rather
@@ -60,7 +38,10 @@
     <color name="surface">#FFFFFF</color>
     <color name="surface_variant">#F0FDF4</color>
     <color name="on_surface">#052E16</color>
-    <color name="on_surface_secondary">#4B5563</color>
+    <!-- Muted ink, not grey: a deep leaf-green that keeps 11:1 contrast on
+         white. Never used for text under 14sp (that text uses on_surface);
+         at 14sp and up it is paired with a bold or medium weight. -->
+    <color name="on_surface_secondary">#21412F</color>
 
     <!-- Card tonal ramp for App.GlassCard / *.Strong. Without these the
          cards fall back to the Material3 baseline (lavender-tinted greys)
@@ -132,7 +113,7 @@
     <color name="chat_bubble_bot_bg">#F3F4F6</color>
     <color name="chat_bubble_user_bg">#DCFCE7</color>
     <color name="chat_bubble_text">#052E16</color>
-    <color name="chat_bubble_text_secondary">#4B5563</color>
+    <color name="chat_bubble_text_secondary">#21412F</color>
 
     <!-- Lunar calendar + moon phase -->
     <color name="lunar_good_bg">#DCFCE7</color>
@@ -162,4 +143,7 @@
     <color name="forum_solution_box">#F0F9F3</color>
     <color name="forum_photo_scrim">#99000000</color>
     <color name="forum_on_photo">#FFFFFF</color>
+    <!-- Guest-locked community actions (like, answer, reply, inputs): the one
+         disabled ink, icons and their counts only. Owner's request, 2026-11-22. -->
+    <color name="guest_locked">#A3ABA7</color>
 </resources>

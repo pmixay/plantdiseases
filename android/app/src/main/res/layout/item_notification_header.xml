@@ -10,5 +10,5 @@
     android:paddingTop="@dimen/space_lg"
     android:paddingBottom="@dimen/space_xs"
     android:textAllCaps="true"
-    android:textColor="@color/on_surface_secondary"
+    android:textColor="@color/on_surface"
     android:textSize="@dimen/text_caption" />

@@ -60,7 +60,6 @@ reproducing a single run's own number; NOT valid for a cross-version A/B).
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import re
 import sys
@@ -88,21 +87,6 @@ ABSTAIN_SENTINEL = "__ABSTAIN__"
 SUPPLEMENT_PREFIX = "supp_"
 
 
-def _sha256_file(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as fh:
-        for chunk in iter(lambda: fh.read(1 << 20), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
-
-
-def _canonical_json_sha256(value: object) -> str:
-    payload = json.dumps(
-        value, sort_keys=True, separators=(",", ":"), ensure_ascii=False,
-    ).encode("utf-8")
-    return hashlib.sha256(payload).hexdigest()
-
-
 def _legacy_bundle_entry(bundle_dir: Path) -> Path:
     """Resolve an old unbound bundle for an explicitly diagnostic run only."""
     for name in ("classifier_int8.onnx", "classifier.onnx"):
@@ -122,11 +106,16 @@ def _load_bundle_binding(
 ) -> dict:
     """Validate one immutable bundle and return its exact classifier binding.
 
-    New comparisons are release evidence, so they fail closed unless every
-    manifest-listed byte verifies and the manifest selects exactly one graph.
+    New comparisons are release evidence, so a bound bundle must pass
+    ``bundle.verify_bundle``, the same check the server runs before it boots:
+    a bundle this tool scores is one the API would serve. On top of that the
+    bundle root may hold no classifier graph other than the selected one, so
+    a stale ``classifier_*.onnx`` cannot be confused with the scored graph.
     ``allow_legacy_unbound`` exists solely to reproduce historical diagnostics;
     its result is marked unbound in the output payload.
     """
+    from bundle import BundleLoadError, verify_bundle
+
     bundle_dir = Path(bundle_dir)
     if not bundle_dir.is_dir():
         raise SystemExit(f"--bundle {bundle_dir} is not a directory")
@@ -152,114 +141,31 @@ def _load_bundle_binding(
             "diagnostic_advisory": "legacy unbound bundle; not release evidence",
         }
     try:
-        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
-        raise SystemExit(f"{manifest_path}: invalid bundle manifest: {exc}") from exc
-    if not isinstance(manifest, dict) or manifest.get("schema_version") != 1:
-        raise SystemExit(f"{manifest_path}: unsupported manifest schema")
-    selection = manifest.get("classifier_selection")
-    artifacts = manifest.get("artifacts")
-    contract = manifest.get("serving_contract")
-    if not isinstance(selection, dict) or selection.get("fallback_allowed") is not False:
-        raise SystemExit(f"{manifest_path}: classifier fallback must be explicitly false")
-    if not isinstance(artifacts, dict) or not artifacts:
-        raise SystemExit(f"{manifest_path}: artifacts must be a non-empty object")
-    if not isinstance(contract, dict) or contract.get("schema_version") != 1:
-        raise SystemExit(f"{manifest_path}: serving_contract schema is missing/unsupported")
-    selected = selection.get("path")
-    classifier_spec = artifacts.get("classifier")
-    if (not isinstance(selected, str) or not selected
-            or not isinstance(classifier_spec, dict)
-            or classifier_spec.get("path") != selected):
-        raise SystemExit(f"{manifest_path}: classifier selection/role disagree")
-    required_roles = {
-        "classifier", "detector", "classes", "temperature", "conformal",
-        "data_manifest", "run_manifest",
-    }
-    missing_roles = sorted(required_roles - set(artifacts))
-    if missing_roles:
-        raise SystemExit(f"{manifest_path}: missing required artifact roles {missing_roles}")
-    expected_paths = {
-        "detector": "detector.onnx", "classes": "classes.json",
-        "temperature": "temperature.json", "conformal": "conformal.json",
-        "data_manifest": "data_manifest.json", "run_manifest": "run_manifest.json",
-    }
-    bad_paths = {
-        role: (artifacts.get(role) or {}).get("path")
-        for role, wanted in expected_paths.items()
-        if (artifacts.get(role) or {}).get("path") != wanted
-    }
-    if bad_paths:
-        raise SystemExit(f"{manifest_path}: non-canonical required artifact paths {bad_paths}")
-    verified: dict[str, Path] = {}
-    seen_paths: set[str] = set()
-    for role, spec in artifacts.items():
-        if not isinstance(role, str) or not isinstance(spec, dict):
-            raise SystemExit(f"{manifest_path}: invalid artifact entry {role!r}")
-        raw = spec.get("path")
-        rel = PurePosixPath(raw) if isinstance(raw, str) else None
-        if (rel is None or rel.is_absolute() or not rel.parts or ".." in rel.parts
-                or "\\" in raw or rel.as_posix() in seen_paths):
-            raise SystemExit(f"{manifest_path}: unsafe/duplicate artifact path {raw!r}")
-        seen_paths.add(rel.as_posix())
-        expected_sha = spec.get("sha256")
-        expected_size = spec.get("size_bytes")
-        if (not isinstance(expected_sha, str)
-                or re.fullmatch(r"[0-9a-f]{64}", expected_sha) is None
-                or isinstance(expected_size, bool) or not isinstance(expected_size, int)
-                or expected_size < 0):
-            raise SystemExit(f"{manifest_path}: invalid digest/size for artifact {role!r}")
-        path = bundle_dir.joinpath(*rel.parts)
-        if not path.is_file():
-            raise SystemExit(f"{manifest_path}: artifact missing: {raw}")
-        if path.stat().st_size != expected_size or _sha256_file(path) != expected_sha:
-            raise SystemExit(f"{manifest_path}: artifact digest/size mismatch: {raw}")
-        verified[role] = path
-    selected_rel = PurePosixPath(selected)
-    if selected_rel.parent != PurePosixPath(".") or selected_rel.suffix != ".onnx":
-        raise SystemExit(f"{manifest_path}: selected classifier must be one root ONNX file")
+        verified = verify_bundle(bundle_dir)
+    except BundleLoadError as exc:
+        raise SystemExit(f"{bundle_dir}: not a servable bundle: {exc}") from exc
+    manifest = verified.manifest
+    selected = manifest["classifier_selection"]["path"]
     root_classifiers = sorted(
-        p.name for p in bundle_dir.glob("classifier*.onnx") if p.is_file()
+        p.name for p in verified.root.glob("classifier*.onnx") if p.is_file()
     )
-    if root_classifiers != [selected_rel.name]:
+    if root_classifiers != [selected]:
         raise SystemExit(
-            f"{manifest_path}: expected exactly [{selected_rel.name!r}] at bundle root; "
+            f"{manifest_path}: expected exactly [{selected!r}] at bundle root; "
             f"found {root_classifiers}"
         )
-    bundle_id = manifest.get("bundle_id")
-    if not isinstance(bundle_id, str) or re.fullmatch(r"[0-9a-f]{64}", bundle_id) is None:
-        raise SystemExit(f"{manifest_path}: bundle_id must be a SHA-256 hex digest")
-    identity_payload = dict(manifest)
-    identity_payload.pop("bundle_id", None)
-    if _canonical_json_sha256(identity_payload) != bundle_id:
-        raise SystemExit(f"{manifest_path}: bundle_id does not match canonical manifest identity")
-    data_identity = manifest.get("data_manifest")
-    if not isinstance(data_identity, dict):
-        raise SystemExit(f"{manifest_path}: data_manifest identity is missing")
-    if data_identity.get("manifest_sha256") != artifacts["data_manifest"].get("sha256"):
-        raise SystemExit(f"{manifest_path}: data-manifest artifact/identity digest mismatch")
-    try:
-        data_doc = json.loads(verified["data_manifest"].read_text(encoding="utf-8"))
-    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
-        raise SystemExit(f"{verified['data_manifest']}: invalid data manifest: {exc}") from exc
-    if data_identity.get("dataset_sha256") != data_doc.get("classification_sha256"):
-        raise SystemExit(f"{manifest_path}: dataset identity disagrees with data manifest")
-    if not (bundle_dir / "classes.json").exists():
-        raise SystemExit(
-            f"{bundle_dir}: no classes.json — without it the class ORDER is a guess "
-            "and every prediction could be silently mislabelled."
-        )
+    lineage = manifest["data_manifest"]
     return {
         "bound": True,
-        "classifier_path": verified["classifier"],
+        "classifier_path": verified.classifier_path,
         "selected_classifier": selected,
-        "bundle_id": bundle_id,
-        "run_id": manifest.get("run_id"),
-        "model_version": manifest.get("model_version"),
-        "data_manifest_sha256": data_identity.get("manifest_sha256"),
-        "dataset_sha256": data_identity.get("dataset_sha256"),
-        "bundle_manifest_sha256": _sha256_file(manifest_path),
-        "serving_contract_sha256": _canonical_json_sha256(contract),
+        "bundle_id": manifest["bundle_id"],
+        "run_id": manifest["run_id"],
+        "model_version": manifest["model_version"],
+        "data_manifest_sha256": lineage["manifest_sha256"],
+        "dataset_sha256": lineage["dataset_sha256"],
+        "bundle_manifest_sha256": verified.manifest_sha256,
+        "serving_contract_sha256": verified.serving_contract_sha256,
     }
 
 

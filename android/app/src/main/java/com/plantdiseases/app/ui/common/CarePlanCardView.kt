@@ -1,23 +1,33 @@
 package com.plantdiseases.app.ui.common
 
 import android.content.Context
-import android.graphics.Typeface
 import android.util.AttributeSet
-import android.util.TypedValue
-import android.view.Gravity
+import android.view.LayoutInflater
 import android.view.View
-import android.widget.FrameLayout
-import android.widget.ImageView
 import android.widget.LinearLayout
-import android.widget.ProgressBar
 import android.widget.TextView
-import com.google.android.material.button.MaterialButton
+import androidx.annotation.DrawableRes
+import androidx.annotation.StringRes
+import androidx.core.view.isVisible
+import androidx.core.widget.ImageViewCompat
 import com.google.android.material.card.MaterialCardView
 import com.plantdiseases.app.R
+import com.plantdiseases.app.data.model.CarePlanCheckpoint
 import com.plantdiseases.app.data.model.CarePlanResponse
+import com.plantdiseases.app.data.model.TemperatureBand
+import com.plantdiseases.app.databinding.CarePlanCardBinding
+import com.plantdiseases.app.databinding.CarePlanChecklistItemBinding
+import com.plantdiseases.app.databinding.CarePlanChecklistSectionBinding
+import com.plantdiseases.app.databinding.CarePlanCheckpointRowBinding
+import com.plantdiseases.app.databinding.CarePlanDetailsBinding
+import com.plantdiseases.app.databinding.CarePlanMetricChipBinding
+import com.plantdiseases.app.databinding.CarePlanPillBinding
+import com.plantdiseases.app.databinding.CarePlanRedFlagItemBinding
+import com.plantdiseases.app.databinding.CarePlanSectionHeaderBinding
+import com.plantdiseases.app.databinding.CarePlanSetupRowBinding
 
 /**
- * Self-contained green-gradient Care Plan card.
+ * Self-contained Care Plan card: a plain card with a summary section and an expandable details section.
  *
  * Renders one of three states — loading, error, or filled — and exposes
  * `bind*` callers from any host. Polished design lives entirely here so
@@ -29,24 +39,11 @@ class CarePlanCardView @JvmOverloads constructor(
     defStyle: Int = 0,
 ) : MaterialCardView(context, attrs, defStyle) {
 
-    private val gradient: LinearLayout
-    private val verticalStack: LinearLayout
-    private val accordionHeader: LinearLayout
-    private val accordionChevron: ImageView
-    private val titleView: TextView
-    private val subtitleView: TextView
-    private val statusContainer: LinearLayout
-    private val loadingView: View
-    private val errorView: View
-    private val errorBody: TextView
-    private val retryButton: MaterialButton
-    private val pillsRow: LinearLayout
-    private val noteContainer: LinearLayout
-    private val noteBody: TextView
-    private val followUpView: TextView
-    private val applyToRemindersBtn: MaterialButton
-    private val detailsToggle: MaterialButton
-    private val detailsContainer: LinearLayout
+    private val inflater = LayoutInflater.from(context)
+    private val binding: CarePlanCardBinding
+
+    private val details: CarePlanDetailsBinding
+        get() = binding.carePlanDetails
 
     private var onRetryClick: (() -> Unit)? = null
     private var onApplyToReminders: ((CarePlanResponse) -> Unit)? = null
@@ -62,7 +59,7 @@ class CarePlanCardView @JvmOverloads constructor(
     var isCurePlan: Boolean = false
         set(value) {
             field = value
-            titleView.setText(if (value) R.string.cure_plan_title else R.string.care_plan_title)
+            binding.carePlanTitle.setText(if (value) R.string.cure_plan_title else R.string.care_plan_title)
             updateAccordionAccessibility()
         }
 
@@ -80,296 +77,36 @@ class CarePlanCardView @JvmOverloads constructor(
         }
 
     init {
-        radius = 20.dp().toFloat()
+        radius = resources.getDimension(R.dimen.radius_lg)
         cardElevation = 0f
+        strokeWidth = resources.getDimensionPixelSize(R.dimen.glass_stroke_width)
+        strokeColor = context.getColor(R.color.card_stroke)
         useCompatPadding = false
         setContentPadding(0, 0, 0, 0)
         setCardBackgroundColor(context.getColor(R.color.surface))
 
-        // The card stacks two surfaces vertically: a green gradient
-        // section that hosts the high-impact summary (pills, key
-        // action, follow-up) and a surface-coloured section that
-        // hosts the verbose details when the user expands them. The
-        // gradient was readable on a 4-pill summary but saturated to
-        // near-black under a long detail panel — colour-shifting
-        // both halves to the same gradient would push every body
-        // paragraph below the legibility floor.
-        verticalStack = LinearLayout(context).apply {
-            orientation = LinearLayout.VERTICAL
-            layoutParams = LayoutParams(
-                LayoutParams.MATCH_PARENT,
-                LayoutParams.WRAP_CONTENT,
-            )
+        // care_plan_card.xml stacks two sections on one surface: the summary
+        // (pills, key action, follow-up) and the verbose details the user
+        // expands. Both use on_surface text on the card background.
+        binding = CarePlanCardBinding.inflate(inflater, this, true)
+        binding.carePlanHeader.setOnClickListener { setSectionExpanded(!sectionExpanded) }
+        binding.carePlanRetry.setOnClickListener { onRetryClick?.invoke() }
+        binding.carePlanApply.setOnClickListener {
+            lastPlan?.let { onApplyToReminders?.invoke(it) }
         }
-        addView(verticalStack)
-
-        gradient = LinearLayout(context).apply {
-            orientation = LinearLayout.VERTICAL
-            setBackgroundResource(R.drawable.bg_care_plan_gradient)
-            setPadding(20.dp(), 20.dp(), 20.dp(), 18.dp())
-        }
-        verticalStack.addView(gradient)
-
-        // Header row — leaf icon + title + subtitle
-        accordionHeader = LinearLayout(context).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            minimumHeight = 48.dp()
-            isClickable = true
-            isFocusable = true
-        }
-        accordionHeader.addView(
-            FrameLayout(context).apply {
-                setBackgroundResource(R.drawable.bg_circle_semi)
-                layoutParams = LinearLayout.LayoutParams(44.dp(), 44.dp())
-                addView(
-                    ImageView(context).apply {
-                        setImageResource(R.drawable.ic_care)
-                        setColorFilter(context.getColor(R.color.on_hero))
-                        layoutParams = FrameLayout.LayoutParams(24.dp(), 24.dp(), Gravity.CENTER)
-                    }
-                )
-            }
-        )
-        val titles = LinearLayout(context).apply {
-            orientation = LinearLayout.VERTICAL
-            layoutParams = LinearLayout.LayoutParams(
-                0,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                1f,
-            ).apply { marginStart = 12.dp() }
-        }
-        titleView = TextView(context).apply {
-            text = context.getString(R.string.care_plan_title)
-            textSize = 18f
-            setTextColor(context.getColor(R.color.on_hero))
-            typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
-        }
-        subtitleView = TextView(context).apply {
-            textSize = 12f
-            setTextColor(context.getColor(R.color.on_hero_secondary))
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-            ).apply { topMargin = 2.dp() }
-        }
-        titles.addView(titleView)
-        titles.addView(subtitleView)
-        accordionHeader.addView(titles)
-        accordionChevron = ImageView(context).apply {
-            setImageResource(R.drawable.ic_chevron_down)
-            setColorFilter(context.getColor(R.color.on_hero))
-            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
-            layoutParams = LinearLayout.LayoutParams(20.dp(), 20.dp()).apply {
-                marginStart = 8.dp()
-            }
-        }
-        accordionHeader.addView(accordionChevron)
-        accordionHeader.setOnClickListener {
-            setSectionExpanded(!sectionExpanded)
-        }
-        gradient.addView(accordionHeader)
-
-        // Status container (loading / error / pills swap inside this)
-        statusContainer = LinearLayout(context).apply {
-            orientation = LinearLayout.VERTICAL
-            visibility = View.GONE
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-            ).apply { topMargin = 16.dp() }
-        }
-        gradient.addView(statusContainer)
-
-        // ── Loading state ──
-        loadingView = LinearLayout(context).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            visibility = View.GONE
-            addView(
-                ProgressBar(context).apply {
-                    isIndeterminate = true
-                    indeterminateTintList = android.content.res.ColorStateList.valueOf(
-                        context.getColor(R.color.on_hero)
-                    )
-                    layoutParams = LinearLayout.LayoutParams(22.dp(), 22.dp())
-                }
-            )
-            addView(
-                TextView(context).apply {
-                    text = context.getString(R.string.care_plan_loading)
-                    textSize = 14f
-                    setTextColor(context.getColor(R.color.on_hero))
-                    layoutParams = LinearLayout.LayoutParams(
-                        LinearLayout.LayoutParams.MATCH_PARENT,
-                        LinearLayout.LayoutParams.WRAP_CONTENT,
-                    ).apply { marginStart = 12.dp() }
-                }
-            )
-        }
-        statusContainer.addView(loadingView)
-
-        // ── Error state ──
-        errorView = LinearLayout(context).apply {
-            orientation = LinearLayout.VERTICAL
-            visibility = View.GONE
-        }
-        errorBody = TextView(context).apply {
-            text = context.getString(R.string.care_plan_unavailable)
-            textSize = 13f
-            setTextColor(context.getColor(R.color.on_hero))
-            alpha = 0.92f
-        }
-        retryButton = MaterialButton(
-            context,
-            null,
-            com.google.android.material.R.attr.materialButtonOutlinedStyle,
-        ).apply {
-            text = context.getString(R.string.care_plan_retry)
-            setTextColor(context.getColor(R.color.on_hero))
-            strokeColor = android.content.res.ColorStateList.valueOf(
-                context.getColor(R.color.on_hero)
-            )
-            iconTint = android.content.res.ColorStateList.valueOf(
-                context.getColor(R.color.on_hero)
-            )
-            cornerRadius = 14.dp()
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-            ).apply { topMargin = 10.dp() }
-            setOnClickListener { onRetryClick?.invoke() }
-        }
-        errorView.addView(errorBody)
-        errorView.addView(retryButton)
-        statusContainer.addView(errorView)
-
-        // ── Filled state: pills + note + follow-up ──
-        pillsRow = LinearLayout(context).apply {
-            orientation = LinearLayout.VERTICAL
-            visibility = View.GONE
-        }
-        statusContainer.addView(pillsRow)
-
-        noteContainer = LinearLayout(context).apply {
-            orientation = LinearLayout.VERTICAL
-            visibility = View.GONE
-            setBackgroundResource(R.drawable.bg_care_plan_pill)
-            setPadding(14.dp(), 10.dp(), 14.dp(), 12.dp())
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-            ).apply { topMargin = 12.dp() }
-        }
-        noteContainer.addView(
-            TextView(context).apply {
-                text = context.getString(R.string.care_plan_disease_note)
-                textSize = 11f
-                setTextColor(context.getColor(R.color.on_hero_secondary))
-                typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
-                letterSpacing = 0.06f
-            }
-        )
-        noteBody = TextView(context).apply {
-            textSize = 14f
-            setTextColor(context.getColor(R.color.on_hero))
-            setLineSpacing(3.dp().toFloat(), 1f)
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-            ).apply { topMargin = 4.dp() }
-        }
-        noteContainer.addView(noteBody)
-        statusContainer.addView(noteContainer)
-
-        followUpView = TextView(context).apply {
-            textSize = 13f
-            setTextColor(context.getColor(R.color.on_hero_secondary))
-            visibility = View.GONE
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-            ).apply { topMargin = 10.dp() }
-        }
-        statusContainer.addView(followUpView)
-
-        applyToRemindersBtn = MaterialButton(
-            context,
-            null,
-            com.google.android.material.R.attr.materialButtonOutlinedStyle,
-        ).apply {
-            text = context.getString(R.string.care_plan_use_for_reminders)
-            setTextColor(context.getColor(R.color.on_hero))
-            strokeColor = android.content.res.ColorStateList.valueOf(
-                context.getColor(R.color.on_hero)
-            )
-            iconTint = android.content.res.ColorStateList.valueOf(
-                context.getColor(R.color.on_hero)
-            )
-            cornerRadius = 14.dp()
-            visibility = View.GONE
-            setIconResource(R.drawable.ic_clock)
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-            ).apply { topMargin = 14.dp() }
-            setOnClickListener {
-                lastPlan?.let { onApplyToReminders?.invoke(it) }
-            }
-        }
-        statusContainer.addView(applyToRemindersBtn)
-
-        // The "Show details" toggle stays inside the gradient (it
-        // controls the section below). The details container itself
-        // lives on the surface-colored section.
-        detailsToggle = MaterialButton(
-            context,
-            null,
-            androidx.appcompat.R.attr.borderlessButtonStyle,
-        ).apply {
-            text = context.getString(R.string.care_plan_show_details)
-            setTextColor(context.getColor(R.color.on_hero))
-            iconTint = android.content.res.ColorStateList.valueOf(
-                context.getColor(R.color.on_hero)
-            )
-            setIconResource(R.drawable.ic_chevron_down)
-            iconGravity = MaterialButton.ICON_GRAVITY_TEXT_END
-            visibility = View.GONE
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-            ).apply {
-                topMargin = 8.dp()
-                marginStart = -12.dp() // pull flush with the card padding
-            }
-            setOnClickListener { toggleDetails() }
-        }
-        statusContainer.addView(detailsToggle)
-
-        // Details panel — sits BELOW the gradient on the card's
-        // base surface. Surface-on-on_surface contrast is the same as
-        // every other card in the app, so a 14-row checklist remains
-        // readable instead of fading into the gradient's mid-green.
-        // Each detail row null-guards independently so a sparse plan
-        // collapses unused sections instead of rendering empty ones.
-        detailsContainer = LinearLayout(context).apply {
-            orientation = LinearLayout.VERTICAL
-            visibility = View.GONE
-            setPadding(20.dp(), 4.dp(), 20.dp(), 20.dp())
-        }
-        verticalStack.addView(detailsContainer)
+        binding.carePlanDetailsToggle.setOnClickListener { toggleDetails() }
         setSectionExpanded(expanded = false, animate = false)
     }
 
     private fun setSectionExpanded(expanded: Boolean, animate: Boolean = true) {
         sectionExpanded = expanded
         ExpandableSectionAnimator.update(
-            container = verticalStack,
+            container = binding.carePlanStack,
             expanded = expanded,
-            chevron = accordionChevron,
+            chevron = binding.carePlanChevron,
             animate = animate,
         ) {
-            statusContainer.visibility = if (expanded) View.VISIBLE else View.GONE
+            binding.carePlanStatus.visibility = if (expanded) View.VISIBLE else View.GONE
             applyDetailsState()
         }
         updateAccordionAccessibility()
@@ -378,20 +115,20 @@ class CarePlanCardView @JvmOverloads constructor(
     /**
      * Single source of truth for the detail panel. The toggle only exists
      * while details are collapsible; the panel itself additionally needs the
-     * card's own section open (it is a sibling of the gradient, not a child
+     * card's own section open (it is a sibling of the summary section, not a child
      * of the container the accordion hides).
      */
     private fun applyDetailsState() {
         val available = detailsEnabled && hasDetails
-        detailsToggle.visibility = if (available) View.VISIBLE else View.GONE
+        binding.carePlanDetailsToggle.visibility = if (available) View.VISIBLE else View.GONE
         val show = available && sectionExpanded && detailsExpanded
-        detailsContainer.visibility = if (show) View.VISIBLE else View.GONE
+        binding.carePlanDetails.root.visibility = if (show) View.VISIBLE else View.GONE
     }
 
     private fun updateAccordionAccessibility() {
-        accordionHeader.contentDescription = context.getString(
+        binding.carePlanHeader.contentDescription = context.getString(
             R.string.species_info_toggle_content_description,
-            titleView.text?.toString().orEmpty(),
+            binding.carePlanTitle.text?.toString().orEmpty(),
             context.getString(
                 if (sectionExpanded) R.string.care_plan_collapse else R.string.care_plan_expand,
             ),
@@ -401,19 +138,19 @@ class CarePlanCardView @JvmOverloads constructor(
     private fun toggleDetails() {
         detailsExpanded = !detailsExpanded
         ExpandableSectionAnimator.update(
-            container = verticalStack,
+            container = binding.carePlanStack,
             expanded = detailsExpanded,
         ) {
             applyDetailsState()
         }
-        detailsToggle.text = context.getString(
+        binding.carePlanDetailsToggle.text = context.getString(
             if (detailsExpanded) {
                 R.string.care_plan_hide_details
             } else {
                 R.string.care_plan_show_details
             },
         )
-        detailsToggle.setIconResource(
+        binding.carePlanDetailsToggle.setIconResource(
             if (detailsExpanded) {
                 R.drawable.ic_chevron_up
             } else {
@@ -425,39 +162,39 @@ class CarePlanCardView @JvmOverloads constructor(
     private fun resetDetailsExpansion() {
         detailsExpanded = false
         hasDetails = false
-        detailsToggle.text = context.getString(R.string.care_plan_show_details)
-        detailsToggle.setIconResource(R.drawable.ic_chevron_down)
+        binding.carePlanDetailsToggle.text = context.getString(R.string.care_plan_show_details)
+        binding.carePlanDetailsToggle.setIconResource(R.drawable.ic_chevron_down)
         applyDetailsState()
     }
 
     fun showLoading(speciesHint: String?) {
-        subtitleView.text = speciesSubtitle(speciesHint)
+        binding.carePlanSubtitle.text = speciesSubtitle(speciesHint)
         resetDetailsExpansion()
-        loadingView.visibility = View.VISIBLE
-        errorView.visibility = View.GONE
-        pillsRow.visibility = View.GONE
-        noteContainer.visibility = View.GONE
-        followUpView.visibility = View.GONE
-        applyToRemindersBtn.visibility = View.GONE
-        detailsToggle.visibility = View.GONE
-        detailsContainer.visibility = View.GONE
+        binding.carePlanLoading.visibility = View.VISIBLE
+        binding.carePlanError.visibility = View.GONE
+        binding.carePlanPills.visibility = View.GONE
+        binding.carePlanNote.visibility = View.GONE
+        binding.carePlanFollowUp.visibility = View.GONE
+        binding.carePlanApply.visibility = View.GONE
+        binding.carePlanDetailsToggle.visibility = View.GONE
+        binding.carePlanDetails.root.visibility = View.GONE
     }
 
-    fun showError(onRetry: () -> Unit) {
+    fun showError(onRetry: () -> Unit, message: CharSequence? = null) {
         onRetryClick = onRetry
         resetDetailsExpansion()
-        loadingView.visibility = View.GONE
-        pillsRow.visibility = View.GONE
-        noteContainer.visibility = View.GONE
-        followUpView.visibility = View.GONE
-        applyToRemindersBtn.visibility = View.GONE
-        detailsToggle.visibility = View.GONE
-        detailsContainer.visibility = View.GONE
+        binding.carePlanLoading.visibility = View.GONE
+        binding.carePlanPills.visibility = View.GONE
+        binding.carePlanNote.visibility = View.GONE
+        binding.carePlanFollowUp.visibility = View.GONE
+        binding.carePlanApply.visibility = View.GONE
+        binding.carePlanDetailsToggle.visibility = View.GONE
+        binding.carePlanDetails.root.visibility = View.GONE
         // Reset error-state text in case a previous showAwaitingScan() call
         // overrode it on this same instance.
-        errorBody.text = context.getString(R.string.care_plan_unavailable)
-        retryButton.text = context.getString(R.string.care_plan_retry)
-        errorView.visibility = View.VISIBLE
+        binding.carePlanErrorBody.text = message ?: context.getString(R.string.care_plan_unavailable)
+        binding.carePlanRetry.text = context.getString(R.string.care_plan_retry)
+        binding.carePlanError.visibility = View.VISIBLE
     }
 
     /**
@@ -469,18 +206,18 @@ class CarePlanCardView @JvmOverloads constructor(
      * now" CTA via the supplied callback.
      */
     fun showAwaitingScan(speciesHint: String?, onScanNow: () -> Unit) {
-        subtitleView.text = speciesSubtitle(speciesHint)
+        binding.carePlanSubtitle.text = speciesSubtitle(speciesHint)
         resetDetailsExpansion()
-        loadingView.visibility = View.GONE
-        pillsRow.visibility = View.GONE
-        noteContainer.visibility = View.GONE
-        followUpView.visibility = View.GONE
-        applyToRemindersBtn.visibility = View.GONE
-        detailsToggle.visibility = View.GONE
-        detailsContainer.visibility = View.GONE
-        errorView.visibility = View.VISIBLE
-        errorBody.text = context.getString(R.string.care_plan_awaiting_scan)
-        retryButton.text = context.getString(R.string.care_plan_scan_now)
+        binding.carePlanLoading.visibility = View.GONE
+        binding.carePlanPills.visibility = View.GONE
+        binding.carePlanNote.visibility = View.GONE
+        binding.carePlanFollowUp.visibility = View.GONE
+        binding.carePlanApply.visibility = View.GONE
+        binding.carePlanDetailsToggle.visibility = View.GONE
+        binding.carePlanDetails.root.visibility = View.GONE
+        binding.carePlanError.visibility = View.VISIBLE
+        binding.carePlanErrorBody.text = context.getString(R.string.care_plan_awaiting_scan)
+        binding.carePlanRetry.text = context.getString(R.string.care_plan_scan_now)
         onRetryClick = onScanNow
     }
 
@@ -496,74 +233,57 @@ class CarePlanCardView @JvmOverloads constructor(
     ) {
         lastPlan = plan
         this.onApplyToReminders = onApplyToReminders
-        subtitleView.text = if (offlineBasic) {
+        binding.carePlanSubtitle.text = if (offlineBasic) {
             context.getString(R.string.care_plan_subtitle_offline)
         } else {
             speciesSubtitle(speciesDisplay ?: plan.species.takeIf { plan.hasSpecies })
         }
 
-        loadingView.visibility = View.GONE
-        errorView.visibility = View.GONE
+        binding.carePlanLoading.visibility = View.GONE
+        binding.carePlanError.visibility = View.GONE
 
-        // Build pills
-        pillsRow.removeAllViews()
-        val pillsRowOne = horizontalRow()
-        pillsRowOne.addView(
-            pill(
-                R.drawable.ic_watering,
-                context.getString(R.string.care_plan_watering),
-                wateringValueText(plan),
-                isFirstInRow = true,
-            )
+        bindPill(
+            binding.carePlanPillWatering,
+            R.drawable.ic_watering,
+            R.string.care_plan_watering,
+            wateringValueText(plan),
         )
-        pillsRowOne.addView(
-            pill(
-                R.drawable.ic_treatment,
-                context.getString(R.string.care_plan_fertilising),
-                context.resources.getString(R.string.care_plan_fertilising_weeks, plan.fertiliseWeeks),
-                isFirstInRow = false,
-            )
+        bindPill(
+            binding.carePlanPillFertilising,
+            R.drawable.ic_treatment,
+            R.string.care_plan_fertilising,
+            context.resources.getString(R.string.care_plan_fertilising_weeks, plan.fertiliseWeeks),
         )
-        pillsRow.addView(pillsRowOne)
-
-        val pillsRowTwo = horizontalRow().apply {
-            (layoutParams as LinearLayout.LayoutParams).topMargin = 10.dp()
-        }
-        pillsRowTwo.addView(
-            pill(
-                R.drawable.ic_light,
-                context.getString(R.string.care_plan_light),
-                lightTierLabel(plan.lightTier),
-                isFirstInRow = true,
-            )
+        bindPill(
+            binding.carePlanPillLight,
+            R.drawable.ic_light,
+            R.string.care_plan_light,
+            lightTierLabel(plan.lightTier),
         )
-        pillsRowTwo.addView(
-            pill(
-                R.drawable.ic_warning,
-                context.getString(R.string.care_plan_humidity),
-                plan.humidityTarget,
-                isFirstInRow = false,
-            )
+        bindPill(
+            binding.carePlanPillHumidity,
+            R.drawable.ic_warning,
+            R.string.care_plan_humidity,
+            plan.humidityTarget,
         )
-        pillsRow.addView(pillsRowTwo)
-        pillsRow.visibility = View.VISIBLE
+        binding.carePlanPills.visibility = View.VISIBLE
 
         // Disease note (only if non-empty)
         val note = plan.keyAction.trim()
         if (note.isNotEmpty()) {
-            noteBody.text = note
-            noteContainer.visibility = View.VISIBLE
+            binding.carePlanNoteBody.text = note
+            binding.carePlanNote.visibility = View.VISIBLE
         } else {
-            noteContainer.visibility = View.GONE
+            binding.carePlanNote.visibility = View.GONE
         }
 
-        followUpView.text = context.resources.getString(
+        binding.carePlanFollowUp.text = context.resources.getString(
             R.string.care_plan_follow_up,
             plan.followUpDays
         )
-        followUpView.visibility = View.VISIBLE
+        binding.carePlanFollowUp.visibility = View.VISIBLE
 
-        applyToRemindersBtn.visibility =
+        binding.carePlanApply.visibility =
             if (showApplyToReminders && onApplyToReminders != null) View.VISIBLE else View.GONE
 
         // Build v2-field details panel and toggle visibility based on
@@ -574,17 +294,18 @@ class CarePlanCardView @JvmOverloads constructor(
         val rendered = detailsEnabled && applyV2Details(plan)
         detailsExpanded = false
         hasDetails = rendered
-        detailsToggle.text = context.getString(R.string.care_plan_show_details)
-        detailsToggle.setIconResource(R.drawable.ic_chevron_down)
+        binding.carePlanDetailsToggle.text = context.getString(R.string.care_plan_show_details)
+        binding.carePlanDetailsToggle.setIconResource(R.drawable.ic_chevron_down)
         applyDetailsState()
     }
 
-    /** Render the rich v2 care-plan fields into [detailsContainer].
+    /** Fill the rich v2 care-plan sections of the details panel (care_plan_details.xml)
+     *  and show only those the plan has content for.
      *  Returns ``true`` when at least one section had content (i.e.
      *  the toggle should be visible), ``false`` when the plan is
      *  v1-only and nothing extra needs revealing.
      *
-     *  Layout order is most-actionable-first:
+     *  Layout order is fixed in the XML, most-actionable-first:
      *    1. Red flags  (warning card, top so it isn't buried)
      *    2. Climate    (lux / humidity / temperature, as three chips)
      *    3. Treatment checklist
@@ -592,289 +313,154 @@ class CarePlanCardView @JvmOverloads constructor(
      *    5. Isolation chip (when required)
      *    6. Placement / soil / NPK / acclimation / watering method
      *    7. Checkpoints (timeline)
-     *    8. Season note (italic) */
-    private fun applyV2Details(plan: CarePlanResponse): Boolean {
-        detailsContainer.removeAllViews()
-        var any = false
+     *    8. Season note (italic)
+     *
+     *  Every section binds (the list is built eagerly) so a section the plan no
+     *  longer fills is hidden, not left over from the previous bind. */
+    private fun applyV2Details(plan: CarePlanResponse): Boolean = listOf(
+        bindRedFlags(plan.redFlags.nonBlankItems()),
+        bindClimate(plan),
+        bindChecklist(
+            details.carePlanTreatment,
+            R.string.care_plan_detail_treatment,
+            R.drawable.ic_treatment,
+            plan.treatment.nonBlankItems(),
+        ),
+        bindChecklist(
+            details.carePlanSanitation,
+            R.string.care_plan_detail_sanitation,
+            R.drawable.ic_warning,
+            plan.sanitation.nonBlankItems(),
+        ),
+        bindIsolation(plan.isolation),
+        bindSetup(buildSetupRows(plan)),
+        bindCheckpoints(plan.checkpoints.orEmpty().filter { it.check.isNotBlank() }),
+        bindSeasonNote(plan.seasonNote),
+    ).any { it }
 
-        // 1. RED FLAGS — surfaced first because the whole point of the
-        // details panel is "tell me what to watch for". Buried at the
-        // bottom (the old layout) made them the hardest-to-find
-        // section despite being the most important.
-        plan.redFlags?.filter { it.isNotBlank() }?.takeIf { it.isNotEmpty() }?.let { items ->
-            detailsContainer.addView(redFlagsCard(items))
-            any = true
-        }
+    private fun List<String>?.nonBlankItems(): List<String> = orEmpty().filter { it.isNotBlank() }
 
-        // 2. CLIMATE — lux, humidity, temperature compress into three
-        // small pills on a single row. The user wants "what range?"
-        // not a verbose label per field.
-        val climatePills = climateChipRow(plan)
-        if (climatePills != null) {
-            detailsContainer.addView(climatePills)
-            any = true
-        }
-
-        // 3. TREATMENT CHECKLIST — what to actually do, in order.
-        plan.treatment?.filter { it.isNotBlank() }?.takeIf { it.isNotEmpty() }?.let { items ->
-            detailsContainer.addView(
-                checklistSection(
-                    R.string.care_plan_detail_treatment,
-                    R.drawable.ic_treatment,
-                    items,
-                )
-            )
-            any = true
-        }
-
-        // 4. SANITATION — secondary actions, still a checklist shape.
-        plan.sanitation?.filter { it.isNotBlank() }?.takeIf { it.isNotEmpty() }?.let { items ->
-            detailsContainer.addView(
-                checklistSection(
-                    R.string.care_plan_detail_sanitation,
-                    R.drawable.ic_warning,
-                    items,
-                )
-            )
-            any = true
-        }
-
-        // 5. ISOLATION — boolean → single chip; only show when true.
-        if (plan.isolation) {
-            detailsContainer.addView(isolationChip())
-            any = true
-        }
-
-        // 6. SETUP — placement / soil / NPK / acclimation / watering
-        // method roll into one labelled "Setup" subsection because
-        // they're all infrequent reference data, not daily actions.
-        val setupRows = buildSetupRows(plan)
-        if (setupRows.isNotEmpty()) {
-            detailsContainer.addView(setupSection(setupRows))
-            any = true
-        }
-
-        // 7. CHECKPOINTS — vertical timeline with day badge per item.
-        plan.checkpoints?.filter { it.check.isNotBlank() }?.takeIf { it.isNotEmpty() }?.let { items ->
-            detailsContainer.addView(checkpointsTimeline(items))
-            any = true
-        }
-
-        // 8. SEASON NOTE — italic, dim; this is reference context not
-        // an action.
-        plan.seasonNote?.takeIf { it.isNotBlank() }?.let {
-            detailsContainer.addView(seasonNote(it))
-            any = true
-        }
-
-        return any
+    private fun bindHeader(
+        header: CarePlanSectionHeaderBinding,
+        @StringRes label: Int,
+        @DrawableRes icon: Int,
+    ) {
+        header.carePlanSectionIcon.setImageResource(icon)
+        header.carePlanSectionLabel.setText(label)
     }
 
-    /** Red-flags warning card. Coloured background + alert icon so
-     *  the user can't miss it. */
-    private fun redFlagsCard(items: List<String>): View {
-        val outer = LinearLayout(context).apply {
-            orientation = LinearLayout.VERTICAL
-            background = android.graphics.drawable.GradientDrawable().apply {
-                shape = android.graphics.drawable.GradientDrawable.RECTANGLE
-                cornerRadius = 14.dp().toFloat()
-                setColor(context.getColor(R.color.disease_red_bg))
-            }
-            setPadding(14.dp(), 12.dp(), 14.dp(), 14.dp())
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-            ).apply { topMargin = 14.dp() }
-        }
-        outer.addView(
-            sectionHeader(
-                R.string.care_plan_detail_red_flags,
-                R.drawable.ic_warning,
-                tint = context.getColor(R.color.disease_red),
-            )
-        )
-        items.forEach { item ->
-            outer.addView(
-                TextView(context).apply {
-                    text = "•  $item"
-                    textSize = 15f
-                    setTextColor(context.getColor(R.color.disease_red))
-                    setLineSpacing(4.dp().toFloat(), 1f)
-                    layoutParams = LinearLayout.LayoutParams(
-                        LinearLayout.LayoutParams.MATCH_PARENT,
-                        LinearLayout.LayoutParams.WRAP_CONTENT,
-                    ).apply { topMargin = 4.dp() }
-                }
-            )
-        }
-        return outer
-    }
-
-    /** Returns null when neither lux, humidity nor temperature are
-     *  populated — in that case the climate section just doesn't
-     *  render. */
-    private fun climateChipRow(plan: CarePlanResponse): View? {
-        val chips = mutableListOf<View>()
-        plan.lightLuxTarget?.takeIf { it.min > 0 || it.max > 0 }?.let { lux ->
-            chips.add(
-                metricChip(
-                    R.drawable.ic_light,
-                    context.getString(R.string.care_plan_light).uppercase(),
-                    context.resources.getString(R.string.care_plan_lux_range, lux.min, lux.max),
-                )
-            )
-        }
-        plan.humidityBand?.takeIf { it.min > 0 || it.max > 0 }?.let { hum ->
-            chips.add(
-                metricChip(
-                    R.drawable.ic_warning,
-                    context.getString(R.string.care_plan_humidity).uppercase(),
-                    context.resources.getString(R.string.care_plan_humidity_range, hum.min, hum.max),
-                )
-            )
-        }
-        plan.temperatureC?.let { temp ->
-            val day = temp.day?.takeIf { it.size == 2 }
-            val night = temp.night?.takeIf { it.size == 2 }
-            val parts = buildList {
-                day?.let { add(context.resources.getString(R.string.care_plan_temp_day, it[0], it[1])) }
-                night?.let { add(context.resources.getString(R.string.care_plan_temp_night, it[0], it[1])) }
-            }
-            if (parts.isNotEmpty()) {
-                chips.add(
-                    metricChip(
-                        R.drawable.ic_treatment,
-                        context.getString(R.string.care_plan_detail_temperature).uppercase(),
-                        parts.joinToString("  ·  "),
-                    )
-                )
-            }
-        }
-        if (chips.isEmpty()) return null
-        val outer = LinearLayout(context).apply {
-            orientation = LinearLayout.VERTICAL
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-            ).apply { topMargin = 18.dp() }
-        }
-        chips.forEach { chip ->
-            outer.addView(chip)
-            (chip.layoutParams as? LinearLayout.LayoutParams)?.topMargin = 8.dp()
-        }
-        // First chip has no top-margin (sits flush under the section gap).
-        (chips.first().layoutParams as? LinearLayout.LayoutParams)?.topMargin = 0
-        return outer
-    }
-
-    /** One climate row — icon + tiny all-caps label + value text. */
-    private fun metricChip(iconRes: Int, label: String, value: String): View {
-        val row = LinearLayout(context).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            background = android.graphics.drawable.GradientDrawable().apply {
-                shape = android.graphics.drawable.GradientDrawable.RECTANGLE
-                cornerRadius = 12.dp().toFloat()
-                setStroke(1.dp(), context.getColor(R.color.card_stroke))
-            }
-            setPadding(12.dp(), 10.dp(), 12.dp(), 10.dp())
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-            )
-        }
-        row.addView(
-            ImageView(context).apply {
-                setImageResource(iconRes)
-                setColorFilter(context.getColor(R.color.primary))
-                layoutParams = LinearLayout.LayoutParams(18.dp(), 18.dp())
-            }
-        )
-        val text = LinearLayout(context).apply {
-            orientation = LinearLayout.VERTICAL
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-                .apply { marginStart = 10.dp() }
-        }
-        text.addView(
-            TextView(context).apply {
-                this.text = label
-                textSize = 11f
-                letterSpacing = 0.08f
-                setTextColor(context.getColor(R.color.on_surface_secondary))
-                typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
-            }
-        )
-        text.addView(
-            TextView(context).apply {
-                this.text = value
-                textSize = 15f
-                setTextColor(context.getColor(R.color.on_surface))
-                typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
-                layoutParams = LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT,
-                ).apply { topMargin = 1.dp() }
-            }
-        )
-        row.addView(text)
-        return row
-    }
-
-    /** Section with a header row + bullet items. Uses on_surface
-     *  colours throughout so it stays readable on the white / dark
-     *  base surface, regardless of theme. */
-    private fun checklistSection(
-        labelRes: Int,
-        iconRes: Int,
+    /** One bullet per item, each inflated from [inflateRow] into [container]. */
+    private fun fillBullets(
+        container: LinearLayout,
         items: List<String>,
-    ): View {
-        val outer = LinearLayout(context).apply {
-            orientation = LinearLayout.VERTICAL
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-            ).apply { topMargin = 20.dp() }
-        }
-        outer.addView(sectionHeader(labelRes, iconRes))
+        inflateRow: (LinearLayout) -> TextView,
+    ) {
+        container.removeAllViews()
         items.forEach { item ->
-            outer.addView(
-                TextView(context).apply {
-                    text = "•  $item"
-                    textSize = 15f
-                    setTextColor(context.getColor(R.color.on_surface))
-                    setLineSpacing(4.dp().toFloat(), 1f)
-                    layoutParams = LinearLayout.LayoutParams(
-                        LinearLayout.LayoutParams.MATCH_PARENT,
-                        LinearLayout.LayoutParams.WRAP_CONTENT,
-                    ).apply { topMargin = 5.dp() }
-                }
-            )
+            container.addView(inflateRow(container).apply { text = BULLET_PREFIX + item })
         }
-        return outer
     }
 
-    /** Single-line isolation pill — boolean disease-care signal. */
-    private fun isolationChip(): View {
-        val chip = TextView(context).apply {
-            text = "⚠  " + context.getString(R.string.care_plan_isolation_required)
-            textSize = 13f
-            setTextColor(context.getColor(R.color.disease_red))
-            typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
-            setPadding(12.dp(), 8.dp(), 12.dp(), 8.dp())
-            background = android.graphics.drawable.GradientDrawable().apply {
-                shape = android.graphics.drawable.GradientDrawable.RECTANGLE
-                cornerRadius = 999f
-                setColor(context.getColor(R.color.disease_red_bg))
-            }
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-            ).apply { topMargin = 14.dp() }
+    /** Red-flags warning card: coloured background + alert icon so the user
+     *  can't miss it. */
+    private fun bindRedFlags(items: List<String>): Boolean {
+        details.carePlanRedFlags.isVisible = items.isNotEmpty()
+        if (items.isEmpty()) return false
+        val header = details.carePlanRedFlagsHeader
+        bindHeader(header, R.string.care_plan_detail_red_flags, R.drawable.ic_warning)
+        ImageViewCompat.setImageTintList(
+            header.carePlanSectionIcon,
+            context.getColorStateList(R.color.disease_red),
+        )
+        fillBullets(details.carePlanRedFlagsItems, items) {
+            CarePlanRedFlagItemBinding.inflate(inflater, it, false).root
         }
-        return chip
+        return true
     }
 
-    private data class SetupRow(val labelRes: Int, val iconRes: Int, val value: String)
+    /** Hidden when neither lux, humidity nor temperature are populated. */
+    private fun bindClimate(plan: CarePlanResponse): Boolean {
+        val lux = plan.lightLuxTarget?.takeIf { it.min > 0 || it.max > 0 }
+        val humidity = plan.humidityBand?.takeIf { it.min > 0 || it.max > 0 }
+        val shown = listOf(
+            bindChip(
+                details.carePlanChipLight,
+                R.drawable.ic_light,
+                R.string.care_plan_light,
+                lux?.let { context.resources.getString(R.string.care_plan_lux_range, it.min, it.max) },
+            ),
+            bindChip(
+                details.carePlanChipHumidity,
+                R.drawable.ic_warning,
+                R.string.care_plan_humidity,
+                humidity?.let {
+                    context.resources.getString(R.string.care_plan_humidity_range, it.min, it.max)
+                },
+            ),
+            bindChip(
+                details.carePlanChipTemperature,
+                R.drawable.ic_treatment,
+                R.string.care_plan_detail_temperature,
+                temperatureText(plan.temperatureC),
+            ),
+        ).any { it }
+        details.carePlanClimate.isVisible = shown
+        return shown
+    }
+
+    private fun temperatureText(temp: TemperatureBand?): String? {
+        val day = temp?.day?.takeIf { it.size == 2 }
+        val night = temp?.night?.takeIf { it.size == 2 }
+        val parts = buildList {
+            day?.let { add(context.resources.getString(R.string.care_plan_temp_day, it[0], it[1])) }
+            night?.let { add(context.resources.getString(R.string.care_plan_temp_night, it[0], it[1])) }
+        }
+        return parts.takeIf { it.isNotEmpty() }?.joinToString(", ")
+    }
+
+    /** One climate row: icon, all-caps label and [value]; hidden when [value] is null. */
+    private fun bindChip(
+        chip: CarePlanMetricChipBinding,
+        @DrawableRes icon: Int,
+        @StringRes label: Int,
+        value: String?,
+    ): Boolean {
+        chip.root.isVisible = value != null
+        if (value == null) return false
+        chip.carePlanChipIcon.setImageResource(icon)
+        chip.carePlanChipLabel.setText(label)
+        chip.carePlanChipValue.text = value
+        return true
+    }
+
+    /** Header + bullet items. Uses on_surface throughout so it stays readable
+     *  on the white / dark base surface, regardless of theme. */
+    private fun bindChecklist(
+        section: CarePlanChecklistSectionBinding,
+        @StringRes label: Int,
+        @DrawableRes icon: Int,
+        items: List<String>,
+    ): Boolean {
+        section.root.isVisible = items.isNotEmpty()
+        if (items.isEmpty()) return false
+        bindHeader(section.carePlanChecklistHeader, label, icon)
+        fillBullets(section.carePlanChecklistItems, items) {
+            CarePlanChecklistItemBinding.inflate(inflater, it, false).root
+        }
+        return true
+    }
+
+    /** Single-line isolation pill: boolean disease-care signal, shown only when true. */
+    private fun bindIsolation(required: Boolean): Boolean {
+        details.carePlanIsolation.isVisible = required
+        if (required) {
+            details.carePlanIsolation.text =
+                ISOLATION_PREFIX + context.getString(R.string.care_plan_isolation_required)
+        }
+        return required
+    }
+
+    private data class SetupRow(val labelRes: Int, val value: String)
 
     /** Map the server's watering-method enum to a localized, human-readable
      *  sentence. Unknown/free-text values pass through unchanged. */
@@ -891,13 +477,13 @@ class CarePlanCardView @JvmOverloads constructor(
 
     private fun buildSetupRows(plan: CarePlanResponse): List<SetupRow> = buildList {
         plan.placement?.takeIf { it.isNotBlank() }?.let {
-            add(SetupRow(R.string.care_plan_detail_placement, R.drawable.ic_garden, it))
+            add(SetupRow(R.string.care_plan_detail_placement, it))
         }
         plan.soilMix?.takeIf { it.isNotBlank() }?.let {
-            add(SetupRow(R.string.care_plan_detail_soil_mix, R.drawable.ic_garden, it))
+            add(SetupRow(R.string.care_plan_detail_soil_mix, it))
         }
         plan.fertiliserNpk?.takeIf { it.isNotBlank() }?.let {
-            add(SetupRow(R.string.care_plan_detail_npk, R.drawable.ic_treatment, it))
+            add(SetupRow(R.string.care_plan_detail_npk, it))
         }
         // A short, concrete example of what to actually apply — the NPK ratio
         // alone doesn't tell a beginner what to buy or how strong to mix it.
@@ -905,254 +491,77 @@ class CarePlanCardView @JvmOverloads constructor(
             add(
                 SetupRow(
                     R.string.care_plan_detail_fertilise_howto,
-                    R.drawable.ic_treatment,
                     context.getString(R.string.care_plan_fertilise_howto_value),
                 ),
             )
         }
         plan.wateringMethod?.takeIf { it.isNotBlank() }?.let {
-            add(
-                SetupRow(
-                    R.string.care_plan_detail_watering_method,
-                    R.drawable.ic_watering,
-                    humanizeWateringMethod(it),
-                )
-            )
+            add(SetupRow(R.string.care_plan_detail_watering_method, humanizeWateringMethod(it)))
         }
         plan.acclimation?.takeIf { it.isNotBlank() }?.let {
-            add(SetupRow(R.string.care_plan_detail_acclimation, R.drawable.ic_clock, it))
+            add(SetupRow(R.string.care_plan_detail_acclimation, it))
         }
     }
 
-    private fun setupSection(rows: List<SetupRow>): View {
-        val outer = LinearLayout(context).apply {
-            orientation = LinearLayout.VERTICAL
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-            ).apply { topMargin = 20.dp() }
-        }
-        outer.addView(
-            sectionHeader(
-                R.string.care_plan_detail_setup,
-                R.drawable.ic_garden,
-            )
-        )
+    /** Placement / soil / NPK / acclimation / watering method roll into one
+     *  labelled "Setup" section: infrequent reference data, not daily actions. */
+    private fun bindSetup(rows: List<SetupRow>): Boolean {
+        details.carePlanSetup.isVisible = rows.isNotEmpty()
+        if (rows.isEmpty()) return false
+        bindHeader(details.carePlanSetupHeader, R.string.care_plan_detail_setup, R.drawable.ic_garden)
+        val container = details.carePlanSetupRows
+        container.removeAllViews()
         rows.forEach { row ->
-            outer.addView(setupRow(row))
+            val item = CarePlanSetupRowBinding.inflate(inflater, container, false)
+            item.carePlanSetupLabel.setText(row.labelRes)
+            item.carePlanSetupValue.text = row.value
+            container.addView(item.root)
         }
-        return outer
+        return true
     }
 
-    private fun setupRow(row: SetupRow): View {
-        val container = LinearLayout(context).apply {
-            orientation = LinearLayout.VERTICAL
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-            ).apply { topMargin = 8.dp() }
-        }
-        container.addView(
-            TextView(context).apply {
-                text = context.getString(row.labelRes)
-                textSize = 12f
-                letterSpacing = 0.06f
-                setTextColor(context.getColor(R.color.on_surface_secondary))
-                typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
-            }
+    /** Vertical timeline with a green "D + N" day badge per checkpoint. */
+    private fun bindCheckpoints(items: List<CarePlanCheckpoint>): Boolean {
+        details.carePlanCheckpoints.isVisible = items.isNotEmpty()
+        if (items.isEmpty()) return false
+        bindHeader(
+            details.carePlanCheckpointsHeader,
+            R.string.care_plan_detail_checkpoints,
+            R.drawable.ic_clock,
         )
-        container.addView(
-            TextView(context).apply {
-                text = row.value
-                textSize = 15f
-                setTextColor(context.getColor(R.color.on_surface))
-                setLineSpacing(3.dp().toFloat(), 1f)
-                layoutParams = LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT,
-                ).apply { topMargin = 2.dp() }
-            }
-        )
-        return container
-    }
-
-    private fun checkpointsTimeline(
-        items: List<com.plantdiseases.app.data.model.CarePlanCheckpoint>,
-    ): View {
-        val outer = LinearLayout(context).apply {
-            orientation = LinearLayout.VERTICAL
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-            ).apply { topMargin = 20.dp() }
-        }
-        outer.addView(
-            sectionHeader(
-                R.string.care_plan_detail_checkpoints,
-                R.drawable.ic_clock,
-            )
-        )
+        val container = details.carePlanCheckpointRows
+        container.removeAllViews()
         items.forEach { cp ->
-            val row = LinearLayout(context).apply {
-                orientation = LinearLayout.HORIZONTAL
-                gravity = Gravity.CENTER_VERTICAL
-                layoutParams = LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT,
-                ).apply { topMargin = 8.dp() }
-            }
-            // Day badge — circular green pill with "D + N".
-            row.addView(
-                TextView(context).apply {
-                    text = context.resources.getString(R.string.care_plan_day_badge, cp.day)
-                    textSize = 13f
-                    setTextColor(context.getColor(R.color.on_primary))
-                    typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
-                    gravity = Gravity.CENTER
-                    setPadding(0, 0, 0, 0)
-                    minWidth = 42.dp()
-                    background = android.graphics.drawable.GradientDrawable().apply {
-                        shape = android.graphics.drawable.GradientDrawable.RECTANGLE
-                        cornerRadius = 999f
-                        setColor(context.getColor(R.color.primary))
-                    }
-                    val v = 5.dp()
-                    setPadding(8.dp(), v, 8.dp(), v)
-                    layoutParams = LinearLayout.LayoutParams(
-                        LinearLayout.LayoutParams.WRAP_CONTENT,
-                        LinearLayout.LayoutParams.WRAP_CONTENT,
-                    )
-                }
-            )
-            row.addView(
-                TextView(context).apply {
-                    text = cp.check
-                    textSize = 15f
-                    setTextColor(context.getColor(R.color.on_surface))
-                    setLineSpacing(3.dp().toFloat(), 1f)
-                    layoutParams = LinearLayout.LayoutParams(
-                        0,
-                        LinearLayout.LayoutParams.WRAP_CONTENT,
-                        1f,
-                    ).apply { marginStart = 12.dp() }
-                }
-            )
-            outer.addView(row)
+            val row = CarePlanCheckpointRowBinding.inflate(inflater, container, false)
+            row.carePlanCheckpointDay.text =
+                context.resources.getString(R.string.care_plan_day_badge, cp.day)
+            row.carePlanCheckpointText.text = cp.check
+            container.addView(row.root)
         }
-        return outer
+        return true
     }
 
-    private fun seasonNote(text: String): View = TextView(context).apply {
-        this.text = text
-        textSize = 12f
-        setTextColor(context.getColor(R.color.on_surface_secondary))
-        setTypeface(typeface, Typeface.ITALIC)
-        setLineSpacing(2.dp().toFloat(), 1f)
-        layoutParams = LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT,
-            LinearLayout.LayoutParams.WRAP_CONTENT,
-        ).apply { topMargin = 16.dp() }
-    }
-
-    private fun sectionHeader(
-        labelRes: Int,
-        iconRes: Int,
-        tint: Int = context.getColor(R.color.primary),
-    ): View {
-        val header = LinearLayout(context).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
+    /** Reference context rather than an action, so it closes the panel. */
+    private fun bindSeasonNote(note: String?): Boolean {
+        val view = details.carePlanSeasonNote
+        if (note.isNullOrBlank()) {
+            view.isVisible = false
+            return false
         }
-        header.addView(
-            ImageView(context).apply {
-                setImageResource(iconRes)
-                setColorFilter(tint)
-                layoutParams = LinearLayout.LayoutParams(16.dp(), 16.dp())
-            }
-        )
-        header.addView(
-            TextView(context).apply {
-                text = context.getString(labelRes).uppercase()
-                textSize = 11f
-                letterSpacing = 0.08f
-                setTextColor(context.getColor(R.color.on_surface_secondary))
-                typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
-                layoutParams = LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT,
-                ).apply { marginStart = 8.dp() }
-            }
-        )
-        return header
+        view.text = note
+        view.isVisible = true
+        return true
     }
 
-    private fun horizontalRow(): LinearLayout = LinearLayout(context).apply {
-        orientation = LinearLayout.HORIZONTAL
-        layoutParams = LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT,
-            LinearLayout.LayoutParams.WRAP_CONTENT,
-        )
-    }
-
-    private fun pill(
-        iconRes: Int,
-        label: String,
+    private fun bindPill(
+        pill: CarePlanPillBinding,
+        @DrawableRes icon: Int,
+        @StringRes label: Int,
         value: String,
-        isFirstInRow: Boolean,
-    ): View {
-        val box = LinearLayout(context).apply {
-            orientation = LinearLayout.VERTICAL
-            setBackgroundResource(R.drawable.bg_care_plan_pill)
-            setPadding(14.dp(), 12.dp(), 14.dp(), 12.dp())
-            // MATCH_PARENT height: the horizontal row measures to its tallest
-            // child, then stretches the sibling to the same height — so a
-            // two-line value (e.g. watering "only when soil dries out") no
-            // longer leaves its row-mate pill visibly shorter.
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 1f)
-                .apply {
-                    if (isFirstInRow) marginEnd = 5.dp() else marginStart = 5.dp()
-                }
-        }
-        val labelRow = LinearLayout(context).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-        }
-        labelRow.addView(
-            ImageView(context).apply {
-                setImageResource(iconRes)
-                setColorFilter(context.getColor(R.color.on_hero))
-                layoutParams = LinearLayout.LayoutParams(15.dp(), 15.dp())
-            }
-        )
-        labelRow.addView(
-            TextView(context).apply {
-                text = label.uppercase()
-                textSize = 11f
-                setTextColor(context.getColor(R.color.on_hero_secondary))
-                typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
-                letterSpacing = 0.08f
-                layoutParams = LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT,
-                ).apply { marginStart = 6.dp() }
-            }
-        )
-        box.addView(labelRow)
-        box.addView(
-            TextView(context).apply {
-                text = value.ifBlank { "—" }
-                textSize = 16f
-                setTextColor(context.getColor(R.color.on_hero))
-                typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
-                maxLines = 2
-                ellipsize = android.text.TextUtils.TruncateAt.END
-                layoutParams = LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT,
-                ).apply { topMargin = 6.dp() }
-            }
-        )
-        return box
+    ) {
+        pill.carePlanPillIcon.setImageResource(icon)
+        pill.carePlanPillLabel.setText(label)
+        pill.carePlanPillValue.text = value.ifBlank { "-" }
     }
 
     private fun wateringValueText(plan: CarePlanResponse): String = when {
@@ -1161,7 +570,7 @@ class CarePlanCardView @JvmOverloads constructor(
             R.string.care_plan_watering_days,
             plan.wateringDaysInt
         )
-        else -> "—"
+        else -> "-"
     }
 
     private fun lightTierLabel(tier: String): String = when (tier) {
@@ -1178,9 +587,8 @@ class CarePlanCardView @JvmOverloads constructor(
             context.getString(R.string.care_plan_subtitle_species, species)
         }
 
-    private fun Int.dp(): Int = TypedValue.applyDimension(
-        TypedValue.COMPLEX_UNIT_DIP,
-        this.toFloat(),
-        resources.displayMetrics,
-    ).toInt()
+    private companion object {
+        const val BULLET_PREFIX = "•  "
+        const val ISOLATION_PREFIX = "⚠  "
+    }
 }

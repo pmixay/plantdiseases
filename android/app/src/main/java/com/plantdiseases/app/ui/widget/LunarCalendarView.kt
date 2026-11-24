@@ -231,11 +231,12 @@ class LunarCalendarView @JvmOverloads constructor(
             setMargins(dp(2), dp(2), dp(2), dp(2))
         }
         val day = cell.findViewById<TextView>(R.id.lunar_cell_day)
-        day.text = date.dayOfMonth.toString()
+        // Days outside the month stay blank rather than faded (no grey text).
+        day.text = if (inMonth) date.dayOfMonth.toString() else ""
 
         if (!inMonth || !LunarCalendar.isInRange(date)) {
             cell.findViewById<View>(R.id.lunar_cell_fill).background = null
-            day.setTextColor(context.getColor(R.color.on_surface_secondary))
+            day.setTextColor(context.getColor(R.color.on_surface))
             cell.alpha = 0.35f
             cell.isClickable = false
             cell.isFocusable = false
@@ -331,8 +332,8 @@ class LunarCalendarView @JvmOverloads constructor(
             goodLabel.visibility = View.VISIBLE
             avoidLabel.visibility = View.VISIBLE
             categoryBreakdown.visibility = View.GONE
-            fillTaskRow(goodTasks, info.favourable, textColorRes = R.color.on_surface_secondary)
-            fillTaskRow(avoidTasks, info.avoid, textColorRes = R.color.on_surface_secondary)
+            fillTaskRow(goodTasks, info.favourable, textColorRes = R.color.on_surface)
+            fillTaskRow(avoidTasks, info.avoid, textColorRes = R.color.on_surface)
         }
     }
 
@@ -389,7 +390,7 @@ class LunarCalendarView @JvmOverloads constructor(
             textColumn.addView(
                 TextView(context).apply {
                     text = plantsInCategory.joinToString(", ") { it.label }
-                    setTextColor(context.getColor(R.color.on_surface_secondary))
+                    setTextColor(context.getColor(R.color.on_surface))
                     textSize = 12f
                 },
             )
@@ -414,7 +415,8 @@ class LunarCalendarView @JvmOverloads constructor(
             val label = TextView(context).apply {
                 setText(taskStringRes(task))
                 setTextColor(context.getColor(textColorRes))
-                textSize = 11f
+                textSize = 12f
+                typeface = android.graphics.Typeface.DEFAULT_BOLD
                 gravity = Gravity.CENTER
                 setPadding(0, dp(4), 0, 0)
             }
@@ -451,7 +453,7 @@ class LunarCalendarView @JvmOverloads constructor(
         row.addView(dot, LinearLayout.LayoutParams(dp(12), dp(12)).apply { marginEnd = dp(8) })
         val label = TextView(context).apply {
             setText(labelRes)
-            setTextColor(context.getColor(R.color.on_surface_secondary))
+            setTextColor(context.getColor(R.color.on_surface))
             textSize = 13f
         }
         row.addView(label)

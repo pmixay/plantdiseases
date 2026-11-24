@@ -2,8 +2,13 @@ package com.plantdiseases.app.ui.onboarding
 
 import android.content.Context
 import android.content.Intent
+import android.content.res.Configuration
 import android.os.Bundle
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.updatePadding
 import com.plantdiseases.app.BuildConfig
 import com.plantdiseases.app.MainActivity
 import com.plantdiseases.app.databinding.ActivityOnboardingBinding
@@ -16,11 +21,14 @@ import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 
 /**
- * First-launch privacy choices.
+ * First-launch privacy disclosure: three icon rows (data secure, no
+ * identifiers, photos improve the model) and a pinned "Start using the app"
+ * button.
  *
- * The user cannot continue without accepting model improvement (de-identified
- * images feed the training store); there is no switch for it. Error reports are
- * offered afterwards in a pop-up on the main screen (default on).
+ * The user cannot start without accepting model improvement (de-identified
+ * images feed the training store); there is no switch for it, and the line
+ * above the button says so. Error reports are offered afterwards in a pop-up
+ * on the main screen (default on).
  */
 @AndroidEntryPoint
 class OnboardingActivity : AppCompatActivity() {
@@ -41,11 +49,29 @@ class OnboardingActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         binding = ActivityOnboardingBinding.inflate(layoutInflater)
         setContentView(binding.root)
+        applyEdgeToEdge()
 
         binding.consentPrivacyLink.setOnClickListener {
             startActivity(PrivacyPolicyActivity.intent(this))
         }
-        binding.consentAgree.setOnClickListener { finishOnboarding() }
+        binding.btnStart.setOnClickListener { finishOnboarding() }
+    }
+
+    /** Draws behind the transparent system bars, pads the content clear of
+     *  them and keeps the bar icons legible on the plain background. */
+    private fun applyEdgeToEdge() {
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+        val nightMask = resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK
+        val night = nightMask == Configuration.UI_MODE_NIGHT_YES
+        WindowCompat.getInsetsController(window, binding.root).apply {
+            isAppearanceLightStatusBars = !night
+            isAppearanceLightNavigationBars = !night
+        }
+        ViewCompat.setOnApplyWindowInsetsListener(binding.onboardingRoot) { v, insets ->
+            val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout())
+            v.updatePadding(bars.left, bars.top, bars.right, bars.bottom)
+            insets
+        }
     }
 
     private fun finishOnboarding() {

@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- ─── Brand · Vivid leaf-green palette (dark) ───────────────
+    <!-- ─── Brand: Vivid leaf-green palette (dark) ───────────────
          On dark surfaces the saturated greens read overwhelming and
          the body-text contrast inverts. We pull primary up to Tailwind
-         green-400, dark the hero / toolbar to green-700, and keep
+         green-400 and keep
          primary_light as a deep desaturated green so chips on the
          dark surface stay readable. -->
     <color name="primary">#4ADE80</color>
@@ -19,34 +19,15 @@
     <color name="primary_dark">#16A34A</color>
     <color name="secondary">#22C55E</color>
     <color name="on_secondary">#052E16</color>
-    <!-- Gradient stops -->
-    <color name="gradient_start">#14532D</color>
-    <color name="gradient_mid">#166534</color>
-    <color name="gradient_end">#16A34A</color>
-    <color name="hero_gradient_start">#14532D</color>
-    <color name="hero_gradient_mid">#166534</color>
-    <color name="hero_gradient_end">#22C55E</color>
-    <color name="hero_solid">#15803D</color>
-    <!-- Hero-surface text: the dark-theme hero gradient is a deep
-         green, so the copy stays light (mirrors hero_stat_text)
-         instead of inheriting the inverted ``on_primary``. -->
-    <color name="on_hero">#F0FDF4</color>
-    <color name="on_hero_secondary">#CCF0FDF4</color>
-    <color name="hero_stat_bg">#33FFFFFF</color>
-    <color name="hero_stat_stroke">#52FFFFFF</color>
-    <color name="hero_stat_text">#F0FDF4</color>
 
-    <!-- Toolbar background (subtle vertical gradient) -->
-    <color name="toolbar_top">#14532D</color>
-    <color name="toolbar_bottom">#166534</color>
-    <color name="toolbar_title">#F0FDF4</color>
 
-    <!-- ─── Surface · Dark theme ─────────────────────────────────── -->
+    <!-- ─── Surface: Dark theme ─────────────────────────────────── -->
     <color name="background">#0A0F0C</color>
     <color name="surface">#131A14</color>
     <color name="surface_variant">#1A211B</color>
     <color name="on_surface">#F0FDF4</color>
-    <color name="on_surface_secondary">#9CA3AF</color>
+    <!-- Muted ink (see values/colors.xml): pale mint, 13:1 on surface. -->
+    <color name="on_surface_secondary">#CFE3D6</color>
 
     <!-- Card tonal ramp for App.GlassCard / *.Strong (see light theme).
          Slightly lighter than the dark-green surface so cards lift off
@@ -105,7 +86,7 @@
     <color name="chat_bubble_bot_bg">#1F2820</color>
     <color name="chat_bubble_user_bg">#14532D</color>
     <color name="chat_bubble_text">#F0FDF4</color>
-    <color name="chat_bubble_text_secondary">#9CA3AF</color>
+    <color name="chat_bubble_text_secondary">#CFE3D6</color>
 
     <!-- Lunar calendar + moon phase -->
     <color name="lunar_good_bg">#14532D</color>
@@ -132,4 +113,7 @@
     <color name="forum_solution_box">#14241A</color>
     <color name="forum_photo_scrim">#99000000</color>
     <color name="forum_on_photo">#FFFFFF</color>
+    <!-- Guest-locked community actions (like, answer, reply, inputs): the one
+         disabled ink, icons and their counts only. Owner's request, 2026-11-22. -->
+    <color name="guest_locked">#5E6863</color>
 </resources>

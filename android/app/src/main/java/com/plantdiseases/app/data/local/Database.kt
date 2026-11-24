@@ -247,7 +247,7 @@ abstract class PlantReminderDao {
 //
 // Persists every reminder firing + its disposition (pending / done /
 // snoozed / skipped). The plant-detail "Reminders" surface reads this
-// to show a streak ("last watered 3 days ago · 5-day streak"); the
+// to show a streak ("last watered 3 days ago, 5-day streak"); the
 // notification-action receivers write into it when the user taps
 // Done / Snooze on a fired notification. ``fired_at`` is the epoch
 // when the WorkManager worker ran; ``done_at`` is set on disposition.
@@ -482,9 +482,6 @@ interface ScanDao {
 
     @Query("SELECT * FROM scans WHERE client_scan_id = :clientScanId LIMIT 1")
     suspend fun getScanByClientScanId(clientScanId: String): ScanEntity?
-
-    @Query("SELECT client_scan_id FROM scans WHERE client_scan_id != ''")
-    suspend fun allClientScanIds(): List<String>
 
     @Query("SELECT * FROM scans WHERE plant_id = :plantId ORDER BY timestamp DESC")
     suspend fun getScansForPlant(plantId: Long): List<ScanEntity>
@@ -833,6 +830,10 @@ interface NotificationDao {
 
     @Query("SELECT COUNT(*) FROM notifications WHERE read_at IS NULL")
     suspend fun getUnreadCount(): Int
+
+    /** The unread count, re-emitted whenever the table changes. */
+    @Query("SELECT COUNT(*) FROM notifications WHERE read_at IS NULL")
+    fun observeUnreadCount(): kotlinx.coroutines.flow.Flow<Int>
 
     @Insert
     suspend fun insert(entity: NotificationEntity): Long

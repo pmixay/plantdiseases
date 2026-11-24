@@ -10,6 +10,8 @@ from contextlib import closing
 import pytest
 from PIL import Image
 
+import community_scans
+
 
 def test_health_contract(client):
     from classifier import DEFAULT_CLASS_NAMES
@@ -345,7 +347,7 @@ def test_analyze_response_includes_species_block(client, png_bytes, monkeypatch)
     """Analyze always returns a ``species`` field, even when PlantNet
     is not configured. The block surfaces ``available: false`` so the
     client can render a "species unknown" hint instead of a 404 hop."""
-    import main as server_main
+    import plantnet
 
     # Replace identify_species with a deterministic offline fake so we
     # don't hit the network from CI. The fake mirrors the no_api_key
@@ -358,7 +360,7 @@ def test_analyze_response_includes_species_block(client, png_bytes, monkeypatch)
             "available": False, "results": [], "source": "no_api_key",
         }
 
-    monkeypatch.setattr(server_main, "identify_species", fake_identify)
+    monkeypatch.setattr(plantnet, "identify_species", fake_identify)
     r = client.post(
         "/api/analyze",
         files={"image": ("leaf.png", png_bytes, "image/png")},
@@ -381,10 +383,10 @@ def test_analyze_species_block_includes_best_match(client, png_bytes, monkeypatc
     """When PlantNet returns candidates, the analyze response copies
     the top match into ``species.best`` and the next two into
     ``species.candidates``."""
-    import main as server_main
+    import plantnet
 
     monkeypatch.setattr(
-        server_main, "identify_species",
+        plantnet, "identify_species",
         lambda *_args, **_kw: {
             "available": True, "source": "plantnet",
             "results": [
@@ -417,7 +419,7 @@ def test_analyze_cache_keys_on_locale_so_species_common_name_localises(
     lang, so each locale gets its own cached payload and the species
     block always matches the requesting client's locale.
     """
-    import main as server_main
+    import plantnet
 
     captured_langs: list[str] = []
 
@@ -435,7 +437,7 @@ def test_analyze_cache_keys_on_locale_so_species_common_name_localises(
             ],
         }
 
-    monkeypatch.setattr(server_main, "identify_species", fake_identify)
+    monkeypatch.setattr(plantnet, "identify_species", fake_identify)
 
     r_ru = client.post(
         "/api/analyze?locale=ru",
@@ -475,12 +477,12 @@ def test_analyze_species_block_survives_plantnet_failure(client, png_bytes, monk
     completes — ``species`` lands as ``None`` rather than 500-ing the
     whole request.
     """
-    import main as server_main
+    import plantnet
 
     def explode(*_a, **_kw):
         raise RuntimeError("upstream is on fire")
 
-    monkeypatch.setattr(server_main, "identify_species", explode)
+    monkeypatch.setattr(plantnet, "identify_species", explode)
     r = client.post(
         "/api/analyze",
         files={"image": ("leaf.png", png_bytes, "image/png")},
@@ -495,14 +497,14 @@ def test_identify_plantnet_cache_hit_spends_no_user_allowance(
     monkeypatch,
 ):
     import main as server_main
+    import plantnet
 
     async def unexpected_authorization(_request, *, feature):
         raise AssertionError(f"cache hit consumed {feature}")
 
-    monkeypatch.setattr(server_main, "plantnet_configured", lambda: True)
+    monkeypatch.setattr(plantnet, "plantnet_configured", lambda: True)
     monkeypatch.setattr(
-        server_main,
-        "plantnet_cache_lookup",
+        plantnet, "plantnet_cache_lookup",
         lambda *_args, **_kwargs: {
             "available": True,
             "results": [
@@ -523,8 +525,7 @@ def test_identify_plantnet_cache_hit_spends_no_user_allowance(
         unexpected_authorization,
     )
     monkeypatch.setattr(
-        server_main,
-        "identify_species",
+        plantnet, "identify_species",
         lambda *_args, **_kwargs: (_ for _ in ()).throw(
             AssertionError("cache hit reached identify_species")
         ),
@@ -546,17 +547,17 @@ def test_analyze_plantnet_cache_hit_spends_only_diagnosis_allowance(
     monkeypatch,
 ):
     import main as server_main
+    import plantnet
 
     authorized = []
 
     async def record_authorization(_request, *, feature):
         authorized.append(feature)
 
-    monkeypatch.setattr(server_main, "plantnet_configured", lambda: True)
+    monkeypatch.setattr(plantnet, "plantnet_configured", lambda: True)
     monkeypatch.setattr(server_main, "_authorize_metered_feature", record_authorization)
     monkeypatch.setattr(
-        server_main,
-        "plantnet_cache_lookup",
+        plantnet, "plantnet_cache_lookup",
         lambda *_args, **_kwargs: {
             "available": True,
             "results": [
@@ -572,8 +573,7 @@ def test_analyze_plantnet_cache_hit_spends_only_diagnosis_allowance(
         },
     )
     monkeypatch.setattr(
-        server_main,
-        "identify_species",
+        plantnet, "identify_species",
         lambda *_args, **_kwargs: (_ for _ in ()).throw(
             AssertionError("cache hit reached identify_species")
         ),
@@ -593,7 +593,7 @@ def test_analyze_plantnet_cache_hit_spends_only_diagnosis_allowance(
 
 def test_identify_strips_exif_before_plantnet(client, monkeypatch):
     """Direct API clients cannot bypass Android's upload sanitizer."""
-    import main as server_main
+    import plantnet
 
     sentinel = "SENTINEL-CAMERA-WITH-GPS"
     exif = Image.Exif()
@@ -608,7 +608,7 @@ def test_identify_strips_exif_before_plantnet(client, monkeypatch):
         captured["image"] = image_bytes
         return {"available": False, "results": [], "source": "no_api_key"}
 
-    monkeypatch.setattr(server_main, "identify_species", fake_identify)
+    monkeypatch.setattr(plantnet, "identify_species", fake_identify)
     response = client.post(
         "/api/identify",
         files={"image": ("camera.jpg", original, "image/jpeg")},
@@ -629,6 +629,7 @@ def test_identify_endpoint_nap_rejection_skips_plantnet(client, png_bytes, monke
     """The local rejection head must stop NAP uploads before they spend
     PlantNet quota or surface a plausible-looking species guess."""
     import main as server_main
+    import plantnet
 
     calls = {"pipeline": 0, "plantnet": 0}
 
@@ -643,7 +644,7 @@ def test_identify_endpoint_nap_rejection_skips_plantnet(client, png_bytes, monke
         return {"available": True, "results": [], "source": "plantnet"}
 
     monkeypatch.setattr(server_main, "pipeline", _NapPipeline())
-    monkeypatch.setattr(server_main, "identify_species", fake_identify)
+    monkeypatch.setattr(plantnet, "identify_species", fake_identify)
 
     r = client.post(
         "/api/identify",
@@ -667,6 +668,7 @@ def test_identify_endpoint_plant_passes_filter_and_calls_plantnet(
     """A plant verdict falls through to the existing PlantNet proxy with
     its normalized organ and locale unchanged."""
     import main as server_main
+    import plantnet
 
     calls: dict[str, object] = {"pipeline": 0, "plantnet": 0}
 
@@ -694,7 +696,7 @@ def test_identify_endpoint_plant_passes_filter_and_calls_plantnet(
         }
 
     monkeypatch.setattr(server_main, "pipeline", _PlantPipeline())
-    monkeypatch.setattr(server_main, "identify_species", fake_identify)
+    monkeypatch.setattr(plantnet, "identify_species", fake_identify)
 
     r = client.post(
         "/api/identify",
@@ -735,7 +737,7 @@ def test_plantnet_never_receives_upload_exif(client, monkeypatch, route):
     """EXIF (GPS above all) in an upload must not reach PlantNet. Both the
     identify proxy and the analyze fan-out forward a re-encode of the
     decoded pixels, not the client's bytes."""
-    import main as server_main
+    import plantnet
 
     forwarded: list[bytes] = []
 
@@ -743,7 +745,7 @@ def test_plantnet_never_receives_upload_exif(client, monkeypatch, route):
         forwarded.append(image_bytes)
         return {"available": False, "results": [], "source": "no_api_key"}
 
-    monkeypatch.setattr(server_main, "identify_species", fake_identify)
+    monkeypatch.setattr(plantnet, "identify_species", fake_identify)
     upload = _jpeg_with_gps()
     assert Image.open(io.BytesIO(upload)).getexif().get_ifd(0x8825)  # fixture sanity
     r = client.post(route, files={"image": ("leaf.jpg", upload, "image/jpeg")})
@@ -761,7 +763,6 @@ def test_analyze_response_issues_separate_community_and_feedback_tokens(
     client, png_bytes
 ):
     """Publication capabilities must never double as feedback receipts."""
-    import community
     import training_store
 
     r = client.post(
@@ -774,8 +775,8 @@ def test_analyze_response_issues_separate_community_and_feedback_tokens(
     assert isinstance(scan_id, str) and len(scan_id) >= 16
     assert isinstance(feedback_receipt, str) and len(feedback_receipt) == 43
     assert scan_id != feedback_receipt
-    assert community.is_analysis_token_issued(scan_id)
-    assert not community.is_analysis_token_issued(feedback_receipt)
+    assert community_scans.is_analysis_token_issued(scan_id)
+    assert not community_scans.is_analysis_token_issued(feedback_receipt)
     assert training_store.sample_by_receipt(feedback_receipt) is None
 
 
@@ -816,12 +817,11 @@ def test_analyze_capabilities_bind_exact_upload_on_fresh_and_cached_paths(
 def test_analyze_omits_unpersisted_publication_capability_on_cache_miss_and_hit(
     client, png_bytes, monkeypatch,
 ):
-    import main as server_main
 
     def fail_persistence(*_args, **_kwargs):
         raise sqlite3.OperationalError("synthetic persistence failure")
 
-    monkeypatch.setattr(server_main, "community_record_analysis_token", fail_persistence)
+    monkeypatch.setattr(community_scans, "record_analysis_token", fail_persistence)
     first = client.post(
         "/api/analyze",
         files={"image": ("leaf.png", png_bytes, "image/png")},

@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Disease-progression card on the plant-detail Overview tab: title, trend
+     chip, severity sparkline and history meta line. -->
+<com.google.android.material.card.MaterialCardView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_marginTop="@dimen/detail_card_gap_lg"
+    app:cardBackgroundColor="@color/surface"
+    app:cardCornerRadius="@dimen/radius_lg"
+    app:cardElevation="@dimen/detail_card_elevation"
+    app:strokeColor="@color/card_stroke"
+    app:strokeWidth="@dimen/detail_card_stroke">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:paddingHorizontal="@dimen/detail_card_pad_h"
+        android:paddingVertical="@dimen/detail_card_pad_v">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="@string/progression_title"
+                android:textAppearance="@style/TextAppearance.Detail.CardTitle" />
+
+            <TextView
+                android:id="@+id/detail_progression_trend"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:background="@drawable/bg_stat_pill"
+                android:paddingHorizontal="@dimen/detail_pill_pad_h"
+                android:paddingVertical="@dimen/detail_pill_pad_v"
+                android:text="@string/progression_loading"
+                android:textAppearance="@style/TextAppearance.Detail.Caption" />
+        </LinearLayout>
+
+        <com.plantdiseases.app.ui.garden.SparklineView
+            android:id="@+id/detail_progression_sparkline"
+            android:layout_width="match_parent"
+            android:layout_height="@dimen/detail_sparkline_height"
+            android:layout_marginTop="@dimen/detail_sparkline_gap" />
+
+        <TextView
+            android:id="@+id/detail_progression_meta"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/detail_meta_gap"
+            android:textAppearance="@style/TextAppearance.Detail.Caption" />
+    </LinearLayout>
+</com.google.android.material.card.MaterialCardView>

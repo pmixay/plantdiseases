@@ -9,7 +9,7 @@ import com.google.android.material.imageview.ShapeableImageView
 import com.plantdiseases.app.R
 
 /**
- * The two display states of a round profile avatar (Profile hero, Account
+ * The two display states of a round profile avatar (Profile, Account
  * screen): the tinted placeholder icon and the user's photo.
  *
  * The circle comes from the [ShapeableImageView]'s shape mask, and that mask
@@ -31,7 +31,7 @@ object AvatarImage {
 
     fun showPlaceholder(avatar: ShapeableImageView) {
         avatar.imageTintList = ColorStateList.valueOf(
-            ContextCompat.getColor(avatar.context, R.color.on_hero),
+            ContextCompat.getColor(avatar.context, R.color.primary),
         )
         avatar.setImageResource(R.drawable.ic_avatar_placeholder)
     }
@@ -51,7 +51,7 @@ object AvatarImage {
         // The view's tint is off for photos, so the error fallback carries its own.
         val fallback = AppCompatResources.getDrawable(avatar.context, R.drawable.ic_avatar_placeholder)
             ?.mutate()
-            ?.apply { setTint(ContextCompat.getColor(avatar.context, R.color.on_hero)) }
+            ?.apply { setTint(ContextCompat.getColor(avatar.context, R.color.primary)) }
         glide.load(source)
             .diskCacheStrategy(DiskCacheStrategy.NONE)
             .skipMemoryCache(true)

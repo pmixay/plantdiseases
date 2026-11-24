@@ -111,9 +111,10 @@ class CareCalendarView @JvmOverloads constructor(
             weekdayRow.addView(
                 TextView(context).apply {
                     text = symbols[dayOfWeek].take(2).uppercase()
-                    textSize = 11f
+                    textSize = 12f
+                    typeface = android.graphics.Typeface.DEFAULT_BOLD
                     gravity = Gravity.CENTER
-                    setTextColor(context.getColor(R.color.on_surface_secondary))
+                    setTextColor(context.getColor(R.color.on_surface))
                     layoutParams = LinearLayout.LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f)
                 }
             )
@@ -173,9 +174,10 @@ class CareCalendarView @JvmOverloads constructor(
             val isToday = isSameDay(cursor, today)
             val isSelected = epochDay == selectedEpochDay
 
-            cell.day.text = cursor.get(Calendar.DAY_OF_MONTH).toString()
+            // Days outside the month stay blank rather than faded: the design
+            // system has no dimmed (grey) text.
+            cell.day.text = if (inMonth) cursor.get(Calendar.DAY_OF_MONTH).toString() else ""
             cell.container.isEnabled = inMonth
-            cell.container.alpha = if (inMonth) 1f else 0.35f
             cell.ring.visibility = if (inMonth && isSelected) View.VISIBLE else View.GONE
             cell.todayDot.visibility = if (inMonth && isToday) View.VISIBLE else View.GONE
 
@@ -190,15 +192,7 @@ class CareCalendarView @JvmOverloads constructor(
                 else -> null
             }
             cell.fill.setBackgroundResource(status?.bgRes ?: 0)
-            cell.day.setTextColor(
-                context.getColor(
-                    when {
-                        !inMonth -> R.color.on_surface_secondary
-                        status != null -> status.fgRes
-                        else -> R.color.on_surface
-                    },
-                ),
-            )
+            cell.day.setTextColor(context.getColor(status?.fgRes ?: R.color.on_surface))
 
             val dayEpoch = epochDay
             cell.container.setOnClickListener {

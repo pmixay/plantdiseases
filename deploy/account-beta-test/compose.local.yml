@@ -15,8 +15,8 @@ x-account-environment: &account-environment
   # with strict unit/contract tests and the isolated staging stack.
   RUSTORE_LIFECYCLE_ENABLED: "false"
   RUSTORE_CHECKOUT_ENABLED: "false"
-  ENTITLEMENT_QUOTA_POLICY_VERSION: launch-2026-11-v1
-  ENTITLEMENT_FREE_DAILY_LIMITS: gamma_analysis=5,frontier_analysis=1,plant_identification=1,ai_doctor=3,care_plan=5
+  ENTITLEMENT_QUOTA_POLICY_VERSION: launch-2026-11-v2
+  ENTITLEMENT_FREE_DAILY_LIMITS: gamma_analysis=15,frontier_analysis=5,plant_identification=30,ai_doctor=15,care_plan=30
   ENTITLEMENT_PRO_DAILY_LIMITS: gamma_analysis=30,frontier_analysis=3,plant_identification=3,ai_doctor=15,care_plan=20
   EMAIL_PASSWORD_AUTH_ENABLED: "true"
   RUSTORE_ALLOW_SANDBOX: "false"
@@ -158,7 +158,6 @@ services:
       ACCOUNT_JWKS_URL: http://beta-account-api:8000/.well-known/jwks.json
       ACCOUNT_INTROSPECTION_URL: http://beta-account-api:8000/v1/internal/auth/verify
       # No durable notification sink exists yet; clients poll for owner updates.
-      ACCOUNT_NOTIFICATION_URL: ""
       INTERNAL_SERVICE_TOKEN_FILE: /run/internal-token/internal.token
       MODELS_DIR: /app/models
       LOG_DIR: /data/logs
@@ -171,7 +170,6 @@ services:
       AI_CACHE_DIR: /data/app-cache/ai
       PLANTNET_API_KEY: ""
       OPENROUTER_API_KEY: ""
-      FCM_CREDENTIALS_FILE: ""
       CORS_ORIGINS: ${BETA_CORS_ORIGINS:-}
       TRUSTED_PROXIES: ""
       RATE_LIMIT_RPS: "100"

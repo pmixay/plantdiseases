@@ -8,6 +8,9 @@ import androidx.lifecycle.lifecycleScope
 import com.plantdiseases.app.R
 import com.plantdiseases.app.data.local.ScanEntity
 import com.plantdiseases.app.data.model.FeedbackRequest
+import com.plantdiseases.app.data.repository.FeedbackReceiptException
+import com.plantdiseases.app.data.repository.FeedbackRepository
+import com.plantdiseases.app.data.repository.RateLimitException
 import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.databinding.ActivityResultBinding
 import com.plantdiseases.app.util.DiseaseLabels
@@ -27,6 +30,7 @@ class FeedbackController(
     private val activity: AppCompatActivity,
     private val binding: ActivityResultBinding,
     private val repository: ScanRepository,
+    private val feedbackRepository: FeedbackRepository,
     private val privacyConsentPrefs: PrivacyConsentPrefs,
     private val reviewManager: InAppReviewManager,
 ) {
@@ -175,12 +179,12 @@ class FeedbackController(
             }
             val imageFile = java.io.File(scan.imagePath)
             val submission: Result<Unit> = if (!correct && imageFile.exists()) {
-                repository.uploadFeedbackImage(request, imageFile)
+                feedbackRepository.uploadFeedbackImage(request, imageFile)
             } else {
-                repository.submitFeedback(request).map { }
+                feedbackRepository.submitFeedback(request).map { }
             }
             submission.onSuccess {
-                repository.consumeFeedbackReceipt(scan)
+                feedbackRepository.consumeFeedbackReceipt(scan)
                 markSubmitted(scan.id)
                 binding.feedbackChoiceRow.visibility = View.GONE
                 binding.tvFeedbackStatus.visibility = View.VISIBLE
@@ -193,8 +197,8 @@ class FeedbackController(
                     reviewManager.maybeRequestReview()
                 }
             }.onFailure { error ->
-                if (error is ScanRepository.FeedbackReceiptException) {
-                    repository.consumeFeedbackReceipt(scan)
+                if (error is FeedbackReceiptException) {
+                    feedbackRepository.consumeFeedbackReceipt(scan)
                     binding.feedbackChoiceRow.visibility = View.GONE
                     binding.tvFeedbackStatus.visibility = View.VISIBLE
                     binding.tvFeedbackStatus.setText(R.string.feedback_expired)
@@ -204,7 +208,7 @@ class FeedbackController(
                 binding.btnFeedbackNo.isEnabled = true
                 binding.tvFeedbackStatus.visibility = View.GONE
                 val msgRes = when (error) {
-                    is ScanRepository.RateLimitException -> R.string.feedback_rate_limited
+                    is RateLimitException -> R.string.feedback_rate_limited
                     else -> R.string.feedback_failed
                 }
                 Toast.makeText(activity, msgRes, Toast.LENGTH_SHORT).show()
@@ -220,7 +224,7 @@ class FeedbackController(
         reason: String?,
     ): FeedbackRequest? {
         if (!privacyConsentPrefs.trainingEnabled) return null
-        val receipt = repository.feedbackReceipt(scan) ?: return null
+        val receipt = feedbackRepository.feedbackReceipt(scan) ?: return null
         return FeedbackRequest(
             feedbackReceipt = receipt,
             correct = correct,

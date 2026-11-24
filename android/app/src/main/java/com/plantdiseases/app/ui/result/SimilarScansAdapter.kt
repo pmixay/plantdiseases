@@ -10,26 +10,26 @@ import androidx.recyclerview.widget.RecyclerView
 import com.facebook.shimmer.ShimmerFrameLayout
 import com.plantdiseases.app.R
 import com.plantdiseases.app.data.model.CommunityScanItem
-import com.plantdiseases.app.util.ServerConfig
+import com.plantdiseases.app.ui.community.photoUrl
 import com.plantdiseases.app.util.ThumbLoader
 
 /**
  * Horizontal carousel adapter for the "Similar scans near you" card.
  *
- * Each cell renders the publisher's nickname, approximate distance ("≈ N km
- * near you"), and relative time — no place name (geo stays on the server).
- * Cards are ordered newest-first (the server's order). Thumbnails
- * load via Glide from /api/community/thumb/<filename>; cells without a
- * thumb_path fall back to a tinted leaf icon so the card stays usable
- * when the server didn't persist a thumbnail.
+ * Each cell renders the scan photo, the diagnosis, the approximate distance
+ * ("≈ N km") and relative time: no author and no place name (geo stays on
+ * the server). Cards are ordered newest-first (the server's order). A tap
+ * hands [onClick] the scan and its thumbnail view, which the caller expands
+ * full screen. Thumbnails load via Glide from /api/community/thumb/<filename>;
+ * cells without a thumb_path fall back to a tinted leaf icon so the card
+ * stays usable when the server didn't persist a thumbnail.
  */
 class SimilarScansAdapter(
     private val displayName: (String) -> String,
-    private val onClick: (CommunityScanItem) -> Unit = {},
-    private val onAuthorClick: (CommunityScanItem) -> Unit = {},
-    // Preview mode: render each cell as a compact "mini scan result" — diagnosis
-    // + detected species — instead of the publisher nickname / distance / opinion
-    // affordances. Used by the species card's "others' scans" strip.
+    private val onClick: (CommunityScanItem, View) -> Unit = { _, _ -> },
+    // Preview mode: render each cell as a compact "mini scan result" (diagnosis
+    // + detected species) instead of the distance and time.
+    // Used by the species page's "scans of this species near you" strip.
     private val preview: Boolean = false,
 ) : RecyclerView.Adapter<SimilarScansAdapter.VH>() {
 
@@ -58,39 +58,19 @@ class SimilarScansAdapter(
         private val label: TextView = itemView.findViewById(R.id.tv_similar_label)
         private val distance: TextView = itemView.findViewById(R.id.tv_similar_distance)
         private val time: TextView = itemView.findViewById(R.id.tv_similar_time)
-        private val opinions: TextView = itemView.findViewById(R.id.tv_similar_opinions)
-        private val wantsOpinion: TextView = itemView.findViewById(R.id.tv_similar_wants_opinion)
 
         fun bind(item: CommunityScanItem) {
-            itemView.setOnClickListener { onClick(item) }
+            itemView.setOnClickListener { onClick(item, image) }
+            label.text = displayName(item.disease)
             if (preview) {
                 // Compact mini scan result: diagnosis on top, detected species
-                // below. No nickname / distance / time / opinion affordances.
-                label.text = displayName(item.disease)
+                // below. No distance / time.
                 val species = item.species?.takeIf { it.isNotBlank() }
                 distance.text = species.orEmpty()
                 distance.visibility = if (species == null) View.GONE else View.VISIBLE
                 time.visibility = View.GONE
-                opinions.visibility = View.GONE
-                wantsOpinion.visibility = View.GONE
             } else {
-                // Publisher nick; fall back to the disease label for old rows that
-                // predate nicknames so the line is never empty.
-                label.text = item.nickname?.takeIf { it.isNotBlank() } ?: displayName(item.disease)
-                val hasProfile = item.authorToken
-                    ?.let { it.startsWith("ca") && it.length == 32 } == true
-                label.isClickable = hasProfile
-                label.isFocusable = hasProfile
-                label.setOnClickListener(
-                    if (hasProfile) {
-                        View.OnClickListener {
-                            onAuthorClick(item)
-                        }
-                    } else {
-                        null
-                    }
-                )
-                // Distance only — no place name. Hidden when the feed had no
+                // Distance only, no place name. Hidden when the feed had no
                 // location anchor (country/worldwide scope) so we never show a
                 // misleading "0 km" or an empty line.
                 val distanceText = formatDistance(item.distanceKm)
@@ -98,29 +78,12 @@ class SimilarScansAdapter(
                 distance.visibility = if (distanceText.isEmpty()) View.GONE else View.VISIBLE
                 time.text = formatTimeAgo(item.createdAt)
                 time.visibility = View.VISIBLE
-                wantsOpinion.visibility = if (item.wantsOpinion) View.VISIBLE else View.GONE
-                if (item.opinionCount > 0) {
-                    opinions.text = itemView.context.getString(
-                        R.string.community_opinions_badge,
-                        item.opinionCount,
-                    )
-                    opinions.visibility = View.VISIBLE
-                } else {
-                    opinions.visibility = View.GONE
-                }
             }
 
-            // ServerConfig.appBaseUrl ends with `/`; relative path appended.
-            val thumb = item.thumbPath
-            val url = if (thumb.isNullOrBlank()) {
-                null
-            } else {
-                "${ServerConfig.appBaseUrl}api/community/thumb/$thumb"
-            }
-            ThumbLoader.load(shimmer, image, url)
+            ThumbLoader.load(shimmer, image, item.photoUrl())
         }
 
-        /** "≈ N km near you" — coords are rounded to ~1 km server-side, so we
+        /** "≈ N km": coords are rounded to ~1 km server-side, so we
          *  floor the display at 1 km rather than show a misleading "0 km".
          *  Empty when the feed had no requester anchor (country/worldwide). */
         private fun formatDistance(distanceKm: Float?): String {

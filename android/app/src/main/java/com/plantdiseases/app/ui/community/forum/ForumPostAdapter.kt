@@ -23,13 +23,23 @@ import com.plantdiseases.app.databinding.ItemForumPostBinding
 /**
  * Post cards for the feed, search results and profiles. Posts can only be
  * liked; the heart toggles through [onLike]. [terms] highlights search words.
+ * For a [guest] the like and answer actions are drawn locked (gray); their
+ * taps still reach [onLike] and [onAnswers], which offer sign-in.
  */
 class ForumPostAdapter(
     private val mediaUrl: (String) -> String,
     private val avatarUrl: AvatarUrl,
     private val onOpen: (ForumPost) -> Unit,
     private val onLike: (ForumPost) -> Unit,
+    private val onAnswers: (ForumPost) -> Unit = onOpen,
 ) : ListAdapter<ForumPost, ForumPostAdapter.Holder>(DIFF) {
+
+    var guest: Boolean = false
+        set(value) {
+            if (field == value) return
+            field = value
+            notifyItemRangeChanged(0, itemCount)
+        }
 
     var spaces: List<ForumSpace> = emptyList()
         set(value) {
@@ -126,22 +136,32 @@ class ForumPostAdapter(
             )
             val likeColor = ContextCompat.getColor(
                 context,
-                if (post.likedByMe) R.color.disease_red else R.color.on_surface_secondary,
+                when {
+                    guest -> R.color.guest_locked
+                    post.likedByMe -> R.color.disease_red
+                    else -> R.color.on_surface
+                },
             )
             binding.tvLike.compoundDrawableTintList = ColorStateList.valueOf(likeColor)
             binding.tvLike.setTextColor(likeColor)
             binding.tvLike.isEnabled = !post.author.isMe
             binding.tvLike.setOnClickListener { onLike(post) }
             binding.tvAnswers.text = post.answerCount.toString()
+            binding.tvAnswers.compoundDrawableTintList = ColorStateList.valueOf(
+                ContextCompat.getColor(context, if (guest) R.color.guest_locked else R.color.on_surface_secondary),
+            )
+            binding.tvAnswers.setTextColor(
+                ContextCompat.getColor(context, if (guest) R.color.guest_locked else R.color.on_surface),
+            )
             // Clickable so the card's pressed state is not passed down to it
             // (a non-clickable child with a ripple lights up with the card).
-            binding.tvAnswers.setOnClickListener { onOpen(post) }
+            binding.tvAnswers.setOnClickListener { onAnswers(post) }
             // Invite an answer where one is still missing: answering is what
             // the levels and achievements reward.
             val askingKind = post.kind == "question" || post.kind == "scan"
             val needsHelp = askingKind && !post.solved && !post.locked && post.answerCount == 0 && !post.author.isMe
             binding.btnHelp.visibility = if (needsHelp) View.VISIBLE else View.GONE
-            binding.btnHelp.setOnClickListener { onOpen(post) }
+            binding.btnHelp.setOnClickListener { onAnswers(post) }
         }
     }
 

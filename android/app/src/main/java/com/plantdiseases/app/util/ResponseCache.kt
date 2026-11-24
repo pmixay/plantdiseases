@@ -1,8 +1,10 @@
 package com.plantdiseases.app.util
 
 import android.content.Context
-import com.google.gson.Gson
-import com.google.gson.JsonElement
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.decodeFromJsonElement
+import kotlinx.serialization.json.encodeToJsonElement
 import java.io.File
 import java.util.concurrent.TimeUnit
 
@@ -23,7 +25,6 @@ import java.util.concurrent.TimeUnit
  */
 object ResponseCache {
     private const val DIR = "api_cache"
-    private val gson = Gson()
 
     @Volatile
     private var dir: File? = null
@@ -60,6 +61,8 @@ object ResponseCache {
 
     /** On-disk envelope: the cached payload plus when it was stored and how
      *  long it stays fresh. */
+    // Field names are the file format (Gson-era files use the same ones).
+    @Serializable
     private data class Envelope(
         val savedAt: Long,
         val ttlMs: Long,
@@ -82,49 +85,47 @@ object ResponseCache {
     /** Cached value for [key], or null on miss / expiry / parse error /
      *  not-initialised. An expired entry is deleted on read so the next call
      *  re-fetches and re-stores a fresh copy. */
-    fun <T> get(key: String, clazz: Class<T>): T? = try {
+    /** A cached, unexpired [T], or null (missing, expired or unreadable). */
+    inline fun <reified T> get(key: String): T? =
+        payload(key, keepExpired = false)?.let { runCatching { AppJson.decodeFromJsonElement<T>(it.json) }.getOrNull() }
+
+    data class Peek<T>(val value: T, val fresh: Boolean)
+
+    /** The cached [T] even when expired, with whether it is still fresh. */
+    inline fun <reified T> peek(key: String): Peek<T>? =
+        payload(key, keepExpired = true)?.let { stored ->
+            runCatching { Peek(AppJson.decodeFromJsonElement<T>(stored.json), stored.fresh) }.getOrNull()
+        }
+
+    /** Stores [value]; a [ttlMs] of 0 never expires. Best-effort. */
+    inline fun <reified T : Any> put(key: String, value: T, ttlMs: Long = 0L) {
+        runCatching { store(key, AppJson.encodeToJsonElement(value), ttlMs) }
+    }
+
+    @PublishedApi
+    internal class Stored(val json: JsonElement, val fresh: Boolean)
+
+    /** The stored payload; an expired entry is deleted unless [keepExpired]. */
+    @PublishedApi
+    internal fun payload(key: String, keepExpired: Boolean): Stored? = try {
         val file = fileFor(key)?.takeIf { it.isFile }
-        val env = file?.readText()?.let { gson.fromJson(it, Envelope::class.java) }
+        val env = file?.readText()?.let { AppJson.decodeFromString(Envelope.serializer(), it) }
+        val fresh = env != null && (env.ttlMs <= 0L || System.currentTimeMillis() - env.savedAt <= env.ttlMs)
         when {
-            env?.payload == null -> null
-            env.ttlMs > 0L && System.currentTimeMillis() - env.savedAt > env.ttlMs -> {
+            env == null -> null
+            fresh || keepExpired -> Stored(env.payload, fresh)
+            else -> {
                 file.delete()
                 null
             }
-            else -> gson.fromJson(env.payload, clazz)
         }
     } catch (_: Exception) {
         null
     }
 
-    /** A cached payload plus whether it is still within its TTL. */
-    data class Peek<T>(val value: T, val fresh: Boolean)
-
-    /** Read [key] WITHOUT deleting on expiry, reporting freshness. Lets a
-     *  caller paint a stale value instantly (so a slow network never blanks the
-     *  screen) and then refresh only when [Peek.fresh] is false —
-     *  stale-while-revalidate. Returns null only on a true miss / parse error /
-     *  not-initialised. */
-    fun <T> peek(key: String, clazz: Class<T>): Peek<T>? = try {
-        val file = fileFor(key)?.takeIf { it.isFile }
-        val env = file?.readText()?.let { gson.fromJson(it, Envelope::class.java) }
-        env?.payload?.let {
-            val fresh = env.ttlMs <= 0L || System.currentTimeMillis() - env.savedAt <= env.ttlMs
-            Peek(gson.fromJson(it, clazz), fresh)
-        }
-    } catch (_: Exception) {
-        null
-    }
-
-    /** Store [value] under [key] with an optional time-to-live ([ttlMs]; 0 =
-     *  never expires). Failures are swallowed — the cache must never break the
-     *  request path. */
-    fun put(key: String, value: Any, ttlMs: Long = 0L) {
-        try {
-            val env = Envelope(System.currentTimeMillis(), ttlMs, gson.toJsonTree(value))
-            fileFor(key)?.writeText(gson.toJson(env))
-        } catch (_: Exception) {
-            // best-effort
-        }
+    @PublishedApi
+    internal fun store(key: String, payload: JsonElement, ttlMs: Long) {
+        val env = Envelope(System.currentTimeMillis(), ttlMs, payload)
+        fileFor(key)?.writeText(AppJson.encodeToString(Envelope.serializer(), env))
     }
 }

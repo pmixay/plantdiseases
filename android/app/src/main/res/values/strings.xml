@@ -5,13 +5,12 @@
     <string name="account_manage">Manage account</string>
     <string name="account_edit_profile">Edit profile</string>
     <string name="account_sign_in_or_create">Sign in or create account</string>
-    <string name="account_guest">Guest</string>
+    <string name="account_login_title">Log in to your account</string>
     <string name="account_restoring">Restoring account…</string>
     <string name="account_temporarily_unavailable">Account temporarily unavailable. Check your connection and try again later.</string>
     <string name="account_retry">Retry account connection</string>
-    <string name="account_join_title">Your community profile</string>
-    <string name="account_guest_body">Join the community and keep your profile across devices.</string>
-    <string name="account_later">Later</string>
+    <string name="account_login_pitch">Enjoy more features and a better experience.</string>
+    <string name="account_later">Continue as guest</string>
     <string name="account_disclosure_title">Before you sign in</string>
     <string name="account_disclosure_body">With Yandex or VK, PlantDiseases receives your provider identity, display name, and avatar. With email sign-in, your email address and password are sent directly to the PlantDiseases account service; the password is stored only as a memory-hard hash. The app and account service use stable installation and session identifiers to secure and manage your account. Community posts, linked methods, account push notifications, and deletion are associated with your account. Local scans and garden entries remain on this device.</string>
     <string name="account_disclosure_acknowledge">Acknowledge and continue</string>
@@ -20,15 +19,13 @@
     <string name="account_privacy_open_failed">The privacy policy could not be opened.</string>
     <string name="account_continue_yandex">Sign in with Yandex ID</string>
     <string name="account_continue_vk">Continue with VK ID</string>
-    <string name="account_vk_coming_soon">VK ID — coming soon</string>
     <string name="account_email_beta_label">Email beta</string>
     <string name="account_email">Email address</string>
     <string name="account_password">Password</string>
-    <string name="account_password_requirements">15–128 characters</string>
+    <string name="account_password_requirements">15-128 characters</string>
     <string name="account_email_sign_in">Sign in with email</string>
     <string name="account_email_create">Create with email</string>
     <string name="account_email_beta_warning">Beta warning: email verification, password reset and recovery are not ready. Do not reuse a password from another service.</string>
-    <string name="account_or_provider">or use a provider</string>
     <string name="account_email_invalid">Enter a valid email address.</string>
     <string name="account_password_invalid">Use a password between 15 and 128 characters.</string>
     <string name="account_email_reauth_title">Confirm with your password</string>
@@ -41,14 +38,13 @@
     <string name="account_create">Create account</string>
     <string name="account_finish_creation">Finish creating account</string>
     <string name="account_cancel_signup">Cancel and stay Guest</string>
-    <string name="account_provider_avatar">Profile picture</string>
     <string name="account_change_avatar">Change profile picture</string>
     <string name="account_avatar_update_failed">Couldn\'t use that picture. Try another image.</string>
-    <string name="account_provider_name">%1$s · %2$s</string>
+    <string name="account_provider_name">%1$s: %2$s</string>
     <string name="account_save_nickname">Save nickname</string>
     <string name="account_profile_section">Profile</string>
     <string name="account_nickname_every_30_days">Can be changed every 30 days</string>
-    <string name="account_nickname_available_on">Available %1$s · every 30 days</string>
+    <string name="account_nickname_available_on">Available %1$s, every 30 days</string>
     <string name="account_linked_accounts">Linked sign-in methods</string>
     <string name="account_provider_yandex">Yandex ID</string>
     <string name="account_provider_vk">VK ID</string>
@@ -141,8 +137,6 @@
     <string name="unknown_error">Unknown error occurred</string>
     <string name="image_decode_error_title">Cannot Read Image</string>
     <string name="image_decode_error_detail">The file appears to be corrupt or in an unsupported format. Please try a different photo.</string>
-    <string name="image_too_large_title">Image Too Large</string>
-    <string name="image_too_large_detail">Not enough memory to process this photo. Try a smaller image.</string>
     <string name="retry">Retry</string>
     <string name="cancel">Cancel</string>
 
@@ -197,15 +191,28 @@
 
     <!-- Independent optional privacy choices -->
     <string name="consent_privacy_url" translatable="false">https://pdis.arbuz.lol/privacy.html</string>
-    <string name="consent_title">Privacy choices</string>
-    <string name="consent_body">To keep improving plant diagnosis, you need to accept the model-improvement use of your photos described below. Uploaded images are re-encoded without EXIF or GPS before transmission.</string>
-    <string name="telemetry_prompt_ok">OK</string>
-    <string name="consent_agree">Continue</string>
-    <string name="training_consent_title">Help improve diagnosis models</string>
-    <string name="training_consent_subtitle">De-identified, metadata-free plant images and structured model results to are added to the model-improvement store. No account, installation, community, or location identifier is attached. Previously contributed material cannot be tied back to you for withdrawal because it is intentionally unlinkable.</string>
+    <string name="telemetry_prompt_title">Send minimal error reports?</string>
+    <string name="telemetry_prompt_body">Errors only: app version, Android version, technical categories and safe breadcrumbs. Never photos, messages, file paths, account, device model or location.</string>
+    <string name="telemetry_prompt_yes">Yes</string>
+    <string name="telemetry_prompt_no">No</string>
     <string name="telemetry_consent_title">Send minimal error reports</string>
     <string name="telemetry_consent_subtitle">Errors-only reports containing allowlisted technical categories, app version, coarse Android API level, and safe breadcrumbs. No messages, images, paths, account, installation, hardware model, or location.</string>
-    <string name="community_sign_in_required">Sign in to publish or change community content. Tap the action again after sign-in.</string>
+    <string name="community_sign_in_required">Sign in to take part in the community.</string>
+    <string name="quick_sign_in_title">Sign in to take part in the community</string>
+    <string name="quick_sign_in_benefit_like">Like posts and helpful answers</string>
+    <string name="quick_sign_in_benefit_answer">Answer questions and reply to others</string>
+    <string name="quick_sign_in_benefit_ask">Ask your own questions and share scans</string>
+    <string name="quick_sign_in_benefit_scan_answers">Get the community\'s answers on your scans</string>
+    <string name="quick_sign_in_done">Signed in as %1$s</string>
+    <string name="onboarding_title">Welcome to PlantDiseases</string>
+    <string name="onboarding_secure_title">Your data is secure</string>
+    <string name="onboarding_secure_body">Photos are re-encoded without EXIF or GPS before upload.</string>
+    <string name="onboarding_anonymous_title">Not linked to you</string>
+    <string name="onboarding_anonymous_body">No account, device or location ID is attached.</string>
+    <string name="onboarding_improve_title">Photos improve diagnosis</string>
+    <string name="onboarding_improve_body">Plant photos and results help train the model. They can\'t be withdrawn later, because nothing links them to you.</string>
+    <string name="onboarding_agree_note">By starting, you accept this use of your photos.</string>
+    <string name="onboarding_start">Start using the app</string>
     <string name="consent_privacy_link">Privacy policy</string>
 
     <!-- Interactive contextual guidance -->
@@ -245,7 +252,7 @@
     <string name="guidance_species_flowering">Expand to see monthly flowering and indoor bloom tips.</string>
     <string name="guidance_species_native_range">Expand the map to see natural range and country growth.</string>
     <string name="guidance_community_scope">Switch between Nearby, Country, and Worldwide.</string>
-    <string name="guidance_community_feed">Your feed starts with recommended posts; use Sort by for strict newest-first order. Open a photo to read replies; you can answer only while its owner is actively asking for an opinion. The heart likes a post.</string>
+    <string name="guidance_community_feed">Your feed starts with recommended posts; use Sort by for strict newest-first order. Open a post to read its answers and add your own. The heart likes a post.</string>
     <string name="guidance_previous">Previous step</string>
     <string name="guidance_next">Next step</string>
     <string name="guidance_activate_target">Activate highlighted control</string>
@@ -304,13 +311,13 @@
          feature actually stops working offline carry the strip; the camera picks
          one of its two messages at runtime, depending on whether the on-device
          model is installed. -->
-    <string name="offline_notice_needs_connection">Offline — this needs a connection</string>
-    <string name="offline_notice_scan_on_device">Offline — scanning on your phone, limited result</string>
-    <string name="offline_notice_scan_unavailable">Offline — scanning needs a connection</string>
+    <string name="offline_notice_needs_connection">Offline - this needs a connection</string>
+    <string name="offline_notice_scan_on_device">Offline - scanning on your phone, limited result</string>
+    <string name="offline_notice_scan_unavailable">Offline - scanning needs a connection</string>
     <!-- Inline marker on screens that DO have something to show offline. The
          content is real but was saved earlier, so it is flagged as possibly
          out of date rather than hidden. -->
-    <string name="offline_saved_data_note">Saved earlier — may be out of date</string>
+    <string name="offline_saved_data_note">Saved earlier - may be out of date</string>
     <!-- Shown when an online-only action is attempted while offline. -->
     <string name="offline_action_unavailable">Not available offline</string>
     <string name="offline_scan_needs_model">Scanning needs a connection. Download the on-device model while online to scan offline.</string>
@@ -330,7 +337,8 @@
 
     <!-- Auto-detected species card -->
     <string name="species_card_title">Detected species</string>
-    <string name="species_community_others">Other scans of this species</string>
+    <string name="species_community_nearby">Scans of this species near you</string>
+    <string name="species_community_empty">No community scans of this species yet.</string>
     <string name="example_photos_label">What it looks like</string>
     <!-- Similar scans (community corpus) -->
     <string name="similar_scans_title">Similar scans in your country</string>
@@ -342,51 +350,14 @@
         <item quantity="other">%1$d similar scans in %2$s</item>
     </plurals>
     <string name="similar_scans_subtitle_region">Recent community diagnoses in %1$s</string>
-    <string name="similar_scans_empty">No community scans yet — your scan will be the first.</string>
-    <!-- Community second opinion -->
-    <string name="replies_title">Replies to your scan</string>
-    <string name="community_opinion_title">Get a second opinion</string>
-    <string name="community_opinion_subtitle">Ask the community what they think — and weigh in on others\' scans.</string>
-    <string name="community_opinion_diagnosis_label">Diagnosis</string>
-    <string name="community_opinion_pick_label">What do you think it is?</string>
-    <string name="community_opinion_note_hint">Add a note (optional)</string>
-    <string name="community_opinion_send">Post opinion</string>
-    <string name="community_opinion_agree">Agree</string>
-    <string name="community_opinion_disagree">Disagree</string>
-    <string name="community_opinion_my_vote">Your opinion: %1$s</string>
-    <string name="community_opinion_more">More options</string>
-    <string name="community_opinion_change">Change opinion</string>
-    <string name="community_opinion_confidence">Confidence %1$d%%</string>
-    <string name="community_opinion_empty">No opinions yet — be the first to weigh in.</string>
-    <string name="community_opinion_thanks">Thanks for your opinion!</string>
-    <string name="community_opinion_error">Couldn\'t reach the community. Try again.</string>
-    <string name="community_opinion_loading">Loading community replies…</string>
-    <string name="community_opinions_badge">%1$d opinions</string>
+    <string name="similar_scans_empty">No community scans yet - your scan will be the first.</string>
+    <!-- Community scans -->
     <string name="community_distance_near">≈ %1$d km</string>
     <string name="community_anonymous_author">Plant grower</string>
-    <string name="community_opinion_photo_desc">Shared plant scan</string>
-    <string name="community_report_content">Report</string>
-    <string name="community_block_author">Block author</string>
-    <string name="community_report_title">Report community content</string>
-    <string name="community_report_prompt">Why does this break the Community Rules?</string>
-    <string-array name="community_report_reasons">
-        <item>Sexual content</item>
-        <item>Violence or threats</item>
-        <item>Hate or harassment</item>
-        <item>Illegal or dangerous content</item>
-        <item>Spam or misleading content</item>
-        <item>Privacy violation or impersonation</item>
-        <item>Another rules violation</item>
-    </string-array>
-    <string name="community_report_sent">Report sent to moderation.</string>
-    <string name="community_block_title">Block this author?</string>
-    <string name="community_block_body">While using the community signed in, their scans and replies will be hidden from you, yours will be hidden from them, and the two accounts cannot interact. This applies on every device signed into your account.</string>
-    <string name="community_block_confirm">Block</string>
-    <string name="community_author_blocked">Author blocked.</string>
     <string name="community_safety_error">Couldn\'t update community safety. Try again.</string>
     <string name="community_rules_action">Rules &amp; safety</string>
     <string name="community_rules_title">Community Rules &amp; safety</string>
-    <string name="community_rules_body">Share only plant-related scans and helpful second opinions. Do not post people, personal or contact information, sexual or violent material, hate, harassment, threats, illegal or dangerous instructions, impersonation, spam, or misleading content.\n\nUse Report on a scan or reply for moderation. Use Block author for immediate mutual separation. Reports may lead to content removal or account action.</string>
+    <string name="community_rules_body">Share only plant-related scans and helpful answers. Do not post people, personal or contact information, sexual or violent material, hate, harassment, threats, illegal or dangerous instructions, impersonation, spam, or misleading content.\n\nTo flag a shared scan, use Contact moderation below. On a forum post or answer, use Report for moderation and Block author for immediate mutual separation. Reports may lead to content removal or account action.</string>
     <string name="community_contact_moderation">Contact moderation</string>
     <string name="community_manage_blocks">Blocked authors</string>
     <string name="community_blocks_empty">You haven\'t blocked any authors.</string>
@@ -395,59 +366,15 @@
     <string name="community_author_unblocked">Author unblocked.</string>
     <string name="community_unknown_author">Unknown author</string>
     <string name="community_moderation_url" translatable="false">mailto:gavel8980@gmail.com</string>
-    <string name="gallery_community_badge">💬 %1$d</string>
-    <string name="gallery_new_opinions_badge">+%1$d</string>
-    <string name="result_get_second_opinion">Get a second opinion</string>
-    <string name="result_second_opinion_waiting">Waiting for second opinions…</string>
-    <string name="result_second_opinion_view">View second opinions (%1$d)</string>
-    <string name="result_second_opinion_failed">Couldn\'t request a second opinion. Try again.</string>
-    <string name="second_opinion_needs_community_title">Enable community?</string>
-    <string name="second_opinion_needs_community_body">Second opinions come from growers in the community. Enabling shares this scan anonymously, uses your approximate location, and lets others weigh in. By enabling, you agree to the Community Rules; reporting, blocking, and moderation contact are available in the community screen. You can leave anytime.</string>
-    <string name="second_opinion_waiting_hours">Waiting for opinions · %1$d h left</string>
-    <string name="second_opinion_open_replies">Opinions (%1$d) · %2$d h left</string>
-    <string name="second_opinion_sheet_status">Request open · %1$d h left. You\'ll be notified about new replies.</string>
-    <string name="second_opinion_stop">Stop request</string>
-    <string name="second_opinion_stopped">Request stopped — no more notifications for this scan.</string>
-    <string name="community_opinion_replies_empty">No second opinions yet. Check back soon.</string>
-    <string name="community_opinion_replies_title">Community second opinions</string>
-    <string name="community_opinion_replies_subtitle">What the community thinks about this scan.</string>
-    <string name="community_opinion_list_header">Replies (%1$d)</string>
-    <string name="community_wants_opinion_badge">Needs an opinion</string>
-    <string name="community_like_action">Like</string>
-    <string name="community_open_replies">Open %1$d replies</string>
-    <string name="community_replies_locked_short">Replies locked</string>
-    <string name="community_replies_locked_readable">Replies are read-only because the owner is not asking for opinions</string>
-    <string name="community_opinion_locked_body">Replies are read-only. The owner did not request a second opinion, or their request has ended.</string>
-    <string name="community_opinion_locked_toast">This opinion request has ended.</string>
-    <string name="community_report_action">Report</string>
-    <string name="community_block_action">Block author</string>
-    <string name="community_blocked">Author blocked.</string>
-    <string-array name="community_report_reason_labels">
-        <item>Sexual content</item>
-        <item>Violence or threats</item>
-        <item>Hate or harassment</item>
-        <item>Illegal or dangerous advice</item>
-        <item>Spam or misleading content</item>
-        <item>Privacy or impersonation</item>
-        <item>Other rules violation</item>
-    </string-array>
 
     <!-- Nearby scans feed (social-style, opened from the camera screen) -->
-    <string name="community_profile_title">Profile</string>
-    <string name="community_profile_avatar">Community profile avatar</string>
-    <string name="community_open_profile">Open %1$s’s profile</string>
-    <string name="community_profile_joined">Joined %1$s</string>
-    <string name="community_profile_scans">%1$d\nScans</string>
-    <string name="community_profile_opinions">%1$d\nReplies</string>
-    <string name="community_profile_likes">%1$d\nLikes</string>
-    <string name="community_profile_posts">Posts</string>
-    <string name="community_profile_no_posts">No public scans yet</string>
-    <string name="community_profile_unavailable">This profile is unavailable</string>
     <string name="notifications_cd">Notifications</string>
     <string name="notifications_title">Notifications</string>
     <string name="privacy_policy_title">Privacy Policy</string>
+    <string name="privacy_lang_ru" translatable="false">RU</string>
+    <string name="privacy_lang_en" translatable="false">EN</string>
     <string name="privacy_policy_subtitle">See how scan photos and other app data are handled.</string>
-    <string name="notifications_empty">Nothing yet — replies, reminders and garden alerts will show up here.</string>
+    <string name="notifications_empty">Nothing yet - replies, reminders and garden alerts will show up here.</string>
     <string name="notifications_section_new">New</string>
     <string name="notifications_section_earlier">Earlier</string>
     <string name="notifications_mark_all_read">Mark all read</string>
@@ -458,30 +385,34 @@
     <!-- Community scans map -->
     <string name="community_map_title">Community map</string>
     <string name="community_map_near_me">Near me</string>
-    <string name="nearby_action_disable">Stop sharing my scans</string>
-    <string name="community_disable_title">Stop sharing scans?</string>
-    <string name="community_disable_body">Your new scans won\'t be shared and you won\'t receive opinions on them. Scans you\'ve already shared stay in the community.</string>
-    <string name="community_disable_confirm">Stop sharing</string>
+    <string name="nearby_action_disable">Leave the community</string>
+    <string name="community_disable_title">Leave the community?</string>
+    <string name="community_disable_body">Your new scans won\'t be shared and the map closes. Scans you\'ve already shared stay in the community. You can join again from the map.</string>
+    <string name="community_disable_confirm">Leave</string>
     <string name="community_map_zoom_in">Zoom in to see individual scans</string>
-    <string name="community_map_truncated">Showing the latest scans — zoom in to see all</string>
+    <string name="community_map_truncated">Showing the latest scans - zoom in to see all</string>
     <string name="community_map_empty">No community scans in this area yet</string>
     <string name="community_map_group_title">%1$d scans here</string>
     <!-- In-context community opt-in -->
-    <string name="community_enable_cta">Enable community</string>
     <!-- Community feed ordering -->
-    <string name="community_votes_header">Community votes</string>
-    <string name="community_vote_percent">%1$d%%</string>
 
     <!-- Community consent + Profile toggle -->
     <string name="community_scope_global">worldwide</string>
-    <string name="opinion_notif_title">New second opinion</string>
-    <string name="opinion_notif_body">Someone weighed in on your %1$s scan</string>
-    <string name="opinion_notif_body_named">%1$s weighed in on your %2$s scan</string>
-    <string name="opinion_notif_with_note">Suggested diagnosis: %1$s\n\n“%2$s”</string>
     <string name="channel_plant_reminders_name">Plant Reminders</string>
     <string name="channel_plant_reminders_desc">Care schedule reminders for your plants</string>
-    <string name="channel_community_name">Community</string>
-    <string name="channel_community_desc">Second opinions on scans you shared</string>
+    <string name="channel_forum_answers_name">Community answers</string>
+    <string name="channel_forum_answers_desc">Answers on your posts, replies to your answers and accepted answers</string>
+    <string name="forum_answer_notifs_title">Answers to my posts</string>
+    <string name="forum_answer_notifs_subtitle">Notify me when someone answers my question or replies to my answer.</string>
+    <string name="forum_notif_more_title">More community answers</string>
+    <plurals name="forum_notif_answers_count">
+        <item quantity="one">%1$d new answer on %2$s</item>
+        <item quantity="other">%1$d new answers on %2$s</item>
+    </plurals>
+    <plurals name="forum_notif_more_body">
+        <item quantity="one">New answers on %1$d more post. Open Community to read them.</item>
+        <item quantity="other">New answers on %1$d more posts. Open Community to read them.</item>
+    </plurals>
 
     <!-- About model -->
     <!-- Rate limit -->
@@ -499,9 +430,9 @@
     <!-- Pipeline warnings -->
     <string name="warning_very_low_confidence_title">Very low confidence</string>
     <string name="warning_uncertain_healthy_title">Could be disease</string>
-    <string name="warning_uncertain_healthy">The model is not confident that the plant is healthy. Please check the alternative diagnoses below — they may apply.</string>
+    <string name="warning_uncertain_healthy">The model is not confident that the plant is healthy. Please check the alternative diagnoses below - they may apply.</string>
     <string name="warning_viral_variegation_title">Could be natural variegation</string>
-    <string name="warning_viral_variegation">Colorful or mottled patterns on ornamental foliage (Calathea, Caladium, Coleus, Croton, Aglaonema…) can closely resemble viral mosaic. If this is a variegated cultivar, the pattern may be perfectly normal — compare with a healthy leaf of the same plant and consider a second opinion before treating.</string>
+    <string name="warning_viral_variegation">Colorful or mottled patterns on ornamental foliage (Calathea, Caladium, Coleus, Croton, Aglaonema…) can closely resemble viral mosaic. If this is a variegated cultivar, the pattern may be perfectly normal - compare with a healthy leaf of the same plant and consider a second opinion before treating.</string>
     <string name="warning_blurry_image_title">Photo is too blurry</string>
     <string name="warning_blurry_image">We couldn\'t read the leaf clearly enough to trust a diagnosis. Hold the phone steady, wait for autofocus to lock, and try again.</string>
     <string name="warning_low_confidence_title">Low confidence</string>
@@ -510,21 +441,19 @@
     <string name="warning_disease_suspected_title">Possible problem spotted</string>
     <string name="warning_disease_suspected">The plant looks mostly healthy, but the model also picked up signs of %1$s. Keep an eye on it and re-scan if it spreads.</string>
     <string name="warning_offline_scan_title">Offline scan</string>
-    <string name="warning_offline_scan">Computed on your phone, offline — no server. Re-scan online for a more thorough diagnosis.</string>
+    <string name="warning_offline_scan">Computed on your phone, offline - no server. Re-scan online for a more thorough diagnosis.</string>
     <string name="improve_online">Improve with online analysis</string>
     <string name="improve_online_no_network">Connect to the internet to improve this scan.</string>
 
     <!-- Empty states -->
     <string name="first_scan_cta">Take First Scan</string>
-    <string name="filter_empty_hint">Nothing in this category yet. Keep scanning — your green shelf is growing!</string>
+    <string name="filter_empty_hint">Nothing in this category yet. Keep scanning - your green shelf is growing!</string>
     <string name="guide_search_empty">Nothing found for \"%s\". Try a different word.</string>
 
     <!-- Camera grid overlay -->
     <!-- My Garden -->
     <string name="tab_garden">Garden</string>
     <string name="garden_title">My Garden</string>
-    <string name="garden_subtitle">Every plant, scan and watering in one place.</string>
-    <string name="profile_subtitle">Your plants, activity and settings.</string>
     <string name="add_plant">Add plant</string>
     <string name="edit_plant">Edit plant</string>
     <string name="plant_name">Plant name</string>
@@ -534,15 +463,15 @@
 
     <!-- Garden refactor — Rooms -->
     <string name="garden_care_calendar">Care calendar</string>
-    <string name="garden_subtitle_combined">%1$s · %2$s</string>
+    <string name="garden_subtitle_combined">%1$s, %2$s</string>
     <string name="room_add">Add room</string>
     <string name="room_name_hint">Room name</string>
     <string name="room_name_taken">A room with this name already exists</string>
     <string name="room_rename">Rename room</string>
     <string name="room_delete">Delete room</string>
     <string name="room_delete_confirm">The room will be deleted. Its plants stay in your garden and move to Unassigned.</string>
-    <string name="room_empty_plants">No plants yet · tap to add</string>
-    <string name="room_why_hint">Light and humidity differ from room to room — grouping plants makes their care schedule smarter.</string>
+    <string name="room_empty_plants">No plants yet, tap to add</string>
+    <string name="room_why_hint">Light and humidity differ from room to room - grouping plants makes their care schedule smarter.</string>
     <string name="room_plus_more">+%1$d</string>
     <string name="room_preset_living">Living room</string>
     <string name="room_preset_bedroom">Bedroom</string>
@@ -567,8 +496,8 @@
     <string name="plant_tab_history">History</string>
     <string name="plant_tab_gallery">Gallery</string>
     <string name="plant_health_title">Health</string>
-    <string name="plant_health_header_status">Health · %1$s</string>
-    <string name="plant_health_header_score">Health · %1$s · %2$d%%</string>
+    <string name="plant_health_header_status">Health: %1$s</string>
+    <string name="plant_health_header_score">Health: %1$s, %2$d%%</string>
     <!-- %1$s is the signed change (e.g. "-12%"), %2$d the days between the two compared scans (7 or more). -->
     <plurals name="plant_health_delta_days">
         <item quantity="one">%1$s over %2$d day</item>
@@ -581,10 +510,10 @@
     </plurals>
     <string name="treatment_plan_current">Current treatment plan</string>
     <string name="treatment_step_of">Step %1$d of %2$d</string>
-    <string name="treatment_step_done">Done · %1$s</string>
+    <string name="treatment_step_done">Done: %1$s</string>
     <string name="treatment_step_due">Due %1$s</string>
-    <string name="treatment_step_overdue">Overdue · was due %1$s</string>
-    <string name="treatment_finished">Treatment finished · %1$d of %2$d steps · scan again to confirm recovery</string>
+    <string name="treatment_step_overdue">Overdue, was due %1$s</string>
+    <string name="treatment_finished">Treatment finished: %1$d of %2$d steps. Scan again to confirm recovery</string>
     <string name="add_observation">Add observation</string>
 
     <!-- Garden refactor — calendar, day view, task detail -->
@@ -593,7 +522,7 @@
     <string name="calendar_legend_done">Done</string>
     <string name="calendar_today_prefix">Today, %1$s</string>
     <string name="garden_do_today_title">Do today</string>
-    <string name="garden_do_today_summary">%1$s · %2$s</string>
+    <string name="garden_do_today_summary">%1$s, %2$s</string>
     <plurals name="garden_do_today_overdue_count">
         <item quantity="one">%d overdue</item>
         <item quantity="other">%d overdue</item>
@@ -612,7 +541,7 @@
     <string name="task_last_done">Last time: %1$s</string>
     <string name="task_mark_done">Done</string>
     <string name="task_undo">Undo</string>
-    <string name="task_temp_range">Air temperature: %1$d–%2$d °C</string>
+    <string name="task_temp_range">Air temperature: %1$d-%2$d °C</string>
     <plurals name="task_dry_hours">
         <item quantity="one">Avoid rain for the next %1$d hour</item>
         <item quantity="other">Avoid rain for the next %1$d hours</item>
@@ -627,7 +556,6 @@
     <string name="empty_garden_cta_add">Add your first plant</string>
     <string name="plant_detail_title">Plant detail</string>
     <!-- Destination screens reached from a stale notification-centre row -->
-    <string name="scan_no_longer_available">This scan is no longer on this device.</string>
     <string name="plant_no_longer_available">This plant is no longer in your garden.</string>
     <string name="scans">Scans</string>
     <string name="journal">Journal</string>
@@ -645,14 +573,14 @@
     <string name="garden_search_empty">No plants match “%1$s”</string>
     <!-- "Mark watered/fertilised now" reminder reschedule confirmation -->
     <plurals name="care_reminder_rescheduled">
-        <item quantity="one">Logged — next reminder in %1$d day</item>
-        <item quantity="other">Logged — next reminder in %1$d days</item>
+        <item quantity="one">Logged - next reminder in %1$d day</item>
+        <item quantity="other">Logged - next reminder in %1$d days</item>
     </plurals>
     <!-- Plant cover photo (toolbar overflow on plant detail) -->
     <string name="cover_photo_set">Set cover photo</string>
     <string name="cover_photo_clear">Clear cover photo</string>
     <string name="cover_photo_updated">Cover photo updated</string>
-    <string name="photo_picker_permission_refused">Couldn\'t access that photo — try a different one</string>
+    <string name="photo_picker_permission_refused">Couldn\'t access that photo - try a different one</string>
     <string name="empty_plant_scans_title">No scans for this plant</string>
     <string name="empty_plant_scans_hint">Use Add to garden from a diagnosis result to build this plant timeline.</string>
     <string name="empty_journal_title">No reminders or notes yet</string>
@@ -699,7 +627,7 @@
     <string name="reminder_notif_watering">Time to water %s!</string>
     <string name="reminder_notif_check">Time to check on %s!</string>
     <string name="reminder_notif_fertilize">Time to fertilize %s!</string>
-    <string name="reminder_notif_generic">%1$s · %2$s</string>
+    <string name="reminder_notif_generic">%1$s - %2$s</string>
     <string name="reminder_subtitle">Set care schedules for this plant</string>
     <!-- Generic reminders (composer + list) -->
     <string name="reminder_add">Add reminder</string>
@@ -712,10 +640,10 @@
     <string name="reminder_delete">Delete</string>
     <string name="reminder_deleted">Reminder deleted</string>
     <string name="reminder_saved">Reminder saved</string>
-    <string name="reminder_empty_list">No reminders yet — add one below.</string>
+    <string name="reminder_empty_list">No reminders yet - add one below.</string>
     <plurals name="reminder_row_meta">
-        <item quantity="one">Every %1$d day · %2$02d:%3$02d</item>
-        <item quantity="other">Every %1$d days · %2$02d:%3$02d</item>
+        <item quantity="one">Every %1$d day at %2$02d:%3$02d</item>
+        <item quantity="other">Every %1$d days at %2$02d:%3$02d</item>
     </plurals>
     <string name="reminder_preset_mist">Misting</string>
     <string name="reminder_preset_rotate">Rotate plant</string>
@@ -728,7 +656,7 @@
     <string name="reminder_preset_custom">Custom reminder</string>
     <!-- Doctor Chat -->
     <string name="doctor_title">AI Plant Doctor</string>
-    <string name="doctor_stub_subtitle">Ask about this plant — symptoms, watering, light…</string>
+    <string name="doctor_stub_subtitle">Ask about this plant - symptoms, watering, light…</string>
     <string name="doctor_hint">Ask about symptoms, care, treatment…</string>
     <string name="doctor_send">Send</string>
     <string name="doctor_thinking">Thinking…</string>
@@ -755,9 +683,9 @@
     <string name="light_ideal">Good light</string>
     <string name="light_too_bright">Too bright</string>
     <string name="light_measuring">Measuring…</string>
-    <string name="light_no_sensor">No ambient light sensor — point camera at the area</string>
-    <string name="light_ideal_range">Ideal for %1$s: %2$d – %3$d lux</string>
-    <string name="light_ideal_range_with_peak">Ideal for %1$s: %2$d – %3$d lux  ·  peak %4$d</string>
+    <string name="light_no_sensor">No ambient light sensor - point camera at the area</string>
+    <string name="light_ideal_range">Ideal for %1$s: %2$d-%3$d lux</string>
+    <string name="light_ideal_range_with_peak">Ideal for %1$s: %2$d-%3$d lux, peak %4$d</string>
     <!-- Reminder notification action buttons + plant-detail event log -->
     <string name="reminder_action_done">Done</string>
     <string name="reminder_action_snooze">Snooze 1d</string>
@@ -778,7 +706,7 @@
     <string name="guide_link_subtitle">Care + treatment article for %s</string>
     <!-- Share a past scan to the OS share sheet -->
     <string name="share_scan_chooser">Share scan</string>
-    <string name="share_diagnosis_header">🌿 PlantDiseases — Diagnosis</string>
+    <string name="share_diagnosis_header">🌿 PlantDiseases - Diagnosis</string>
     <string name="share_treatment_label">💊 Treatment:</string>
     <string name="share_confidence_format">Confidence %d%%</string>
     <!-- Adaptive watering suggestion (C2) -->
@@ -789,7 +717,7 @@
     <string name="adaptive_watering_applied">Watering reminder set to %d days</string>
     <!-- Progression alert (C3) -->
     <string name="progression_alert_title">%s is getting worse</string>
-    <string name="progression_alert_body">Two consecutive scans show worsening symptoms — take a fresh scan to update the trend.</string>
+    <string name="progression_alert_body">Two consecutive scans show worsening symptoms - take a fresh scan to update the trend.</string>
     <!-- Compact action row + "more actions" sheet -->
     <string name="action_more">More</string>
     <string name="action_more_title">More care actions</string>
@@ -819,10 +747,10 @@
     <string name="water_calc_season">Season</string>
     <string name="water_calc_season_growing">Growing</string>
     <string name="water_calc_season_dormant">Dormant</string>
-    <string name="water_calc_tip_succulent">Let the soil dry out fully between waterings — soggy roots rot fast.</string>
+    <string name="water_calc_tip_succulent">Let the soil dry out fully between waterings - soggy roots rot fast.</string>
     <string name="water_calc_tip_fern">Keep the soil lightly, evenly moist; ferns hate drying out.</string>
-    <string name="water_calc_tip_general">Water thoroughly until it drains, then let the top 2–3 cm dry before the next round.</string>
-    <string name="water_calc_disclaimer">A starting point, not a rule — always check the top soil with your finger before watering.</string>
+    <string name="water_calc_tip_general">Water thoroughly until it drains, then let the top 2-3 cm dry before the next round.</string>
+    <string name="water_calc_disclaimer">A starting point, not a rule - always check the top soil with your finger before watering.</string>
     <!-- Plant detail → Water Calculator shortcut -->
     <string name="water_calc_entry_title">Water Calculator</string>
     <string name="water_calc_entry_subtitle">Estimate how much and how often to water this plant.</string>
@@ -876,8 +804,8 @@
     <string name="symptom_opt_pattern_lower_leaves">Older / lower leaves</string>
     <string name="symptom_opt_pattern_window_side">Side facing the window</string>
     <!-- Options: moisture -->
-    <string name="symptom_opt_moisture_overwatered">Often — soil stays wet</string>
-    <string name="symptom_opt_moisture_underwatered">Rarely — soil bone-dry</string>
+    <string name="symptom_opt_moisture_overwatered">Often - soil stays wet</string>
+    <string name="symptom_opt_moisture_underwatered">Rarely - soil bone-dry</string>
     <string name="symptom_opt_moisture_normal">Normal</string>
     <!-- Options: visible pests -->
     <string name="symptom_opt_pests_moving_dots">Tiny moving dots</string>
@@ -887,6 +815,12 @@
     <string name="symptom_opt_pests_none">None I can see</string>
 
     <!-- Autosave snapped scan photos to the device gallery -->
+    <string name="profile_guest_name">Guest</string>
+    <string name="community_join_title">Join the community</string>
+    <string name="community_join_body">See scans near you on the map and under your results. Members share their approximate location, and their scans (photo, diagnosis and area) are published while they are signed in. You can leave from the map menu.</string>
+    <string name="community_join_cta">Join</string>
+    <string name="community_join_needs_location">Location access is needed to join the community</string>
+    <string name="similar_scans_join_cta">Show scans near you</string>
     <string name="autosave_title">Autosave photos to album</string>
     <string name="autosave_subtitle">Save photos you snap to your device gallery.</string>
     <string name="autosave_album" translatable="false">PlantDiseases</string>
@@ -897,8 +831,8 @@
     <string name="care_plan_expand">Show care plan</string>
     <string name="care_plan_collapse">Hide care plan</string>
     <string name="care_plan_subtitle_species">Tailored for %s</string>
-    <string name="care_plan_subtitle_unknown">Generic plan — species not set</string>
-    <string name="care_plan_subtitle_offline">Basic offline plan — re-scan online for a tailored one</string>
+    <string name="care_plan_subtitle_unknown">Generic plan - species not set</string>
+    <string name="care_plan_subtitle_offline">Basic offline plan - re-scan online for a tailored one</string>
     <string name="care_plan_loading">Building your care plan…</string>
     <string name="care_plan_unavailable">Care plan is unavailable. Tap retry to try again.</string>
     <string name="care_plan_retry">Retry</string>
@@ -928,22 +862,22 @@
     <string name="care_plan_detail_watering_method">Watering method</string>
     <!-- Watering method enum values from the server -->
     <string name="watering_method_bottom_water">Water from below (let the pot soak up water through the drainage holes)</string>
-    <string name="watering_method_bottom_water_soak">Soak from below — stand the pot in water for 20 min, then drain</string>
-    <string name="watering_method_let_top_inch_dry">Let the top 2–3 cm of soil dry out between waterings</string>
+    <string name="watering_method_bottom_water_soak">Soak from below - stand the pot in water for 20 min, then drain</string>
+    <string name="watering_method_let_top_inch_dry">Let the top 2-3 cm of soil dry out between waterings</string>
     <string name="watering_method_soak_and_drain">Water thoroughly until it drains, then empty the saucer</string>
     <string name="care_plan_detail_soil_mix">Soil mix</string>
     <string name="care_plan_detail_npk">Fertiliser NPK</string>
     <string name="care_plan_detail_fertilise_howto">How to feed</string>
-    <string name="care_plan_fertilise_howto_value">A balanced liquid plant fertiliser diluted to half strength — e.g. an all-purpose 10-10-10 feed, only during active growth.</string>
+    <string name="care_plan_fertilise_howto_value">A balanced liquid plant fertiliser diluted to half strength - e.g. an all-purpose 10-10-10 feed, only during active growth.</string>
     <string name="care_plan_detail_temperature">Temperature</string>
     <string name="care_plan_detail_treatment">Treatment checklist</string>
     <string name="care_plan_detail_sanitation">Sanitation</string>
     <string name="care_plan_detail_red_flags">Red flags</string>
     <string name="care_plan_detail_checkpoints">Checkpoints</string>
-    <string name="care_plan_lux_range">%1$d – %2$d lx</string>
-    <string name="care_plan_humidity_range">%1$d – %2$d %%</string>
-    <string name="care_plan_temp_day">Day %1$d – %2$d °C</string>
-    <string name="care_plan_temp_night">Night %1$d – %2$d °C</string>
+    <string name="care_plan_lux_range">%1$d-%2$d lx</string>
+    <string name="care_plan_humidity_range">%1$d-%2$d %%</string>
+    <string name="care_plan_temp_day">Day %1$d-%2$d °C</string>
+    <string name="care_plan_temp_night">Night %1$d-%2$d °C</string>
     <string name="care_plan_isolation_required">Quarantine from other plants until recovered</string>
     <string name="care_plan_detail_setup">Setup</string>
     <string name="care_plan_day_badge">D%1$d</string>
@@ -975,11 +909,11 @@
     <string name="feedback_yes">Correct</string>
     <string name="feedback_no">Wrong</string>
     <string name="feedback_send">Send feedback</string>
-    <string name="feedback_sent">Thanks — your feedback was saved.</string>
+    <string name="feedback_sent">Thanks - your feedback was saved.</string>
     <string name="feedback_sending">Sending your feedback…</string>
-    <string name="feedback_rate_limited">Slow down — try again in a moment.</string>
+    <string name="feedback_rate_limited">Slow down - try again in a moment.</string>
     <string name="feedback_failed">Could not send feedback. Try again later.</string>
-    <string name="feedback_nap_subtitle">Did we get it wrong? If there\'s a real plant in this photo, tell us — that\'s exactly what teaches the model.</string>
+    <string name="feedback_nap_subtitle">Did we get it wrong? If there\'s a real plant in this photo, tell us - that\'s exactly what teaches the model.</string>
     <string name="feedback_is_a_plant">This is a plant</string>
     <string name="feedback_is_a_plant_body">Confirm that this photo contains a plant. The sanitized photo may be retained for model improvement after privacy checks.</string>
 
@@ -1027,14 +961,14 @@
     <string name="progression_trend_stable">Stable</string>
     <string name="progression_trend_worsening">Worsening</string>
     <string name="progression_trend_baseline">No history yet</string>
-    <string name="progression_history_meta">%1$d scans · latest %2$s</string>
+    <string name="progression_history_meta">%1$d scans, latest %2$s</string>
     <string name="progression_loading">Building progression sparkline…</string>
     <!-- Full-screen photo viewer -->
     <string name="photo_viewer_indicator">%1$d / %2$d</string>
     <!-- Plant detail → Light Meter shortcut -->
     <string name="light_meter_entry_title">Measure light here</string>
     <string name="light_meter_entry_subtitle">Use your phone\'s light sensor to check the lux level at this plant\'s spot.</string>
-    <string name="light_meter_entry_subtitle_recorded">Last measured here: %1$d lx · %2$s</string>
+    <string name="light_meter_entry_subtitle_recorded">Last measured here: %1$d lx, %2$s</string>
 
     <!-- Scan screen → model-family picker -->
     <string name="model_family_title">Diagnosis model</string>
@@ -1075,6 +1009,7 @@
     <string name="home_popular_in_country">Popular in %1$s</string>
     <string name="home_popular_near">Popular near %1$s</string>
     <string name="home_popular_worldwide">Popular worldwide</string>
+    <string name="home_popular_join_cta">See what\'s popular near you</string>
     <string name="home_popular_percent">%1$d%% of community scans</string>
     <string name="home_disease_guide">Guide</string>
     <string name="home_see_all">See all</string>
@@ -1098,7 +1033,7 @@
     <!-- Identify species -->
     <string name="identify_unavailable">Species identification isn\'t available on this server right now.</string>
     <string name="identify_not_a_plant">No plant was detected in this photo. Retake it closer, with one sharp, well-lit leaf or flower filling most of the frame.</string>
-    <string name="identify_no_match">No confident match — try a closer, well-lit photo of a single leaf or flower.</string>
+    <string name="identify_no_match">No confident match - try a closer, well-lit photo of a single leaf or flower.</string>
     <string name="identify_failed">Something went wrong. Check your connection and try again.</string>
     <string name="identify_loading">Loading…</string>
     <string name="identify_no_info">No encyclopedia entry found for this species.</string>
@@ -1112,10 +1047,10 @@
     <string name="native_range_loading">Loading native range…</string>
     <string name="native_range_grows_more">Thrives</string>
     <string name="native_range_grows_less">Limited growth</string>
-    <string name="native_range_selected_country">%1$s · %2$s</string>
+    <string name="native_range_selected_country">%1$s: %2$s</string>
     <string name="native_range_selected_country_accessibility">Selected country, %1$s: %2$s</string>
     <string name="native_range_tap_hint">Tap a country to check how this plant grows there.</string>
-    <string name="native_range_outside_country">%1$s · Outside the known outdoor range; grow it indoors or in a greenhouse under controlled conditions.</string>
+    <string name="native_range_outside_country">%1$s: outside the known outdoor range; grow it indoors or in a greenhouse under controlled conditions.</string>
     <string name="native_range_outside_country_accessibility">%1$s: outside the known outdoor range; grow it indoors or in a greenhouse under controlled conditions.</string>
     <string name="native_range_map_content_description">Native-range map showing: %1$s. Tap a country to check it.</string>
     <string name="native_range_map_empty">Native-range map unavailable</string>
@@ -1144,8 +1079,8 @@
     <string name="wikipedia_attribution_translated">This text was machine-translated because the article doesn\'t exist in your language yet.</string>
     <string name="wikipedia_attribution_photo_credit">Photo: %1$s.</string>
     <string name="wikipedia_attribution_photo_credit_licence">Photo: %1$s (%2$s).</string>
-    <string name="species_info_genus_note">There is no article for this exact species yet — this is about the genus “%1$s”.</string>
-    <string name="species_info_genus_note_plain">There is no article for this exact species yet — this is about its genus.</string>
+    <string name="species_info_genus_note">There is no article for this exact species yet - this is about the genus “%1$s”.</string>
+    <string name="species_info_genus_note_plain">There is no article for this exact species yet - this is about its genus.</string>
     <string name="wikipedia_attribution_licence">Licence</string>
     <string name="wikipedia_attribution_close">Close</string>
     <string name="species_info_expand">Show full description</string>
@@ -1252,7 +1187,7 @@
     <string name="lunar_task_watering">Watering</string>
     <string name="lunar_task_pruning">Pruning</string>
     <string name="lunar_category_note">Tailored for: %1$s</string>
-    <string name="lunar_breakdown_row">For %1$s — %2$s</string>
+    <string name="lunar_breakdown_row">For %1$s-%2$s</string>
     <string name="lunar_breakdown_heading">By plant type</string>
     <string name="lunar_rating_good_day">favourable day</string>
     <string name="lunar_rating_neutral_day">neutral day</string>
@@ -1264,7 +1199,7 @@
     <string name="lunar_cat_succulent">succulents and cacti</string>
     <string name="lunar_cat_foliage">foliage houseplants</string>
     <string name="lunar_cat_herb">herbs</string>
-    <string name="lunar_out_of_range">This calendar covers 2026–2027.</string>
+    <string name="lunar_out_of_range">This calendar covers 2026-2027.</string>
     <string name="lunar_dow_mon">Mon</string>
     <string name="lunar_dow_tue">Tue</string>
     <string name="lunar_dow_wed">Wed</string>
@@ -1284,36 +1219,36 @@
     <string name="section_collapse">Collapse section</string>
 
     <!-- Fertiliser guide: substrate per group -->
-<string name="feed_soil_fruiting">Rich loam with compost, pH 6.0–6.8, free-draining</string>
-<string name="feed_soil_root">Loose, stone-free, sandy loam, pH 6.0–7.0</string>
-<string name="feed_soil_leafy">Moisture-retentive compost, pH 6.0–7.0</string>
-<string name="feed_soil_flowering">Peat-free mix with 20% perlite, pH 5.8–6.5</string>
-<string name="feed_soil_succulent">Half mineral grit, pH 6.0–7.5, never peat-heavy</string>
-<string name="feed_soil_foliage">Bark-and-coir mix with 20% perlite, pH 5.5–6.5</string>
-<string name="feed_soil_herb">Light, gritty compost, pH 6.0–7.0</string>
+<string name="feed_soil_fruiting">Rich loam with compost, pH 6.0-6.8, free-draining</string>
+<string name="feed_soil_root">Loose, stone-free, sandy loam, pH 6.0-7.0</string>
+<string name="feed_soil_leafy">Moisture-retentive compost, pH 6.0-7.0</string>
+<string name="feed_soil_flowering">Peat-free mix with 20% perlite, pH 5.8-6.5</string>
+<string name="feed_soil_succulent">Half mineral grit, pH 6.0-7.5, never peat-heavy</string>
+<string name="feed_soil_foliage">Bark-and-coir mix with 20% perlite, pH 5.5-6.5</string>
+<string name="feed_soil_herb">Light, gritty compost, pH 6.0-7.0</string>
 <string name="feed_caution_fruiting_nitrogen">Cut nitrogen once the first flowers open, or you get a large leafy plant and almost no fruit.</string>
 <string name="feed_caution_fruiting_calcium">Add calcium and keep watering even: blossom-end rot is a calcium-transport problem caused by drying out, not a disease.</string>
 <string name="feed_caution_root_nitrogen">High nitrogen grows tops at the expense of the root. Keep N low and potassium high.</string>
-<string name="feed_caution_root_fresh_manure">Never use fresh manure — it forks and splits developing roots.</string>
-<string name="feed_caution_leafy_nitrate">Stop feeding 10–14 days before harvest so nitrates do not accumulate in the leaves.</string>
+<string name="feed_caution_root_fresh_manure">Never use fresh manure - it forks and splits developing roots.</string>
+<string name="feed_caution_leafy_nitrate">Stop feeding 10-14 days before harvest so nitrates do not accumulate in the leaves.</string>
 <string name="feed_caution_leafy_harvest">Cut-and-come-again crops need a light feed after every second harvest, not a heavy one once.</string>
 <string name="feed_caution_flowering_switch">Switch to a high-phosphorus bloom feed as buds form, then back to balanced once flowering ends.</string>
-<string name="feed_caution_flowering_rest">Most flowering houseplants need a cool, unfed rest period to set buds at all — do not feed through it.</string>
+<string name="feed_caution_flowering_rest">Most flowering houseplants need a cool, unfed rest period to set buds at all - do not feed through it.</string>
 <string name="feed_caution_succulent_winter">No feeding at all from November to February. A fed succulent in low winter light stretches and never recovers its shape.</string>
 <string name="feed_caution_succulent_etiolation">Pale, stretched new growth means too much nitrogen and too little light, not too little fertiliser.</string>
 <string name="feed_caution_foliage_salt">White crust on the soil or pot rim is fertiliser salt. Flush the pot with plain water until it runs clear.</string>
-<string name="feed_caution_foliage_lowlight">In a low-light spot halve the dose again — the plant cannot use what it cannot photosynthesise.</string>
+<string name="feed_caution_foliage_lowlight">In a low-light spot halve the dose again - the plant cannot use what it cannot photosynthesise.</string>
 <string name="feed_caution_herb_aroma">Over-feeding gives big, bland leaves. Aromatic oils are strongest in slightly lean soil.</string>
 <string name="feed_caution_herb_edible">Use a fertiliser cleared for edible crops and observe its harvest interval.</string>
-<string name="feed_rule_never_dry">Never feed dry soil — water first, feed 20–30 minutes later, or you will burn the roots.</string>
+<string name="feed_rule_never_dry">Never feed dry soil - water first, feed 20-30 minutes later, or you will burn the roots.</string>
 <string name="feed_rule_never_sick">Do not feed a sick, wilting or pest-infested plant. Feeding a stressed root system makes the damage worse.</string>
-<string name="feed_rule_after_repot">Wait 6–8 weeks after repotting: fresh potting mix already contains a starter charge of fertiliser.</string>
+<string name="feed_rule_after_repot">Wait 6-8 weeks after repotting: fresh potting mix already contains a starter charge of fertiliser.</string>
 <string name="feed_rule_flush">Flush the pot with plain water every third month to wash out accumulated salts.</string>
-<string name="feed_rule_cold">Below 15 degrees C growth stops — stop feeding until it warms up.</string>
+<string name="feed_rule_cold">Below 15 degrees C growth stops - stop feeding until it warms up.</string>
 
     <!-- Fertiliser guide / tips: per-category tip lists -->
 <string-array name="tips_fruiting">
-        <item>Fruiting needs 6+ hours of direct light. Under artificial light budget 12–14 hours a day at 20 cm from the leaves.</item>
+        <item>Fruiting needs 6+ hours of direct light. Under artificial light budget 12-14 hours a day at 20 cm from the leaves.</item>
         <item>Water deeply and on a schedule. Alternating drought and flood is what splits fruit and causes blossom-end rot.</item>
         <item>Indoors there is no wind and no bees: shake the flowering stems daily, or touch each open flower with a soft brush.</item>
         <item>Remove the side shoots that form in the leaf axils of indeterminate varieties, or the plant spends everything on foliage.</item>
@@ -1330,32 +1265,32 @@
         <item>Grows in as little as 4 hours of light, but leaves get thin and pale below that.</item>
         <item>Harvest outer leaves and leave the growing point: one plant then crops for weeks.</item>
         <item>Heat makes leafy crops bolt and turn bitter. Keep them under 22 degrees C.</item>
-        <item>Never let the mix dry out completely — one wilt is enough to trigger bolting.</item>
+        <item>Never let the mix dry out completely - one wilt is enough to trigger bolting.</item>
         <item>Sow a few seeds every two weeks instead of everything at once, so you always have young leaves.</item>
     </string-array>
 <string-array name="tips_flowering">
         <item>Buds form on light. A plant that grows well but never flowers is almost always in a spot that is too dark.</item>
-        <item>Do not move or rotate the pot once buds have set — most species drop them.</item>
+        <item>Do not move or rotate the pot once buds have set - most species drop them.</item>
         <item>Deadhead spent flowers immediately: seed set switches the plant out of flowering.</item>
-        <item>Most species need a cool, dry rest of 6–8 weeks to initiate the next flowering.</item>
+        <item>Most species need a cool, dry rest of 6-8 weeks to initiate the next flowering.</item>
         <item>Water the soil, not the flowers. Water sitting on petals invites grey mould.</item>
     </string-array>
 <string-array name="tips_succulent">
         <item>Water hard, then not at all until the mix is dry all the way through. Small sips rot the collar.</item>
         <item>Overwatering and underwatering look identical from above. Check the soil, never the leaves.</item>
-        <item>Stretched, pale growth with widening gaps between leaves means not enough light. It cannot be undone — only cut back.</item>
+        <item>Stretched, pale growth with widening gaps between leaves means not enough light. It cannot be undone - only cut back.</item>
         <item>Move to direct sun gradually over two weeks. A sudden move sunburns the leaves permanently.</item>
         <item>Keep it cool and completely dry in winter. That rest is what produces flowers.</item>
     </string-array>
 <string-array name="tips_foliage">
         <item>Bright indirect light means a spot where you can read comfortably all day without a lamp, out of direct sun.</item>
-        <item>Water when the top 3–4 cm are dry. Most losses in this group are drowning, not thirst.</item>
+        <item>Water when the top 3-4 cm are dry. Most losses in this group are drowning, not thirst.</item>
         <item>Brown crisp leaf edges mean dry air or salt build-up. Brown soft patches mean too much water.</item>
         <item>Dust the leaves monthly. A dusty leaf photosynthesises measurably less.</item>
         <item>Rotate the pot a quarter turn every week so it grows evenly rather than leaning.</item>
     </string-array>
 <string-array name="tips_herb">
-        <item>Pinch out the growing tip early and often — it is what makes the plant bushy instead of leggy.</item>
+        <item>Pinch out the growing tip early and often - it is what makes the plant bushy instead of leggy.</item>
         <item>Never strip more than a third of the plant at one harvest.</item>
         <item>Cut flower spikes off as they appear: flowering makes the leaves bitter and coarse.</item>
         <item>Most culinary herbs want the sunniest windowsill you have, and slightly lean soil.</item>
@@ -1374,7 +1309,7 @@
 <string name="feed_row_season">Feeding season</string>
 <string name="feed_row_soil">Substrate</string>
 <string name="feed_dose_percent">%1$d%% of the label dose</string>
-<string name="feed_season_range">%1$s – %2$s</string>
+<string name="feed_season_range">%1$s-%2$s</string>
 <string name="feed_season_year_round">All year round</string>
 <string name="section_tips_title">Tips</string>
 <string name="section_tips_subtitle">Useful growing recommendations.</string>
@@ -1439,17 +1374,32 @@
 <string name="pro_profile_body">Full lunar planning and more room for cloud-powered plant care.</string>
 <string name="pro_profile_manage">Explore PRO</string>
 <string name="metered_pro_required_title">This cloud feature needs PRO</string>
-<string name="metered_pro_required_body">Your current photo or text stays on this screen. See PRO to unlock this option, or keep using the free tools.</string>
+<string name="metered_pro_required_body">See PRO to unlock this option, or keep using the free tools.</string>
 <string name="metered_pro_active_unavailable_title">Cloud feature unavailable right now</string>
-<string name="metered_pro_required_active_body">PRO is already active, so no further upgrade is needed. Your current work is still here; try again later.</string>
-<string name="metered_quota_title">Daily cloud limit reached</string>
-<string name="metered_quota_free_body">You have used today\'s free cloud allowance. Your current work is still here; try again after the daily reset or see PRO for higher limits.</string>
-<string name="metered_quota_pro_body">You have used today\'s PRO fair-use allowance. Your current work is still here; try again after the daily reset.</string>
-<string name="metered_quota_body">You have used today\'s cloud allowance. Your current work is still here; try again after the daily reset.</string>
-<string name="metered_unavailable_body">This cloud option isn\'t available right now. If you aren\'t signed in, signing in to a PlantDiseases account gives it a daily allowance. Your current work is still here.</string>
-<string name="metered_quota_remaining_detail">Remaining in this daily allowance: %1$d</string>
-<string name="metered_quota_reset_detail">Resets at %1$s</string>
-<string name="metered_quota_reset_unknown_detail">The exact reset time is temporarily unavailable.</string>
+<string name="metered_pro_required_active_body">PRO is already active, so no further upgrade is needed. Try again later.</string>
+<string name="metered_quota_title">Daily limit reached</string>
+<string name="metered_quota_free_body">You have used today\'s free cloud allowance. Try again after the daily reset or see PRO for higher limits.</string>
+<string name="metered_quota_pro_body">You have used today\'s PRO fair-use allowance. Try again after the daily reset.</string>
+<string name="metered_quota_body">You\'ve used today\'s allowance for this feature.</string>
+<string name="metered_unavailable_body">Sign in to a PlantDiseases account to get a daily allowance for this option.</string>
+    <string name="metered_quota_title_analysis">Gamma scans used up for today</string>
+    <string name="metered_quota_body_analysis">Aqua runs on your phone and has no daily limit.</string>
+    <string name="metered_quota_title_frontier">Frontier scans used up for today</string>
+    <string name="metered_quota_body_frontier">You can keep scanning with Gamma or with Aqua on your phone.</string>
+    <string name="metered_quota_title_identify">Plant identifications used up for today</string>
+    <string name="metered_quota_body_identify">Disease scans still work. Species identification comes back after the reset.</string>
+    <string name="metered_quota_title_chat">AI Plant Doctor questions used up for today</string>
+    <string name="metered_quota_body_chat">The treatment steps from your diagnosis are still there to follow.</string>
+    <string name="metered_quota_title_care_plan">New care plans used up for today</string>
+    <string name="metered_quota_body_care_plan">Plans you already opened and your reminders keep working.</string>
+    <string name="metered_quota_guest_hint">Signed-in accounts get a bigger daily allowance.</string>
+    <string name="metered_unavailable_title_frontier">Frontier needs an account</string>
+    <string name="metered_reset_in_at">Resets in %1$s, at %2$s</string>
+    <string name="metered_duration_hours_minutes">%1$d h %2$d min</string>
+    <string name="metered_duration_hours">%1$d h</string>
+    <string name="metered_duration_minutes">%1$d min</string>
+    <string name="metered_duration_soon">less than a minute</string>
+    <string name="metered_sign_in">Sign in</string>
 <string name="metered_view_pro">View PRO</string>
 <string name="metered_not_now">Not now</string>
 <string name="metered_retry_photo">Try this photo again</string>

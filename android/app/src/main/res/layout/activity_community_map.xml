@@ -2,7 +2,7 @@
 <!--
     Community scans map. Zoomed out it draws a k-anonymized density heat (one
     translucent cell per /api/community/heatmap cell); zoomed in it drops a
-    marker per scan (/api/community/map), tappable into the opinion sheet.
+    marker per scan (/api/community/map), tappable to expand its photo.
     Full-screen with a back arrow — the map wants the room.
 -->
 <androidx.coordinatorlayout.widget.CoordinatorLayout
@@ -17,7 +17,7 @@
         android:id="@+id/app_bar"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:background="@drawable/bg_toolbar_gradient"
+        android:background="@color/background"
         app:elevation="0dp">
 
         <com.google.android.material.appbar.MaterialToolbar

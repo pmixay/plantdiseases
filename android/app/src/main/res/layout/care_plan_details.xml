@@ -1,0 +1,162 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    The expandable details panel of CarePlanCardView, on the card's base surface.
+
+    Every section starts hidden and the view reveals only those the plan
+    fills, so a sparse plan collapses unused sections instead of rendering
+    empty ones. Order is most-actionable-first:
+      1. red flags, 2. climate, 3. treatment checklist, 4. sanitation,
+      5. isolation, 6. setup, 7. checkpoints, 8. season note.
+    Repeated rows (bullets, setup rows, checkpoints) are inflated into the
+    containers from their own item layouts.
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:paddingStart="@dimen/space_xl"
+    android:paddingTop="@dimen/care_plan_details_padding_top"
+    android:paddingEnd="@dimen/space_xl"
+    android:paddingBottom="@dimen/space_xl">
+
+    <!-- 1. Red flags: first, so the thing to watch for is not buried. -->
+    <LinearLayout
+        android:id="@+id/care_plan_red_flags"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="@dimen/care_plan_red_flags_gap"
+        android:background="@drawable/bg_care_plan_red_flags"
+        android:orientation="vertical"
+        android:paddingStart="@dimen/care_plan_pill_padding_h"
+        android:paddingTop="@dimen/care_plan_red_flags_padding_top"
+        android:paddingEnd="@dimen/care_plan_pill_padding_h"
+        android:paddingBottom="@dimen/care_plan_pill_padding_h"
+        android:visibility="gone"
+        tools:visibility="visible">
+
+        <include
+            android:id="@+id/care_plan_red_flags_header"
+            layout="@layout/care_plan_section_header" />
+
+        <LinearLayout
+            android:id="@+id/care_plan_red_flags_items"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical" />
+    </LinearLayout>
+
+    <!-- 2. Climate: lux, humidity and temperature, one row each. The divider
+         is a gap drawn only between visible rows. -->
+    <LinearLayout
+        android:id="@+id/care_plan_climate"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="@dimen/care_plan_climate_gap"
+        android:divider="@drawable/divider_care_plan_chip_gap"
+        android:orientation="vertical"
+        android:showDividers="middle"
+        android:visibility="gone"
+        tools:visibility="visible">
+
+        <include
+            android:id="@+id/care_plan_chip_light"
+            layout="@layout/care_plan_metric_chip"
+            android:visibility="gone" />
+
+        <include
+            android:id="@+id/care_plan_chip_humidity"
+            layout="@layout/care_plan_metric_chip"
+            android:visibility="gone" />
+
+        <include
+            android:id="@+id/care_plan_chip_temperature"
+            layout="@layout/care_plan_metric_chip"
+            android:visibility="gone" />
+    </LinearLayout>
+
+    <!-- 3 and 4. Checklists: what to do, in order; then the secondary actions. -->
+    <include
+        android:id="@+id/care_plan_treatment"
+        layout="@layout/care_plan_checklist_section"
+        android:visibility="gone" />
+
+    <include
+        android:id="@+id/care_plan_sanitation"
+        layout="@layout/care_plan_checklist_section"
+        android:visibility="gone" />
+
+    <!-- 5. Isolation: a single pill, only when required. -->
+    <TextView
+        android:id="@+id/care_plan_isolation"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="@dimen/care_plan_red_flags_gap"
+        android:background="@drawable/bg_care_plan_alert_pill"
+        android:fontFamily="sans-serif-medium"
+        android:paddingStart="@dimen/space_md"
+        android:paddingTop="@dimen/care_plan_isolation_padding_v"
+        android:paddingEnd="@dimen/space_md"
+        android:paddingBottom="@dimen/care_plan_isolation_padding_v"
+        android:textAppearance="@style/TextAppearance.App.CarePlan.BodySm"
+        android:textColor="@color/disease_red"
+        android:visibility="gone"
+        tools:text="Quarantine from other plants until recovered"
+        tools:visibility="visible" />
+
+    <!-- 6. Setup: placement, soil, NPK, acclimation, watering method. They are
+         infrequent reference data, not daily actions. -->
+    <LinearLayout
+        android:id="@+id/care_plan_setup"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="@dimen/care_plan_section_gap"
+        android:orientation="vertical"
+        android:visibility="gone"
+        tools:visibility="visible">
+
+        <include
+            android:id="@+id/care_plan_setup_header"
+            layout="@layout/care_plan_section_header" />
+
+        <LinearLayout
+            android:id="@+id/care_plan_setup_rows"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical" />
+    </LinearLayout>
+
+    <!-- 7. Checkpoints: a vertical timeline with a day badge per item. -->
+    <LinearLayout
+        android:id="@+id/care_plan_checkpoints"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="@dimen/care_plan_section_gap"
+        android:orientation="vertical"
+        android:visibility="gone"
+        tools:visibility="visible">
+
+        <include
+            android:id="@+id/care_plan_checkpoints_header"
+            layout="@layout/care_plan_section_header" />
+
+        <LinearLayout
+            android:id="@+id/care_plan_checkpoint_rows"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical" />
+    </LinearLayout>
+
+    <!-- 8. Season note: reference context, not an action. -->
+    <TextView
+        android:id="@+id/care_plan_season_note"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="@dimen/care_plan_season_gap"
+        android:lineSpacingExtra="@dimen/care_plan_line_extra_note"
+        android:textAppearance="@style/TextAppearance.App.CarePlan.Note"
+        android:textStyle="bold|italic"
+        android:visibility="gone"
+        tools:text="Water less in winter."
+        tools:visibility="visible" />
+</LinearLayout>

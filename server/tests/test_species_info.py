@@ -186,7 +186,7 @@ def test_species_info_endpoint_pins_images_to_english(client, monkeypatch):
     """The species card's photos are pinned to the English article for every
     locale — text (title, extract) stays localized, but the same species shows
     the same images regardless of UI language."""
-    import main as server_main
+    import species_info
 
     def fake(name, lang="en"):
         if lang == "en":
@@ -204,7 +204,7 @@ def test_species_info_endpoint_pins_images_to_english(client, monkeypatch):
             "lang": "ru",
         }
 
-    monkeypatch.setattr(server_main, "fetch_species_info", fake)
+    monkeypatch.setattr(species_info, "fetch_species_info", fake)
     body = client.get("/api/species-info?name=Ficus%20elastica&locale=ru").json()
     assert body["available"] is True
     # Localized text is preserved…
@@ -648,7 +648,7 @@ def test_user_agent_is_descriptive_and_takes_deployment_contact(monkeypatch):
 
 
 def test_species_info_endpoint_exposes_level_and_credit_and_short_cache(client, monkeypatch):
-    import main as server_main
+    import species_info
 
     def fake(name, lang="en"):
         return {
@@ -657,7 +657,7 @@ def test_species_info_endpoint_exposes_level_and_credit_and_short_cache(client, 
             "lang": "en", "image_credit": "Jane", "image_license": "CC BY",
         }
 
-    monkeypatch.setattr(server_main, "fetch_species_info", fake)
+    monkeypatch.setattr(species_info, "fetch_species_info", fake)
     r = client.get("/api/species-info?name=Rosa%20abietina")
     body = r.json()
     assert body["level"] == "genus" and body["image_credit"] == "Jane"

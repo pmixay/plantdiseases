@@ -86,7 +86,7 @@ object OfflineScanContent {
             lightTier = r.lightTier,
             wateringDaysRaw = r.wateringDays,
             fertiliseWeeks = if (normalizeKey(classKey) == "nutrient_deficiency") 2 else 4,
-            humidityTarget = "${r.humidityMin}–${r.humidityMax}%",
+            humidityTarget = "${r.humidityMin}-${r.humidityMax}%",
             keyAction = if (isRu) r.keyActionRu else r.keyActionEn,
             followUpDays = r.followUpDays,
         )
@@ -108,8 +108,8 @@ object OfflineScanContent {
             "bright_indirect",
             40,
             60,
-            "Keep the current routine: water when the top 2–3 cm of soil is dry.",
-            "Сохраняйте текущий уход: поливайте, когда верхние 2–3 см почвы просохли.",
+            "Keep the current routine: water when the top 2-3 cm of soil is dry.",
+            "Сохраняйте текущий уход: поливайте, когда верхние 2-3 см почвы просохли.",
             30,
         ),
         "powdery_mildew" to CareRules(
@@ -153,8 +153,8 @@ object OfflineScanContent {
             "bright_indirect",
             40,
             60,
-            "Isolate the plant — viral infections have no cure; control pests that spread them.",
-            "Изолируйте растение — вирусные инфекции не лечатся; боритесь с вредителями-переносчиками.",
+            "Isolate the plant - viral infections have no cure; control pests that spread them.",
+            "Изолируйте растение - вирусные инфекции не лечатся; боритесь с вредителями-переносчиками.",
             7,
         ),
         "leaf_scorch_underwatering" to CareRules(
@@ -180,17 +180,17 @@ object OfflineScanContent {
     private val cards: Map<String, CareCard> = mapOf(
         "healthy" to CareCard(
             descriptionEn = "No signs of disease were detected on this leaf. The plant looks " +
-                "healthy — firm, evenly coloured foliage with no spots, mold or pests.",
+                "healthy - firm, evenly coloured foliage with no spots, mold or pests.",
             descriptionRu = "Признаков заболевания на этом листе не обнаружено. Растение выглядит " +
-                "здоровым — плотные, равномерно окрашенные листья без пятен, плесени и вредителей.",
+                "здоровым - плотные, равномерно окрашенные листья без пятен, плесени и вредителей.",
             treatmentEn = listOf(
-                "No treatment needed — keep the current care routine",
-                "Water only when the top 2–3 cm of soil is dry",
+                "No treatment needed - keep the current care routine",
+                "Water only when the top 2-3 cm of soil is dry",
                 "Wipe dust off leaves so they can breathe",
             ),
             treatmentRu = listOf(
-                "Лечение не требуется — сохраняйте текущий уход",
-                "Поливайте, только когда верхние 2–3 см почвы просохли",
+                "Лечение не требуется - сохраняйте текущий уход",
+                "Поливайте, только когда верхние 2-3 см почвы просохли",
                 "Протирайте пыль с листьев, чтобы они «дышали»",
             ),
             preventionEn = listOf(
@@ -205,10 +205,10 @@ object OfflineScanContent {
             ),
         ),
         "powdery_mildew" to CareCard(
-            descriptionEn = "Powdery mildew — a common fungal disease that shows up as white or " +
+            descriptionEn = "Powdery mildew - a common fungal disease that shows up as white or " +
                 "gray powdery patches on leaves and stems. It thrives in humid, poorly " +
                 "ventilated spots.",
-            descriptionRu = "Мучнистая роса — распространённое грибковое заболевание: белый или " +
+            descriptionRu = "Мучнистая роса - распространённое грибковое заболевание: белый или " +
                 "серый порошкообразный налёт на листьях и стеблях. Развивается при высокой " +
                 "влажности и плохой вентиляции.",
             treatmentEn = listOf(
@@ -235,9 +235,9 @@ object OfflineScanContent {
             ),
         ),
         "gray_mold_botrytis" to CareCard(
-            descriptionEn = "Gray mold (Botrytis) — fuzzy gray-brown mold on flowers, buds, " +
+            descriptionEn = "Gray mold (Botrytis) - fuzzy gray-brown mold on flowers, buds, " +
                 "leaves and stems. It spreads fast in cool, damp, stagnant air.",
-            descriptionRu = "Серая гниль (ботритис) — пушистая серо-коричневая плесень на цветах, " +
+            descriptionRu = "Серая гниль (ботритис) - пушистая серо-коричневая плесень на цветах, " +
                 "бутонах, листьях и стеблях. Быстро распространяется в прохладном влажном " +
                 "застойном воздухе.",
             treatmentEn = listOf(
@@ -264,22 +264,22 @@ object OfflineScanContent {
             ),
         ),
         "leaf_spot" to CareCard(
-            descriptionEn = "Leaf spot — bacterial or fungal infection appearing as dark, " +
+            descriptionEn = "Leaf spot - bacterial or fungal infection appearing as dark, " +
                 "clearly bordered spots, often with a yellow halo. Progresses when leaves " +
                 "stay wet for too long.",
-            descriptionRu = "Пятнистость листьев — бактериальная или грибковая инфекция: тёмные " +
+            descriptionRu = "Пятнистость листьев - бактериальная или грибковая инфекция: тёмные " +
                 "пятна с чёткими краями, часто с жёлтым ореолом. Прогрессирует, когда листья " +
                 "долго остаются влажными.",
             treatmentEn = listOf(
                 "Cut off affected leaves with sterile scissors",
-                "Apply a copper-based fungicide weekly for 2–3 weeks",
-                "Switch to bottom watering — keep foliage dry",
+                "Apply a copper-based fungicide weekly for 2-3 weeks",
+                "Switch to bottom watering - keep foliage dry",
                 "Improve airflow around the plant",
             ),
             treatmentRu = listOf(
                 "Обрежьте поражённые листья стерильными ножницами",
-                "Обрабатывайте медным фунгицидом раз в неделю 2–3 недели",
-                "Перейдите на нижний полив — листья держите сухими",
+                "Обрабатывайте медным фунгицидом раз в неделю 2-3 недели",
+                "Перейдите на нижний полив - листья держите сухими",
                 "Улучшите воздухообмен вокруг растения",
             ),
             preventionEn = listOf(
@@ -294,49 +294,49 @@ object OfflineScanContent {
             ),
         ),
         "pests" to CareCard(
-            descriptionEn = "Sap-sucking pests (mealybugs, scale, spider mites, aphids) — tiny " +
+            descriptionEn = "Sap-sucking pests (mealybugs, scale, spider mites, aphids) - tiny " +
                 "insects that weaken the plant, leaving sticky residue, stippling, webbing or " +
                 "cottony masses.",
-            descriptionRu = "Сосущие вредители (мучнистые червецы, щитовки, паутинный клещ, тля) — " +
+            descriptionRu = "Сосущие вредители (мучнистые червецы, щитовки, паутинный клещ, тля) - " +
                 "мелкие насекомые, ослабляющие растение: липкий налёт, точки, паутинка или " +
                 "ватные комочки.",
             treatmentEn = listOf(
                 "Isolate the plant from your others right away",
                 "Wipe pests off with a cotton swab dipped in diluted alcohol",
                 "Spray thoroughly with neem oil or insecticidal soap",
-                "Repeat every 5–7 days for 3–4 weeks",
+                "Repeat every 5-7 days for 3-4 weeks",
             ),
             treatmentRu = listOf(
                 "Сразу изолируйте растение от остальных",
                 "Снимите вредителей ватной палочкой со спиртовым раствором",
                 "Тщательно опрыскайте маслом нима или инсектицидным мылом",
-                "Повторяйте каждые 5–7 дней в течение 3–4 недель",
+                "Повторяйте каждые 5-7 дней в течение 3-4 недель",
             ),
             preventionEn = listOf(
                 "Inspect new plants before bringing them home",
                 "Check leaf undersides during watering",
-                "Keep humidity up — spider mites love dry air",
+                "Keep humidity up - spider mites love dry air",
             ),
             preventionRu = listOf(
                 "Осматривайте новые растения перед покупкой",
                 "Проверяйте изнанку листьев при поливе",
-                "Поддерживайте влажность — клещи любят сухой воздух",
+                "Поддерживайте влажность - клещи любят сухой воздух",
             ),
         ),
         "viral_disease" to CareCard(
-            descriptionEn = "Viral disease (mosaic / leaf curl / ringspot) — mottled light-and-" +
+            descriptionEn = "Viral disease (mosaic / leaf curl / ringspot) - mottled light-and-" +
                 "dark patterns, distorted or curled leaves. There is no cure for plant viruses.",
-            descriptionRu = "Вирусное заболевание (мозаика / курчавость / кольцевая пятнистость) — " +
+            descriptionRu = "Вирусное заболевание (мозаика / курчавость / кольцевая пятнистость) - " +
                 "пёстрый светло-тёмный узор, деформированные или скрученные листья. Лечения у " +
                 "вирусов растений нет.",
             treatmentEn = listOf(
-                "There is no cure — isolate the plant immediately",
+                "There is no cure - isolate the plant immediately",
                 "Remove and destroy severely infected plants",
                 "Control aphids and other vectors that spread the virus",
                 "Sterilise tools that touched the infected plant",
             ),
             treatmentRu = listOf(
-                "Лечения нет — немедленно изолируйте растение",
+                "Лечения нет - немедленно изолируйте растение",
                 "Сильно поражённые растения удалите и уничтожьте",
                 "Боритесь с тлёй и другими переносчиками вируса",
                 "Стерилизуйте инструменты после контакта с растением",
@@ -353,19 +353,19 @@ object OfflineScanContent {
             ),
         ),
         "leaf_scorch_underwatering" to CareCard(
-            descriptionEn = "Leaf scorch from under-watering — crispy brown leaf edges and tips. " +
+            descriptionEn = "Leaf scorch from under-watering - crispy brown leaf edges and tips. " +
                 "A physiological stress (not an infection) from soil drying out completely.",
-            descriptionRu = "Краевой ожог от недолива — сухие коричневые края и кончики листьев. " +
+            descriptionRu = "Краевой ожог от недолива - сухие коричневые края и кончики листьев. " +
                 "Это физиологический стресс (не инфекция) из-за полного пересыхания почвы.",
             treatmentEn = listOf(
                 "Water thoroughly until it drains from the bottom",
-                "Soak a bone-dry rootball in water for 20–30 minutes",
+                "Soak a bone-dry rootball in water for 20-30 minutes",
                 "Move away from heat sources and harsh direct sun",
                 "Trim badly scorched edges if you like (cosmetic only)",
             ),
             treatmentRu = listOf(
                 "Полейте обильно, пока вода не выйдет снизу",
-                "Полностью сухой земляной ком замочите в воде на 20–30 минут",
+                "Полностью сухой земляной ком замочите в воде на 20-30 минут",
                 "Уберите от источников тепла и резкого прямого солнца",
                 "При желании обрежьте сильно засохшие края (косметика)",
             ),
@@ -381,10 +381,10 @@ object OfflineScanContent {
             ),
         ),
         "nutrient_deficiency" to CareCard(
-            descriptionEn = "Nutrient deficiency — yellowing leaves (chlorosis), often between " +
+            descriptionEn = "Nutrient deficiency - yellowing leaves (chlorosis), often between " +
                 "the veins, when the plant can't get enough of a key element from old or " +
                 "depleted soil.",
-            descriptionRu = "Дефицит питания — пожелтение листьев (хлороз), часто между жилками, " +
+            descriptionRu = "Дефицит питания - пожелтение листьев (хлороз), часто между жилками, " +
                 "когда растению не хватает ключевого элемента из-за старого или истощённого " +
                 "грунта.",
             treatmentEn = listOf(

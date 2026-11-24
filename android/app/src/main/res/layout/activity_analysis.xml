@@ -63,7 +63,7 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="@dimen/space_sm"
             android:textSize="@dimen/text_body"
-            android:textColor="@color/on_surface_secondary" />
+            android:textColor="@color/on_surface" />
 
     </LinearLayout>
 
@@ -101,7 +101,7 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="@dimen/space_sm"
             android:textSize="@dimen/text_body_sm"
-            android:textColor="@color/on_surface_secondary"
+            android:textColor="@color/on_surface"
             android:gravity="center" />
 
         <com.google.android.material.button.MaterialButton

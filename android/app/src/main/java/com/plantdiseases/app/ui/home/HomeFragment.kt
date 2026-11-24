@@ -9,8 +9,9 @@ import android.view.ViewGroup
 import android.widget.ImageView
 import androidx.fragment.app.Fragment
 import androidx.interpolator.view.animation.FastOutSlowInInterpolator
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
-import androidx.navigation.fragment.findNavController
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.bumptech.glide.Glide
 import com.bumptech.glide.load.engine.DiskCacheStrategy
@@ -24,12 +25,13 @@ import com.plantdiseases.app.data.repository.NotificationRepository
 import com.plantdiseases.app.databinding.FragmentHomeBinding
 import com.plantdiseases.app.ui.camera.LightMeterActivity
 import com.plantdiseases.app.ui.camera.WaterCalculatorActivity
+import com.plantdiseases.app.ui.community.CommunityJoin
+import com.plantdiseases.app.ui.guide.GuideActivity
 import com.plantdiseases.app.ui.guide.GuideDetailActivity
 import com.plantdiseases.app.ui.notifications.NotificationsActivity
 import com.plantdiseases.app.ui.onboarding.guidance.OnboardingAnchorKey
 import com.plantdiseases.app.ui.species.SpeciesDetailActivity
 import com.plantdiseases.app.ui.symptom.SymptomCheckerActivity
-import com.plantdiseases.app.util.CommunityPrefs
 import com.plantdiseases.app.util.ConnectivityObserver
 import com.plantdiseases.app.util.DiseaseCatalog
 import com.plantdiseases.app.util.DiseaseLabels
@@ -131,9 +133,18 @@ class HomeFragment : Fragment() {
         )
         binding.tvGreeting.text = greeting()
 
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                notificationRepository.unreadCount.collect(::showNotificationCount)
+            }
+        }
         binding.btnNotifications.setOnClickListener {
             Haptics.tick(requireContext())
             startActivity(Intent(requireContext(), NotificationsActivity::class.java))
+        }
+        binding.btnPopularJoin.setOnClickListener {
+            val join = (activity as? MainActivity)?.communityJoin ?: return@setOnClickListener
+            join.ensureMember { joined -> if (joined && _binding != null) loadPopular() }
         }
         binding.cardScan.setOnClickListener { openScanTab() }
         binding.cardIdentify.setOnClickListener {
@@ -184,14 +195,9 @@ class HomeFragment : Fragment() {
         }
     }
 
-    /** Push the guide above the tab shell through the graph action that owns
-     *  its forward/back motion. Both Guide entry points deliberately share
-     *  this path so their animation and back-stack behaviour cannot drift. */
+    /** Both Guide entry points open the guide screen the same way. */
     private fun openGuide() {
-        val controller = findNavController()
-        if (controller.currentDestination?.id == R.id.shellFragment) {
-            controller.navigate(R.id.action_shellFragment_to_guideFragment)
-        }
+        startActivity(Intent(requireContext(), GuideActivity::class.java))
     }
 
     /**
@@ -238,27 +244,18 @@ class HomeFragment : Fragment() {
     override fun onResume() {
         super.onResume()
         loadPopular()
-        refreshNotificationBadge()
-        viewLifecycleOwner.lifecycleScope.launch {
-            forumSync.sync()
-            refreshNotificationBadge()
-        }
+        viewLifecycleOwner.lifecycleScope.launch { forumSync.sync() }
     }
 
-    /** No live observer (this app has no Flow/LiveData plumbing over Room —
-     *  every screen re-reads on resume) so the badge is only as fresh as the
-     *  last time Home came to the foreground; good enough for a count. */
-    private fun refreshNotificationBadge() {
-        viewLifecycleOwner.lifecycleScope.launch {
-            val count = notificationRepository.getUnreadCount()
-            (activity as? MainActivity)?.refreshHomeBadge()
-            val badge = _binding?.tvNotificationsBadge ?: return@launch
-            if (count <= 0) {
-                badge.visibility = View.GONE
-            } else {
-                badge.visibility = View.VISIBLE
-                badge.text = if (count > 99) "99+" else count.toString()
-            }
+    /** The bell's count, live: [NotificationRepository.unreadCount] re-emits
+     *  when a notification is recorded, read or cleared. */
+    private fun showNotificationCount(count: Int) {
+        val badge = _binding?.tvNotificationsBadge ?: return
+        if (count <= 0) {
+            badge.visibility = View.GONE
+        } else {
+            badge.visibility = View.VISIBLE
+            badge.text = if (count > 99) "99+" else count.toString()
         }
     }
 
@@ -320,7 +317,7 @@ class HomeFragment : Fragment() {
             DiseaseCarouselAdapter.Item(
                 guideId = gi.id,
                 iconRes = gi.iconRes,
-                title = if (isRu) gi.titleRu else gi.titleEn,
+                title = getString(gi.title),
                 subtitle = getString(R.string.home_guide_tag),
             )
         }
@@ -330,12 +327,14 @@ class HomeFragment : Fragment() {
     // ── Popular carousels (plants + diseases) ───────────────────────
     // Both carousels are driven by /api/popular, which runs one ladder
     // (nearby → country → worldwide → curated placeholder) and returns
-    // per-item scan shares. Location is sent only when the user opted into
-    // community; otherwise the server returns the worldwide bundle.
+    // per-item scan shares. Location is sent only to community members;
+    // everyone else gets the worldwide bundle and a button to join.
     private fun loadPopular() {
         val appContext = requireContext().applicationContext
+        val member = CommunityJoin.isMember(appContext)
+        binding.btnPopularJoin.visibility = if (member) View.GONE else View.VISIBLE
         viewLifecycleOwner.lifecycleScope.launch {
-            val region = if (CommunityPrefs.uploadsEnabled(appContext)) {
+            val region = if (member) {
                 runCatching { RegionResolver.resolveRegion(appContext) }.getOrNull()
             } else {
                 null
@@ -346,7 +345,7 @@ class HomeFragment : Fragment() {
             // (even if its 2-min TTL lapsed) so the main screen never blanks on
             // a slow connection, then refresh in the background only when stale.
             val cached = com.plantdiseases.app.util.ResponseCache
-                .peek(cacheKey, PopularResponse::class.java)
+                .peek<PopularResponse>(cacheKey)
             cached?.let {
                 val b = _binding ?: return@launch
                 renderSpecies(b, it.value)
@@ -467,7 +466,7 @@ class HomeFragment : Fragment() {
                 guideId = gi.id,
                 iconRes = gi.iconRes,
                 title = DiseaseLabels.displayName(d.disease, isRu)
-                    ?: (if (isRu) gi.titleRu else gi.titleEn),
+                    ?: getString(gi.title),
                 subtitle = percentSubtitle(popular?.source, d.percent),
             )
         }
@@ -485,6 +484,7 @@ class HomeFragment : Fragment() {
         val cached = speciesImageCache[scientificName]
         if (cached != null) {
             Glide.with(target).load(com.plantdiseases.app.util.ServerConfig.photoUrl(cached))
+                .timeout(com.plantdiseases.app.util.ServerConfig.PHOTO_TIMEOUT_MS)
                 .placeholder(R.drawable.ic_plant_placeholder)
                 // Disk-cache the bytes (like every other call site) so a slow
                 // connection only ever downloads each carousel photo once.
@@ -504,6 +504,7 @@ class HomeFragment : Fragment() {
             speciesImageCache[scientificName] = url
             if (url != null) {
                 Glide.with(target).load(com.plantdiseases.app.util.ServerConfig.photoUrl(url))
+                    .timeout(com.plantdiseases.app.util.ServerConfig.PHOTO_TIMEOUT_MS)
                     .placeholder(R.drawable.ic_plant_placeholder)
                     .diskCacheStrategy(DiskCacheStrategy.ALL)
                     .error(R.drawable.ic_plant_placeholder)

@@ -2422,85 +2422,6 @@ def test_internal_entitlement_release_requires_service_secret(api: ApiHarness):
     assert calls == [(actor_id, "plant_identification", request_id)]
 
 
-def test_internal_opinion_notification_resolves_tokens_without_returning_them(
-    api: ApiHarness,
-):
-    tokens = _signup(api)
-    fcm_token = "synthetic-fcm-token-private-resolution-12345"
-    registered = api.client.put(
-        "/v1/push/device",
-        headers=api.headers(tokens["access_token"]),
-        json={"fcm_token": fcm_token, "platform": "android"},
-    )
-    assert registered.status_code == 200
-    delivered: list[tuple[list[str], dict[str, str]]] = []
-    api.service.notification_sink = lambda targets, payload: (
-        delivered.append((targets, payload)) or len(targets)
-    )
-    current = api.service.authenticate(tokens["access_token"])
-    response = api.client.post(
-        "/v1/internal/notifications/opinion",
-        headers={"X-Internal-Service-Token": api.client.app.state.internal_service_token},
-        json={
-            "actor_id": str(current.community_actor_id),
-            "scan_id": "synthetic-scan",
-            "disease": "leaf_spot",
-            "note": "synthetic note",
-            "nickname": "Synthetic Responder",
-        },
-    )
-    assert response.status_code == 202
-    assert response.json() == {"status": "accepted", "target_count": 1}
-    assert fcm_token not in response.text
-    assert delivered == [
-        (
-            [fcm_token],
-            {
-                "type": "opinion",
-                "community_actor_id": str(current.community_actor_id),
-                "scan_id": "synthetic-scan",
-                "disease": "leaf_spot",
-                "note": "synthetic note",
-                "nickname": "Synthetic Responder",
-            },
-        )
-    ]
-
-
-def test_corrupt_push_ciphertext_is_disabled_without_aborting_notification(
-    api: ApiHarness,
-):
-    tokens = _signup(api)
-    assert api.client.put(
-        "/v1/push/device",
-        headers=api.headers(tokens["access_token"]),
-        json={"fcm_token": "synthetic-corrupt-target-token", "platform": "android"},
-    ).status_code == 200
-    current = api.service.authenticate(tokens["access_token"])
-    with api.service.repository.transaction() as transaction:
-        device = transaction.scalar(select(PushDevice))
-        assert device is not None
-        device.token_ciphertext = b"x" * 40
-
-    response = api.client.post(
-        "/v1/internal/notifications/opinion",
-        headers={"X-Internal-Service-Token": api.client.app.state.internal_service_token},
-        json={
-            "actor_id": str(current.community_actor_id),
-            "scan_id": "synthetic-scan",
-            "disease": "leaf_spot",
-            "note": "synthetic note",
-            "nickname": "Synthetic Responder",
-        },
-    )
-    assert response.status_code == 202
-    assert response.json() == {"status": "accepted", "target_count": 0}
-    with api.service.repository.transaction() as transaction:
-        device = transaction.scalar(select(PushDevice))
-        assert device is not None
-        assert device.disabled_at is not None
-
-
 def test_successful_community_tombstone_completes_private_account_erasure(
     api: ApiHarness,
 ):
@@ -2572,11 +2493,8 @@ def test_deletion_stays_accepted_when_immediate_worker_crashes(
         assert job is not None and job.state == "pending"
 
 
-@pytest.mark.parametrize(
-    "path",
-    ["/v1/internal/auth/verify", "/v1/internal/notifications/opinion"],
-)
-def test_internal_routes_reject_non_ascii_service_token(api: ApiHarness, path):
+def test_internal_routes_reject_non_ascii_service_token(api: ApiHarness):
+    path = "/v1/internal/auth/verify"
     """A high byte in the credential header is a wrong credential, not a crash.
 
     ``secrets.compare_digest`` raises TypeError on non-ASCII ``str`` operands

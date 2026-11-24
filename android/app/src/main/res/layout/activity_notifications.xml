@@ -16,7 +16,7 @@
         android:id="@+id/app_bar"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:background="@drawable/bg_toolbar_gradient"
+        android:background="@color/background"
         app:elevation="0dp">
 
         <com.google.android.material.appbar.MaterialToolbar
@@ -71,7 +71,7 @@
                 android:gravity="center"
                 android:text="@string/notifications_empty"
                 android:textAppearance="@style/TextAppearance.App.Body"
-                android:textColor="@color/on_surface_secondary" />
+                android:textColor="@color/on_surface" />
 
         </LinearLayout>
 

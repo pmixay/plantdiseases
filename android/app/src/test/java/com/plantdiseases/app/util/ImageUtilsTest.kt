@@ -2,7 +2,6 @@ package com.plantdiseases.app.util
 
 import android.app.Application
 import android.content.Context
-import android.graphics.Bitmap
 import android.net.Uri
 import androidx.test.core.app.ApplicationProvider
 import com.google.common.truth.Truth.assertThat
@@ -13,8 +12,6 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import java.io.ByteArrayInputStream
-import java.io.File
-import java.io.FileOutputStream
 
 /**
  * Robolectric coverage of the framework-touching [ImageUtils] helpers
@@ -37,20 +34,6 @@ class ImageUtilsTest {
         assertThat(file.parentFile?.exists()).isTrue()
         assertThat(file.name).startsWith("PLANT_")
         assertThat(file.name).endsWith(".jpg")
-    }
-
-    @Test
-    fun sha256Hex_isStableForKnownBytes() {
-        val file = File.createTempFile("hash", ".bin").apply { writeBytes("hello world".toByteArray()) }
-        // Reference SHA-256 of the ASCII bytes "hello world".
-        assertThat(ImageUtils.sha256Hex(file))
-            .isEqualTo("b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9")
-        file.delete()
-    }
-
-    @Test
-    fun sha256Hex_returnsNullForMissingFile() {
-        assertThat(ImageUtils.sha256Hex(File("/does/not/exist.bin"))).isNull()
     }
 
     @Test
@@ -97,36 +80,5 @@ class ImageUtilsTest {
         assertThat(out!!.exists()).isTrue()
         assertThat(out.readBytes()).isEqualTo(payload)
         out.delete()
-    }
-
-    @Test
-    fun prepareImageForUpload_runsEndToEndAndReturnsUsableFile() {
-        // Robolectric round-trips a compressed Bitmap's dimensions, so the
-        // large image exercises the (ratio < 1) resize branch and the
-        // small image the no-scale branch. Either way a usable file is
-        // produced and the intermediate bitmaps are recycled (the path
-        // under test for the OOM-safe recycle fix).
-        val large = writeBitmap(1200, 900)
-        val outLarge = ImageUtils.prepareImageForUpload(context, large.absolutePath, maxSize = 1024)
-        assertThat(outLarge.exists()).isTrue()
-        assertThat(outLarge.length()).isGreaterThan(0L)
-
-        val small = writeBitmap(240, 180)
-        val outSmall = ImageUtils.prepareImageForUpload(context, small.absolutePath, maxSize = 1024)
-        assertThat(outSmall.exists()).isTrue()
-        assertThat(outSmall.length()).isGreaterThan(0L)
-
-        large.delete()
-        small.delete()
-        outLarge.delete()
-        outSmall.delete()
-    }
-
-    private fun writeBitmap(w: Int, h: Int): File {
-        val bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
-        val file = File.createTempFile("src_${w}x$h", ".jpg")
-        FileOutputStream(file).use { bmp.compress(Bitmap.CompressFormat.JPEG, 90, it) }
-        bmp.recycle()
-        return file
     }
 }

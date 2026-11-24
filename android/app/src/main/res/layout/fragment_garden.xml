@@ -12,12 +12,11 @@
     shown per plant on the plant detail screen only.
 
     Both secondary destinations (Care calendar, Add room) sit in one paired
-    row at a fixed position under the hero: Add room used to trail every room
+    row at a fixed position under the header: Add room used to trail every room
     card, so a long list buried the button you need when the list is long.
 
-    The hero card, search box and empty state keep their existing shape
-    (bg_hero_card, the same illustration) — this app's header language
-    is shared across every tab.
+    The page header (title, search action, summary) is the plain header
+    shared by every tab: no coloured block.
 -->
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
@@ -43,75 +42,62 @@
             android:layout_height="wrap_content"
             android:orientation="vertical"
             android:paddingHorizontal="@dimen/content_gutter"
-            android:paddingVertical="@dimen/space_lg">
+            android:paddingTop="@dimen/space_sm"
+            android:paddingBottom="@dimen/space_lg">
 
-            <!-- Hero card: rounded leaf-green gradient panel. The toolbar is
-                 hidden on this tab (see MainActivity), so GardenFragment pads
-                 the scroll view by the status-bar inset to drop the card below
-                 the system clock; the parent's space_lg padding gives the side
-                 margins. -->
+            <!-- Page header, like the Home and Community tabs: title with the
+                 search action beside it, then the garden summary. The toolbar
+                 is hidden on this tab (see MainActivity); GardenFragment pads
+                 the scroll view by the status-bar inset. -->
             <LinearLayout
                 android:id="@+id/garden_hero"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:orientation="vertical"
-                android:background="@drawable/bg_hero_card"
-                android:paddingHorizontal="@dimen/space_xl"
-                android:paddingTop="@dimen/space_2xl"
-                android:paddingBottom="@dimen/space_xl">
+                android:orientation="vertical">
 
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:orientation="horizontal"
-                    android:gravity="center_vertical">
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal">
 
-                    <!-- No leading icon here — the plant/sprout glyph that
-                         used to sit on this row had no id and no listener
-                         anywhere in the codebase; it was pure decoration
-                         with no evidence of intended behaviour, so it's
-                         removed rather than wired up to something invented. -->
-                    <View
+                    <TextView
+                        android:id="@+id/garden_summary_title"
                         android:layout_width="0dp"
-                        android:layout_height="1dp"
-                        android:layout_weight="1" />
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:accessibilityHeading="true"
+                        android:fontFamily="sans-serif-black"
+                        android:letterSpacing="-0.01"
+                        android:text="@string/garden_title"
+                        android:textColor="@color/on_surface"
+                        android:textSize="@dimen/text_title" />
 
                     <ImageButton
                         android:id="@+id/garden_search_toggle"
-                        android:layout_width="@dimen/species_info_touch_target"
-                        android:layout_height="@dimen/species_info_touch_target"
-                        android:background="@drawable/bg_circle_semi"
-                        android:src="@android:drawable/ic_menu_search"
+                        android:layout_width="40dp"
+                        android:layout_height="40dp"
+                        android:background="?attr/selectableItemBackgroundBorderless"
                         android:contentDescription="@string/garden_search_hint"
-                        app:tint="@color/on_hero" />
+                        android:src="@android:drawable/ic_menu_search"
+                        app:tint="@color/on_surface" />
 
                 </LinearLayout>
-
-                <TextView
-                    android:id="@+id/garden_summary_title"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="@dimen/space_md"
-                    android:text="@string/garden_title"
-                    android:textColor="@color/on_hero"
-                    android:textSize="28sp"
-                    android:fontFamily="sans-serif-black"
-                    android:letterSpacing="-0.02" />
 
                 <TextView
                     android:id="@+id/garden_summary_body"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="@dimen/space_xs"
-                    android:text="@string/garden_subtitle"
-                    android:textColor="@color/on_hero_secondary"
+                    android:lineSpacingExtra="3dp"
+                    android:textColor="@color/on_surface"
                     android:textSize="@dimen/text_body"
-                    android:lineSpacingExtra="3dp" />
+                    android:visibility="gone" />
 
             </LinearLayout>
 
             <!-- The garden's two secondary destinations, paired at a fixed
-                 position under the hero. "Add room" used to sit BELOW every
+                 position under the header. "Add room" used to sit BELOW every
                  room card, so the control you reach for once the list is long
                  was the one the long list pushed off screen. Both hide while
                  the garden is empty — the empty state offers its own Add room,
@@ -184,9 +170,9 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="@dimen/space_xxs"
-                        android:textColor="@color/on_surface_secondary"
+                        android:textColor="@color/on_surface"
                         android:textSize="@dimen/text_body_sm"
-                        tools:text="3 tasks · 1 overdue" />
+                        tools:text="3 tasks, 1 overdue" />
 
                     <LinearLayout
                         android:id="@+id/garden_do_today_list"
@@ -284,7 +270,7 @@
                     android:layout_height="wrap_content"
                     android:layout_marginTop="@dimen/space_sm"
                     android:text="@string/empty_garden_hint"
-                    android:textColor="@color/on_surface_secondary"
+                    android:textColor="@color/on_surface"
                     android:textSize="@dimen/text_body"
                     android:gravity="center"
                     android:lineSpacingExtra="4dp" />

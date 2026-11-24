@@ -11,8 +11,10 @@ import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import com.bumptech.glide.Glide
-import com.google.android.material.card.MaterialCardView
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import com.google.android.material.imageview.ShapeableImageView
+import com.google.android.material.shape.CornerFamily
+import com.google.android.material.shape.ShapeAppearanceModel
 import com.google.android.material.tabs.TabLayout
 import com.google.android.material.textfield.TextInputEditText
 import com.google.android.material.textfield.TextInputLayout
@@ -33,7 +35,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /**
- * Header / actions controller: the green hero panel, the four-tile action row
+ * Header / actions controller: the plain title header, the four-tile action row
  * (+ "More" sheet), the tab strip, the care-logging dialogs, the
  * post-care reminder reschedule, and the delete-plant confirmation. Camera /
  * cover-pick stay in the Activity (lifecycle-bound launchers); this controller
@@ -61,57 +63,27 @@ class DetailHeaderController(
         journal: List<PlantJournalEntity>,
         health: PlantHealth.Verdict,
     ): View {
-        // Cover photo strip — user-picked first, latest-scan image
-        // second, hide when neither exists so the text-only hero
-        // still feels intentional rather than missing-image.
+        // Cover photo (user-picked first, latest-scan image second) stays a
+        // rounded image; with neither, the header is just the title block.
         val coverSrc: String? = plant.coverPhotoUri
             ?: scans.maxByOrNull { it.timestamp }?.imagePath
-        // With a cover photo, round only the BOTTOM corners: the hero
-        // stacks the green info card under the photo, and rounding the
-        // top corners cut awkward arcs out of the real photo (it never
-        // sat flush with the card edge). Full-bleed square top + rounded
-        // bottom reads as one clean hero panel. With no photo, the card
-        // floats on its own with margin on every side, so it needs all
-        // four corners rounded — same as every other hero card (Care
-        // Plan) — or the square top reads as clipped/cut off.
-        val heroRadius = activity.resources.getDimension(R.dimen.radius_lg)
-        val card = MaterialCardView(activity).apply {
-            cardElevation = 0f
-            shapeAppearanceModel = if (coverSrc != null) {
-                com.google.android.material.shape.ShapeAppearanceModel.builder()
-                    .setBottomLeftCorner(
-                        com.google.android.material.shape.CornerFamily.ROUNDED,
-                        heroRadius,
-                    )
-                    .setBottomRightCorner(
-                        com.google.android.material.shape.CornerFamily.ROUNDED,
-                        heroRadius,
-                    )
-                    .build()
-            } else {
-                com.google.android.material.shape.ShapeAppearanceModel.builder()
-                    .setAllCorners(com.google.android.material.shape.CornerFamily.ROUNDED, heroRadius)
-                    .build()
-            }
+        val outer = LinearLayout(activity).apply {
+            orientation = LinearLayout.VERTICAL
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT,
-            )
+            ).apply { bottomMargin = 12.dp() }
         }
-        val outer = LinearLayout(activity).apply {
-            orientation = LinearLayout.VERTICAL
-        }
-        // The gradient overlay at the bottom is rendered by the
-        // bg_garden_hero drawable underneath, so the text remains
-        // legible regardless of cover-photo brightness.
         if (coverSrc != null) {
-            val cover = ImageView(activity).apply {
+            val cover = ShapeableImageView(activity).apply {
                 layoutParams = LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT,
                     160.dp(),
                 )
                 scaleType = ImageView.ScaleType.CENTER_CROP
-                clipToOutline = true
+                shapeAppearanceModel = ShapeAppearanceModel.builder()
+                    .setAllCorners(CornerFamily.ROUNDED, activity.resources.getDimension(R.dimen.radius_lg))
+                    .build()
                 isClickable = true
                 setOnClickListener { onOpenHero(plant, scans) }
             }
@@ -120,17 +92,13 @@ class DetailHeaderController(
         }
         val body = LinearLayout(activity).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(20.dp(), 22.dp(), 20.dp(), 20.dp())
-            setBackgroundResource(if (coverSrc != null) R.drawable.bg_garden_hero else R.drawable.bg_hero_card)
+            setPadding(4.dp(), 16.dp(), 4.dp(), 0)
         }
         body.addView(
             TextView(activity).apply {
                 text = plant.name
                 textSize = 30f
-                setTextColor(activity.getColor(R.color.hero_stat_text))
-                // PictureThis-style bold hero on the vivid green gradient
-                // — medium read as undersized once the header sat on a
-                // saturated background.
+                setTextColor(activity.getColor(R.color.on_surface))
                 typeface = android.graphics.Typeface.create("sans-serif-black", android.graphics.Typeface.NORMAL)
                 letterSpacing = -0.02f
                 maxLines = 2
@@ -145,8 +113,7 @@ class DetailHeaderController(
                     LocaleHelper.isRussian(activity),
                 ) ?: activity.getString(R.string.plant_species_unknown)
                 textSize = 15f
-                setTextColor(activity.getColor(R.color.hero_stat_text))
-                alpha = 0.82f
+                setTextColor(activity.getColor(R.color.on_surface))
                 maxLines = 1
                 ellipsize = android.text.TextUtils.TruncateAt.END
                 layoutParams = LinearLayout.LayoutParams(
@@ -162,10 +129,15 @@ class DetailHeaderController(
                     activity.getString(R.string.plant_health_header_score, healthLabel, score)
                 } ?: activity.getString(R.string.plant_health_header_status, healthLabel)
                 textSize = 13f
-                setTextColor(activity.getColor(R.color.hero_stat_text))
+                setTextColor(activity.getColor(R.color.on_surface))
                 typeface = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL)
-                setBackgroundResource(R.drawable.bg_plant_stat_pill)
+                setBackgroundResource(R.drawable.bg_stat_pill)
                 setPadding(12.dp(), 6.dp(), 12.dp(), 6.dp())
+                val icon = androidx.core.content.ContextCompat.getDrawable(activity, R.drawable.ic_healthy)?.mutate()
+                icon?.setTint(activity.getColor(R.color.primary))
+                icon?.setBounds(0, 0, 16.dp(), 16.dp())
+                setCompoundDrawablesRelative(icon, null, null, null)
+                compoundDrawablePadding = 6.dp()
                 layoutParams = LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.WRAP_CONTENT,
                     LinearLayout.LayoutParams.WRAP_CONTENT,
@@ -191,8 +163,7 @@ class DetailHeaderController(
         )
         body.addView(stats)
         outer.addView(body)
-        card.addView(outer)
-        return card
+        return outer
     }
 
     /** Single-row action strip with the three most-used actions
@@ -244,7 +215,7 @@ class DetailHeaderController(
                 text = activity.getString(R.string.action_more_title)
                 textSize = 13f
                 letterSpacing = 0.06f
-                setTextColor(activity.getColor(R.color.on_surface_secondary))
+                setTextColor(activity.getColor(R.color.on_surface))
                 typeface = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL)
                 setPadding(16.dp(), 8.dp(), 16.dp(), 10.dp())
             },

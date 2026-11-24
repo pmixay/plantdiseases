@@ -2,9 +2,9 @@
 <!--
     Profile screen — minimal, sharing the Garden tab's visual language.
 
-      • Header is the same leaf-green gradient hero as the Garden tab, with a
-        circular provider avatar (or a local profile placeholder) and on_hero
-        type, so the two tabs read as one production design.
+      • Header is a plain page header like Home and Community: title row,
+        then the circular provider avatar (or a placeholder) beside the
+        account status line.
       • Every section is the same App.GlassCard so radii, padding and
         translucency are uniform; sections are separated only by the
         @dimen/space_* grid (no 4/6/10/14dp magic numbers).
@@ -25,118 +25,114 @@
         android:layout_height="wrap_content"
         android:orientation="vertical"
         android:paddingHorizontal="@dimen/content_gutter"
-        android:paddingVertical="@dimen/space_lg">
+        android:paddingTop="@dimen/space_sm"
+        android:paddingBottom="@dimen/space_lg">
 
-        <!-- Hero card: rounded leaf-green gradient panel, mirroring the Garden
-             tab (same type ramp and on_hero palette). The
-             toolbar is hidden on this tab (see MainActivity), so ProfileFragment
-             pads the scroll view by the status-bar inset to drop the card below
-             the system clock; the parent's space_lg padding gives the side
-             margins. -->
+        <!-- Page header, like the Home and Community tabs: the nickname (or
+             "Profile") as the title with the edit action beside it, then the
+             avatar next to the account status line. The toolbar is hidden on
+             this tab (see MainActivity); ProfileFragment pads the scroll view
+             by the status-bar inset. -->
         <LinearLayout
             android:id="@+id/profile_hero"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:background="@drawable/bg_hero_card"
-            android:orientation="vertical"
-            android:paddingHorizontal="@dimen/space_xl"
-            android:paddingTop="@dimen/space_2xl"
-            android:paddingBottom="@dimen/space_xl">
+            android:orientation="vertical">
 
-            <FrameLayout
-                android:id="@+id/profile_avatar_picker"
-                android:layout_width="144dp"
-                android:layout_height="144dp"
-                android:clickable="true"
-                android:contentDescription="@string/account_change_avatar"
-                android:enabled="false"
-                android:focusable="true"
-                android:foreground="?attr/selectableItemBackgroundBorderless">
-
-                <com.google.android.material.imageview.ShapeableImageView
-                    android:id="@+id/iv_profile_avatar"
-                    android:layout_width="144dp"
-                    android:layout_height="144dp"
-                    android:layout_gravity="center"
-                    android:background="@color/hero_stat_bg"
-                    android:contentDescription="@null"
-                    android:scaleType="centerCrop"
-                    android:src="@drawable/ic_avatar_placeholder"
-                    app:shapeAppearanceOverlay="@style/ShapeAppearance.App.Avatar"
-                    app:strokeColor="@color/hero_stat_stroke"
-                    app:strokeWidth="1dp"
-                    app:tint="@color/on_hero" />
-            </FrameLayout>
-
-            <!-- Nickname with the edit button right after it; a long nickname
-                 shrinks (ellipsizes) instead of pushing the button off. -->
-            <androidx.constraintlayout.widget.ConstraintLayout
+            <!-- A long nickname shrinks (ellipsizes) instead of pushing the
+                 edit button off. -->
+            <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="@dimen/space_md">
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
 
                 <TextView
                     android:id="@+id/tv_profile_hero_title"
-                    android:layout_width="wrap_content"
+                    android:layout_width="0dp"
                     android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:accessibilityHeading="true"
                     android:ellipsize="end"
                     android:fontFamily="sans-serif-black"
-                    android:letterSpacing="-0.02"
+                    android:letterSpacing="-0.01"
                     android:maxLines="1"
                     android:text="@string/tab_profile"
-                    android:textColor="@color/on_hero"
-                    android:textSize="28sp"
-                    app:layout_constrainedWidth="true"
-                    app:layout_constraintBottom_toBottomOf="parent"
-                    app:layout_constraintEnd_toStartOf="@id/btn_edit_profile"
-                    app:layout_constraintHorizontal_bias="0"
-                    app:layout_constraintHorizontal_chainStyle="packed"
-                    app:layout_constraintStart_toStartOf="parent"
-                    app:layout_constraintTop_toTopOf="parent" />
+                    android:textColor="@color/on_surface"
+                    android:textSize="@dimen/text_title" />
 
                 <ImageButton
                     android:id="@+id/btn_edit_profile"
                     android:layout_width="40dp"
                     android:layout_height="40dp"
-                    android:layout_marginStart="@dimen/space_xs"
                     android:background="?attr/selectableItemBackgroundBorderless"
                     android:contentDescription="@string/account_edit_profile"
                     android:padding="8dp"
                     android:scaleType="fitCenter"
                     android:src="@drawable/ic_note_pencil"
                     android:visibility="gone"
-                    app:layout_constraintBottom_toBottomOf="parent"
-                    app:layout_constraintEnd_toEndOf="parent"
-                    app:layout_constraintStart_toEndOf="@id/tv_profile_hero_title"
-                    app:layout_constraintTop_toTopOf="parent"
-                    app:tint="@color/on_hero" />
+                    app:tint="@color/on_surface" />
 
-            </androidx.constraintlayout.widget.ConstraintLayout>
+            </LinearLayout>
 
-            <TextView
-                android:id="@+id/tv_profile_hero_subtitle"
+            <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="@dimen/space_xs"
-                android:lineSpacingExtra="3dp"
-                android:text="@string/profile_subtitle"
-                android:textColor="@color/on_hero_secondary"
-                android:textSize="@dimen/text_body" />
+                android:layout_marginTop="@dimen/space_md"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <FrameLayout
+                    android:id="@+id/profile_avatar_picker"
+                    android:layout_width="72dp"
+                    android:layout_height="72dp"
+                    android:clickable="true"
+                    android:contentDescription="@string/account_change_avatar"
+                    android:enabled="false"
+                    android:focusable="true"
+                    android:foreground="?attr/selectableItemBackgroundBorderless">
+
+                    <com.google.android.material.imageview.ShapeableImageView
+                        android:id="@+id/iv_profile_avatar"
+                        android:layout_width="72dp"
+                        android:layout_height="72dp"
+                        android:layout_gravity="center"
+                        android:background="@color/icon_bg"
+                        android:contentDescription="@null"
+                        android:scaleType="centerCrop"
+                        android:src="@drawable/ic_avatar_placeholder"
+                        app:shapeAppearanceOverlay="@style/ShapeAppearance.App.Avatar"
+                        app:tint="@color/primary" />
+                </FrameLayout>
+
+                <!-- The member's name: nickname when signed in, "Guest" when
+                     not, or where the account stands while it resolves. -->
+                <TextView
+                    android:id="@+id/tv_profile_hero_subtitle"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="@dimen/space_lg"
+                    android:layout_weight="1"
+                    android:ellipsize="end"
+                    android:maxLines="2"
+                    android:text="@string/profile_guest_name"
+                    android:textColor="@color/on_surface"
+                    android:textSize="@dimen/text_title"
+                    android:textStyle="bold" />
+
+            </LinearLayout>
 
             <!-- Signed out, restoring or unfinished account: the way in. -->
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btn_manage_account"
-                style="@style/Widget.Material3.Button"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="@dimen/space_lg"
                 android:minHeight="56dp"
                 android:text="@string/account_sign_in_or_create"
-                android:textColor="@color/hero_solid"
                 android:visibility="gone"
-                app:backgroundTint="@color/on_hero"
                 app:icon="@drawable/ic_profile"
-                app:iconTint="@color/hero_solid" />
+                app:iconGravity="textStart" />
         </LinearLayout>
 
         <com.google.android.material.card.MaterialCardView
@@ -182,7 +178,7 @@
                         android:layout_height="wrap_content"
                         android:layout_marginTop="@dimen/space_xs"
                         android:text="@string/pro_profile_body"
-                        android:textColor="@color/on_surface_secondary"
+                        android:textColor="@color/on_surface"
                         android:textSize="@dimen/text_body_sm" />
                 </LinearLayout>
 
@@ -364,7 +360,7 @@
                             android:layout_marginTop="@dimen/space_xxs"
                             android:text="@string/autosave_subtitle"
                             android:textSize="@dimen/text_body_sm"
-                            android:textColor="@color/on_surface_secondary"
+                            android:textColor="@color/on_surface"
                             android:lineSpacingExtra="1dp" />
 
                     </LinearLayout>
@@ -375,6 +371,53 @@
                         android:layout_height="wrap_content"
                         android:layout_marginStart="@dimen/space_md"
                         android:contentDescription="@string/autosave_title" />
+
+                </LinearLayout>
+
+                <View
+                    android:layout_width="match_parent"
+                    android:layout_height="1dp"
+                    android:layout_marginVertical="@dimen/space_md"
+                    android:background="@color/divider" />
+
+                <!-- Notifications for answers on the user's community posts
+                     (ForumAnswerNotifier). On by default. -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical">
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:orientation="vertical">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="@string/forum_answer_notifs_title"
+                            android:textAppearance="@style/TextAppearance.App.Title"
+                            android:accessibilityHeading="true" />
+
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="@dimen/space_xxs"
+                            android:text="@string/forum_answer_notifs_subtitle"
+                            android:textSize="@dimen/text_body_sm"
+                            android:textColor="@color/on_surface"
+                            android:lineSpacingExtra="1dp" />
+
+                    </LinearLayout>
+
+                    <com.google.android.material.materialswitch.MaterialSwitch
+                        android:id="@+id/switch_forum_answer_notifs"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="@dimen/space_md"
+                        android:contentDescription="@string/forum_answer_notifs_title" />
 
                 </LinearLayout>
 
@@ -408,7 +451,7 @@
                             android:layout_height="wrap_content"
                             android:layout_marginTop="@dimen/space_xxs"
                             android:text="@string/telemetry_consent_subtitle"
-                            android:textColor="@color/on_surface_secondary"
+                            android:textColor="@color/on_surface"
                             android:textSize="@dimen/text_body_sm" />
                     </LinearLayout>
 
@@ -458,7 +501,7 @@
                                 android:layout_height="wrap_content"
                                 android:layout_marginTop="@dimen/space_xxs"
                                 android:text="@string/community_photo_setting_subtitle"
-                                android:textColor="@color/on_surface_secondary"
+                                android:textColor="@color/on_surface"
                                 android:textSize="@dimen/text_body_sm" />
                         </LinearLayout>
 
@@ -530,7 +573,7 @@
                         android:layout_height="wrap_content"
                         android:layout_marginTop="@dimen/space_xxs"
                         android:text="@string/replay_guidance_subtitle"
-                        android:textColor="@color/on_surface_secondary"
+                        android:textColor="@color/on_surface"
                         android:textSize="@dimen/text_body_sm" />
                 </LinearLayout>
 
@@ -585,7 +628,7 @@
                         android:layout_height="wrap_content"
                         android:layout_marginTop="@dimen/space_xxs"
                         android:text="@string/privacy_policy_subtitle"
-                        android:textColor="@color/on_surface_secondary"
+                        android:textColor="@color/on_surface"
                         android:textSize="@dimen/text_body_sm" />
                 </LinearLayout>
 
@@ -676,7 +719,7 @@
                                 android:id="@+id/tv_health_rate"
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
-                                android:text="—"
+                                android:text="-"
                                 android:textSize="24sp"
                                 android:textColor="@color/on_surface"
                                 android:fontFamily="sans-serif-medium"
@@ -687,7 +730,7 @@
                                 android:layout_height="wrap_content"
                                 android:text="@string/accuracy_rate"
                                 android:textSize="@dimen/text_caption"
-                                android:textColor="@color/on_surface_secondary"
+                                android:textColor="@color/on_surface"
                                 android:gravity="center"
                                 android:lineSpacingMultiplier="0.95" />
                         </LinearLayout>
@@ -740,7 +783,7 @@
                         android:layout_marginEnd="@dimen/space_md"
                         android:text="@string/most_common_disease"
                         android:textSize="@dimen/text_body_sm"
-                        android:textColor="@color/on_surface_secondary" />
+                        android:textColor="@color/on_surface" />
 
                     <TextView
                         android:id="@+id/tv_common_disease"
@@ -832,7 +875,7 @@
                 android:layout_marginTop="@dimen/space_sm"
                 android:text="@string/start_scanning_hint"
                 android:textSize="@dimen/text_body"
-                android:textColor="@color/on_surface_secondary"
+                android:textColor="@color/on_surface"
                 android:gravity="center" />
 
             <com.google.android.material.button.MaterialButton
@@ -867,7 +910,7 @@
                 android:layout_marginTop="@dimen/space_xs"
                 android:padding="@dimen/space_sm"
                 android:textSize="@dimen/text_caption"
-                android:textColor="@color/on_surface_secondary" />
+                android:textColor="@color/on_surface" />
 
         </LinearLayout>
 

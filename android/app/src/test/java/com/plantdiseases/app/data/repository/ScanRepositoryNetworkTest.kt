@@ -8,7 +8,6 @@ import com.plantdiseases.app.auth.RefreshTokenVault
 import com.plantdiseases.app.data.account.AuthProvider
 import com.plantdiseases.app.data.model.CarePlanRequest
 import com.plantdiseases.app.data.model.ChatRequest
-import com.plantdiseases.app.data.model.CommunityOpinionRequest
 import com.plantdiseases.app.data.model.ErrorReport
 import com.plantdiseases.app.data.model.FeedbackRequest
 import com.plantdiseases.app.data.model.ProgressionRequest
@@ -44,6 +43,9 @@ class ScanRepositoryNetworkTest {
 
     private lateinit var server: MockWebServer
     private lateinit var repo: ScanRepository
+    private lateinit var community: CommunityScanRepository
+    private lateinit var assistant: AssistantRepository
+    private lateinit var feedback: FeedbackRepository
     private lateinit var client: PlantApiClient
     private lateinit var imageFile: File
     private lateinit var accountApi: FakeAccountApi
@@ -71,6 +73,15 @@ class ScanRepositoryNetworkTest {
                     SanitizedImage(sanitizedBytes, width = 12, height = 8)
             },
             authRepository = authRepository,
+        )
+        community = CommunityScanRepository(client, authRepository)
+        assistant = AssistantRepository(client, authRepository)
+        feedback = FeedbackRepository(
+            client,
+            imageSanitizer = object : UploadImageSanitizer {
+                override fun sanitize(source: File, maxDimension: Int, quality: Int) =
+                    SanitizedImage(sanitizedBytes, width = 12, height = 8)
+            },
         )
         imageFile = File.createTempFile("PRIVATE-original-name", ".jpg")
         imageFile.writeBytes(ByteArray(128) { it.toByte() })
@@ -193,8 +204,8 @@ class ScanRepositoryNetworkTest {
 
         assertThat(result.isFailure).isTrue()
         val error = result.exceptionOrNull()
-        assertThat(error).isInstanceOf(ScanRepository.ModelUnavailableException::class.java)
-        error as ScanRepository.ModelUnavailableException
+        assertThat(error).isInstanceOf(ModelUnavailableException::class.java)
+        error as ModelUnavailableException
         assertThat(error.family).isEqualTo("frontier")
         assertThat(error.reason).isEqualTo("frontier_disabled")
         assertThat(error.serverMessage).isEqualTo("Pick Gamma")
@@ -213,7 +224,7 @@ class ScanRepositoryNetworkTest {
 
         assertThat(result.isFailure).isTrue()
         assertThat(result.exceptionOrNull())
-            .isInstanceOf(ScanRepository.InvalidAnalysisResponseException::class.java)
+            .isInstanceOf(InvalidAnalysisResponseException::class.java)
     }
 
     @Test
@@ -250,7 +261,7 @@ class ScanRepositoryNetworkTest {
             )
             val result = runBlocking { repo.analyzeImage(imageFile) }
             assertThat(result.exceptionOrNull())
-                .isInstanceOf(ScanRepository.InvalidAnalysisResponseException::class.java)
+                .isInstanceOf(InvalidAnalysisResponseException::class.java)
         }
     }
 
@@ -280,7 +291,7 @@ class ScanRepositoryNetworkTest {
         val result = runBlocking { repo.analyzeImage(imageFile) }
         assertThat(result.isFailure).isTrue()
         assertThat(result.exceptionOrNull())
-            .isInstanceOf(ScanRepository.UnsupportedImageException::class.java)
+            .isInstanceOf(UnsupportedImageException::class.java)
     }
 
     @Test
@@ -288,7 +299,7 @@ class ScanRepositoryNetworkTest {
         server.enqueue(MockResponse().setResponseCode(415))
         val result = runBlocking { repo.analyzeImage(imageFile) }
         assertThat(result.exceptionOrNull())
-            .isInstanceOf(ScanRepository.UnsupportedImageException::class.java)
+            .isInstanceOf(UnsupportedImageException::class.java)
     }
 
     @Test
@@ -296,7 +307,7 @@ class ScanRepositoryNetworkTest {
         server.enqueue(MockResponse().setResponseCode(429))
         val result = runBlocking { repo.analyzeImage(imageFile) }
         assertThat(result.exceptionOrNull())
-            .isInstanceOf(ScanRepository.RateLimitException::class.java)
+            .isInstanceOf(RateLimitException::class.java)
         assertThat(server.requestCount).isEqualTo(1)
     }
 
@@ -312,8 +323,8 @@ class ScanRepositoryNetworkTest {
         val result = runBlocking { repo.analyzeImage(imageFile) }
 
         val error = result.exceptionOrNull()
-        assertThat(error).isInstanceOf(ScanRepository.QuotaExhaustedException::class.java)
-        error as ScanRepository.QuotaExhaustedException
+        assertThat(error).isInstanceOf(QuotaExhaustedException::class.java)
+        error as QuotaExhaustedException
         assertThat(error.plan).isEqualTo("free")
         assertThat(error.limit).isEqualTo(5)
         assertThat(error.remaining).isEqualTo(0)
@@ -336,8 +347,8 @@ class ScanRepositoryNetworkTest {
         val result = runBlocking { repo.analyzeImage(imageFile, family = "frontier") }
 
         val error = result.exceptionOrNull()
-        assertThat(error).isInstanceOf(ScanRepository.ProRequiredException::class.java)
-        error as ScanRepository.ProRequiredException
+        assertThat(error).isInstanceOf(ProRequiredException::class.java)
+        error as ProRequiredException
         assertThat(error.plan).isEqualTo("free")
         assertThat(error.limit).isEqualTo(0)
     }
@@ -394,7 +405,7 @@ class ScanRepositoryNetworkTest {
         server.enqueue(MockResponse().setResponseCode(503))
         val result = runBlocking { repo.analyzeImage(imageFile) }
         assertThat(result.exceptionOrNull())
-            .isInstanceOf(ScanRepository.ServerStartingException::class.java)
+            .isInstanceOf(ServerStartingException::class.java)
         assertThat(server.requestCount).isEqualTo(1)
     }
 
@@ -429,7 +440,7 @@ class ScanRepositoryNetworkTest {
         assertThat(result.isFailure).isTrue()
         // Not one of the typed exceptions — a generic "Server error" carrier.
         val ex = result.exceptionOrNull()!!
-        assertThat(ex).isNotInstanceOf(ScanRepository.UnsupportedImageException::class.java)
+        assertThat(ex).isNotInstanceOf(UnsupportedImageException::class.java)
         assertThat(ex.message).contains("Server error")
     }
 
@@ -484,7 +495,7 @@ class ScanRepositoryNetworkTest {
         )
 
         val result = runBlocking {
-            repo.diagnoseSymptoms(SymptomDiagnoseRequest(answers = mapOf("color" to "yellow")))
+            assistant.diagnoseSymptoms(SymptomDiagnoseRequest(answers = mapOf("color" to "yellow")))
         }
 
         assertThat(result.isSuccess).isTrue()
@@ -507,10 +518,10 @@ class ScanRepositoryNetworkTest {
         server.enqueue(MockResponse().setResponseCode(503))
         server.enqueue(MockResponse().setResponseCode(503))
         val result = runBlocking {
-            repo.diagnoseSymptoms(SymptomDiagnoseRequest(answers = emptyMap()))
+            assistant.diagnoseSymptoms(SymptomDiagnoseRequest(answers = emptyMap()))
         }
         assertThat(result.exceptionOrNull())
-            .isInstanceOf(ScanRepository.ServerStartingException::class.java)
+            .isInstanceOf(ServerStartingException::class.java)
     }
 
     // --- POST /api/feedback (Ktor) ---
@@ -524,7 +535,7 @@ class ScanRepositoryNetworkTest {
         )
 
         val result = runBlocking {
-            repo.submitFeedback(FeedbackRequest(feedbackReceipt = "x".repeat(43), correct = true))
+            feedback.submitFeedback(FeedbackRequest(feedbackReceipt = "x".repeat(43), correct = true))
         }
 
         assertThat(result.isSuccess).isTrue()
@@ -546,10 +557,10 @@ class ScanRepositoryNetworkTest {
         server.enqueue(MockResponse().setResponseCode(429))
         server.enqueue(MockResponse().setResponseCode(429))
         val result = runBlocking {
-            repo.submitFeedback(FeedbackRequest(feedbackReceipt = "x".repeat(43), correct = false))
+            feedback.submitFeedback(FeedbackRequest(feedbackReceipt = "x".repeat(43), correct = false))
         }
         assertThat(result.exceptionOrNull())
-            .isInstanceOf(ScanRepository.RateLimitException::class.java)
+            .isInstanceOf(RateLimitException::class.java)
     }
 
     @Test
@@ -557,7 +568,7 @@ class ScanRepositoryNetworkTest {
         // 422 isn't retried, so a single response.
         server.enqueue(MockResponse().setResponseCode(422))
         val result = runBlocking {
-            repo.submitFeedback(FeedbackRequest(feedbackReceipt = "x".repeat(43), correct = true))
+            feedback.submitFeedback(FeedbackRequest(feedbackReceipt = "x".repeat(43), correct = true))
         }
         assertThat(result.isFailure).isTrue()
         assertThat(result.exceptionOrNull()?.message).contains("Invalid feedback payload")
@@ -622,7 +633,7 @@ class ScanRepositoryNetworkTest {
         )
 
         val result = runBlocking {
-            repo.fetchCarePlan(CarePlanRequest(disease = "quota-header-test-${UUID.randomUUID()}"))
+            assistant.fetchCarePlan(CarePlanRequest(disease = "quota-header-test-${UUID.randomUUID()}"))
         }
 
         assertThat(result.isSuccess).isTrue()
@@ -640,7 +651,7 @@ class ScanRepositoryNetworkTest {
         )
 
         val result = runBlocking {
-            repo.fetchCarePlan(CarePlanRequest(disease = "retry-care-plan-${UUID.randomUUID()}"))
+            assistant.fetchCarePlan(CarePlanRequest(disease = "retry-care-plan-${UUID.randomUUID()}"))
         }
 
         assertThat(result.isSuccess).isTrue()
@@ -667,7 +678,7 @@ class ScanRepositoryNetworkTest {
                 "species" to null,
             ),
         )
-        val result = runBlocking { repo.sendChat(request) }
+        val result = runBlocking { assistant.sendChat(request) }
 
         assertThat(result.isSuccess).isTrue()
         assertThat(result.getOrNull()?.reply).isEqualTo("Water less.")
@@ -696,7 +707,7 @@ class ScanRepositoryNetworkTest {
                 .setBody("""{"available":true,"reply":"ok"}"""),
         )
 
-        val result = runBlocking { repo.sendChat(ChatRequest(sessionId = "s", message = "x")) }
+        val result = runBlocking { assistant.sendChat(ChatRequest(sessionId = "s", message = "x")) }
 
         assertThat(result.isSuccess).isTrue()
         assertRefreshRetryReusesLogicalRequestId()
@@ -705,9 +716,9 @@ class ScanRepositoryNetworkTest {
     @Test
     fun chat_429_mapsToRateLimit() {
         server.enqueue(MockResponse().setResponseCode(429))
-        val result = runBlocking { repo.sendChat(ChatRequest(sessionId = "s", message = "x")) }
+        val result = runBlocking { assistant.sendChat(ChatRequest(sessionId = "s", message = "x")) }
         assertThat(result.exceptionOrNull())
-            .isInstanceOf(ScanRepository.RateLimitException::class.java)
+            .isInstanceOf(RateLimitException::class.java)
         assertThat(server.requestCount).isEqualTo(1)
     }
 
@@ -726,7 +737,7 @@ class ScanRepositoryNetworkTest {
                 mapOf("class_name" to "leaf_spot", "confidence" to 0.9, "severity" to "high"),
             ),
         )
-        val result = runBlocking { repo.fetchProgression(request) }
+        val result = runBlocking { assistant.fetchProgression(request) }
 
         assertThat(result.isSuccess).isTrue()
         assertThat(result.getOrNull()?.trend).isEqualTo("worsening")
@@ -789,7 +800,7 @@ class ScanRepositoryNetworkTest {
         server.enqueue(MockResponse().setResponseCode(400))
         val result = runBlocking { repo.identifySpecies(imageFile) }
         assertThat(result.exceptionOrNull())
-            .isInstanceOf(ScanRepository.UnsupportedImageException::class.java)
+            .isInstanceOf(UnsupportedImageException::class.java)
     }
 
     // --- POST /api/feedback/image (Ktor multipart) ---
@@ -803,7 +814,7 @@ class ScanRepositoryNetworkTest {
             correctedClass = "leaf_spot",
             reason = "wrong_class",
         )
-        val result = runBlocking { repo.uploadFeedbackImage(request, imageFile) }
+        val result = runBlocking { feedback.uploadFeedbackImage(request, imageFile) }
 
         assertThat(result.isSuccess).isTrue()
         val req = server.takeRequest()
@@ -829,7 +840,7 @@ class ScanRepositoryNetworkTest {
                 .setBody("""{"ok":true,"id":99}"""),
         )
         val result = runBlocking {
-            repo.uploadCommunityScan(
+            community.uploadCommunityScan(
                 scanId = "sc-1",
                 region = "", // blank → omitted
                 disease = "leaf_spot",
@@ -869,12 +880,12 @@ class ScanRepositoryNetworkTest {
             MockResponse().setResponseCode(200)
                 .setHeader("Content-Type", "application/json")
                 .setBody(
-                    """{"items":[{"scan_id":"s1","disease":"leaf_spot","opinion_count":2}],""" +
+                    """{"items":[{"scan_id":"s1","disease":"leaf_spot","view_count":2}],""" +
                         """"summary":{"country":"US","total":5}}""",
                 ),
         )
         val result = runBlocking {
-            repo.communityNearby(
+            community.communityNearby(
                 region = "", // blank → omitted
                 disease = null, // null → omitted
             )
@@ -901,131 +912,12 @@ class ScanRepositoryNetworkTest {
                 .setHeader("Content-Type", "application/json")
                 .setBody("""{"items":[]}"""),
         )
-        runBlocking { repo.communityScansBySpecies("Ficus elastica") }
+        runBlocking { community.communityScansBySpecies("Ficus elastica") }
         val req = server.takeRequest()
         assertThat(req.path).startsWith("/api/community/by-species")
         assertThat(req.path).contains("species=Ficus")
         assertThat(req.path).doesNotContain("user_pseudo_id")
         assertThat(req.getHeader("Authorization")).isEqualTo("Bearer access-1")
-    }
-
-    @Test
-    fun getCommunityOpinions_success_pathAndParse() {
-        server.enqueue(
-            MockResponse().setResponseCode(200)
-                .setHeader("Content-Type", "application/json")
-                .setBody(
-                    """{"scan_id":"sc-9","opinions":[""" +
-                        """{"suggested_disease":"rust","note":"looks like rust"}],"views":4}""",
-                ),
-        )
-        val result = runBlocking { repo.getCommunityOpinions("sc-9") }
-        assertThat(result.isSuccess).isTrue()
-        assertThat(result.getOrNull()?.views).isEqualTo(4)
-        assertThat(result.getOrNull()?.opinions?.get(0)?.suggestedDisease).isEqualTo("rust")
-        val request = server.takeRequest()
-        assertThat(request.path).isEqualTo("/api/community/opinions/sc-9")
-        assertThat(request.getHeader("Authorization")).isEqualTo("Bearer access-1")
-    }
-
-    @Test
-    fun fetchMyScanOpinions_success_pathAndParse() {
-        server.enqueue(
-            MockResponse().setResponseCode(200)
-                .setHeader("Content-Type", "application/json")
-                .setBody(
-                    """{"scans":[{"scan_id":"a","disease":"leaf_spot","opinion_count":3}],""" +
-                        """"total_opinions":3,"total_views":10}""",
-                ),
-        )
-        val result = runBlocking { repo.fetchMyScanOpinions() }
-        assertThat(result.isSuccess).isTrue()
-        assertThat(result.getOrNull()?.totalOpinions).isEqualTo(3)
-        assertThat(result.getOrNull()?.scans?.get(0)?.opinionCount).isEqualTo(3)
-        val request = server.takeRequest()
-        assertThat(request.path).isEqualTo("/api/community/my-scan-opinions")
-        assertThat(request.getHeader("Authorization")).isEqualTo("Bearer access-1")
-    }
-
-    // --- Community write POSTs / DELETE / push (Ktor) ---
-
-    @Test
-    fun submitCommunityOpinion_423_mapsToLockedException() {
-        server.enqueue(MockResponse().setResponseCode(423))
-        val result = runBlocking {
-            repo.submitCommunityOpinion(
-                CommunityOpinionRequest(
-                    scanId = "sc-locked",
-                    suggestedDisease = "healthy",
-                ),
-            )
-        }
-        assertThat(result.exceptionOrNull())
-            .isInstanceOf(ScanRepository.CommunityOpinionsLockedException::class.java)
-    }
-
-    @Test
-    fun submitCommunityOpinion_success_postsBodyAndParses() {
-        server.enqueue(
-            MockResponse().setResponseCode(200)
-                .setHeader("Content-Type", "application/json")
-                .setBody("""{"scan_id":"sc-2","ok":true,"count":1,"opinions":[]}"""),
-        )
-        val result = runBlocking {
-            repo.submitCommunityOpinion(
-                CommunityOpinionRequest(
-                    scanId = "sc-2",
-                    suggestedDisease = "rust",
-                ),
-            )
-        }
-        assertThat(result.isSuccess).isTrue()
-        assertThat(result.getOrNull()?.ok).isTrue()
-        val req = server.takeRequest()
-        assertThat(req.method).isEqualTo("POST")
-        assertThat(req.path).isEqualTo("/api/community/opinion")
-        val body = req.body.readUtf8()
-        assertThat(body).contains("\"scan_id\":\"sc-2\"")
-        assertThat(body).contains("\"suggested_disease\":\"rust\"")
-        assertThat(body).doesNotContain("user_pseudo_id")
-        assertThat(body).doesNotContain("nickname")
-        assertThat(req.getHeader("Authorization")).isEqualTo("Bearer access-1")
-    }
-
-    @Test
-    fun communitySafety_reportAndBlockNeverSendActorIds() {
-        server.enqueue(
-            MockResponse().setResponseCode(200)
-                .setHeader("Content-Type", "application/json")
-                .setBody("""{"ok":true,"created":true}"""),
-        )
-        server.enqueue(
-            MockResponse().setResponseCode(200)
-                .setHeader("Content-Type", "application/json")
-                .setBody(
-                    """{"ok":true,"created":true,"block_id":"cb123456789012345678901234567890"}""",
-                ),
-        )
-
-        val reported = runBlocking {
-            repo.reportCommunityContent("opinion", "co-public", "hate_or_harassment")
-        }
-        val blocked = runBlocking { repo.blockCommunityAuthor("scan", "cs-public") }
-
-        assertThat(reported.getOrNull()).isTrue()
-        assertThat(blocked.getOrNull()?.blockId).startsWith("cb")
-        val reportRequest = server.takeRequest()
-        assertThat(reportRequest.path).isEqualTo("/api/community/safety/report")
-        assertThat(reportRequest.getHeader("Authorization")).isEqualTo("Bearer access-1")
-        val reportBody = reportRequest.body.readUtf8()
-        assertThat(reportBody).contains("\"target_type\":\"opinion\"")
-        assertThat(reportBody).contains("\"target_id\":\"co-public\"")
-        assertThat(reportBody).contains("\"reason\":\"hate_or_harassment\"")
-        assertThat(reportBody).doesNotContain("actor_id")
-
-        val blockRequest = server.takeRequest()
-        assertThat(blockRequest.path).isEqualTo("/api/community/safety/block")
-        assertThat(blockRequest.body.readUtf8()).doesNotContain("actor_id")
     }
 
     @Test
@@ -1040,8 +932,8 @@ class ScanRepositoryNetworkTest {
         )
         server.enqueue(MockResponse().setResponseCode(200).setBody("{}"))
 
-        val listed = runBlocking { repo.communityBlocks() }
-        val removed = runBlocking { repo.unblockCommunityAuthor(blockId) }
+        val listed = runBlocking { community.communityBlocks() }
+        val removed = runBlocking { community.unblockCommunityAuthor(blockId) }
 
         assertThat(listed.getOrNull()?.single()?.nickname).isEqualTo("Fern")
         assertThat(removed.isSuccess).isTrue()
@@ -1056,8 +948,7 @@ class ScanRepositoryNetworkTest {
 
     @Test
     fun guestCommunityReadStaysPublicWithoutBearer() {
-        val guestRepository = ScanRepository(
-            FakeScanDao(),
+        val guestRepository = CommunityScanRepository(
             client,
             authRepository = AuthRepository(accountApi, FakeVault(), FakeInstallationId),
         )
@@ -1083,7 +974,7 @@ class ScanRepositoryNetworkTest {
                 .setBody("""{"items":[]}"""),
         )
 
-        val result = runBlocking { repo.communityNearby(disease = null) }
+        val result = runBlocking { community.communityNearby(disease = null) }
 
         assertThat(result.isSuccess).isTrue()
         assertThat(accountApi.refreshCalls).isEqualTo(1)
@@ -1106,7 +997,7 @@ class ScanRepositoryNetworkTest {
                     .setHeader("Location", redirectTarget.url("/capture")),
             )
 
-            val result = runBlocking { repo.communityNearby(disease = null) }
+            val result = runBlocking { community.communityNearby(disease = null) }
 
             assertThat(result.isFailure).isTrue()
             assertThat(server.takeRequest().getHeader("Authorization"))
@@ -1118,46 +1009,9 @@ class ScanRepositoryNetworkTest {
     }
 
     @Test
-    fun requestSecondOpinion_returnsFlaggedFlag() {
-        server.enqueue(
-            MockResponse().setResponseCode(200)
-                .setHeader("Content-Type", "application/json")
-                .setBody("""{"ok":true,"flagged":true}"""),
-        )
-        val result = runBlocking { repo.requestSecondOpinion("sc-3") }
-        assertThat(result.getOrNull()).isTrue()
-        val request = server.takeRequest()
-        assertThat(request.path).isEqualTo("/api/community/request-opinion")
-        assertThat(request.getHeader("Authorization")).isEqualTo("Bearer access-1")
-        assertThat(request.body.readUtf8()).doesNotContain("user_pseudo_id")
-    }
-
-    @Test
-    fun getCommunityScanCounts_success_parsesCountMap() {
-        server.enqueue(
-            MockResponse().setResponseCode(200)
-                .setHeader("Content-Type", "application/json")
-                .setBody("""{"counts":{"sc-1":{"opinions":2,"views":7}}}"""),
-        )
-        val counts = runBlocking { repo.getCommunityScanCounts(listOf("sc-1")) }
-        assertThat(counts["sc-1"]?.opinions).isEqualTo(2)
-        assertThat(counts["sc-1"]?.views).isEqualTo(7)
-        val request = server.takeRequest()
-        assertThat(request.path).isEqualTo("/api/community/scan-counts")
-        assertThat(request.getHeader("Authorization")).isEqualTo("Bearer access-1")
-    }
-
-    @Test
-    fun getCommunityScanCounts_emptyInput_skipsNetwork() {
-        val counts = runBlocking { repo.getCommunityScanCounts(emptyList()) }
-        assertThat(counts).isEmpty()
-        assertThat(server.requestCount).isEqualTo(0)
-    }
-
-    @Test
     fun recordCommunityView_firesPostWithBody() {
         server.enqueue(MockResponse().setResponseCode(200).setBody("{}"))
-        runBlocking { repo.recordCommunityView("sc-5") }
+        runBlocking { community.recordCommunityView("sc-5") }
         val req = server.takeRequest()
         assertThat(req.method).isEqualTo("POST")
         assertThat(req.path).isEqualTo("/api/community/view")
@@ -1171,17 +1025,12 @@ class ScanRepositoryNetworkTest {
     fun guestCommunityMutationFailsBeforeNetwork() {
         val guestAuth = AuthRepository(accountApi, FakeVault(), FakeInstallationId)
         runBlocking { guestAuth.restore() }
-        val guestRepository = ScanRepository(
-            FakeScanDao(),
+        val guestRepository = CommunityScanRepository(
             client,
             authRepository = guestAuth,
         )
 
-        val result = runBlocking {
-            guestRepository.submitCommunityOpinion(
-                CommunityOpinionRequest("scan-public", "leaf_spot"),
-            )
-        }
+        val result = runBlocking { guestRepository.recordCommunityView("scan-public") }
 
         assertThat(result.exceptionOrNull())
             .isInstanceOf(AuthenticationRequiredException::class.java)
@@ -1192,15 +1041,9 @@ class ScanRepositoryNetworkTest {
     fun protectedCommunityCallRefreshesOnceAndRetriesWithNewBearer() {
         accountApi.refreshResult = FakeAccountApi.authenticated("access-2", "refresh-2")
         server.enqueue(MockResponse().setResponseCode(401).setBody("{}"))
-        server.enqueue(
-            MockResponse().setResponseCode(200)
-                .setHeader("Content-Type", "application/json")
-                .setBody("""{"scan_id":"s","ok":true,"opinions":[]}"""),
-        )
+        server.enqueue(MockResponse().setResponseCode(200).setBody("{}"))
 
-        val result = runBlocking {
-            repo.submitCommunityOpinion(CommunityOpinionRequest("s", "leaf_spot"))
-        }
+        val result = runBlocking { community.recordCommunityView("s") }
 
         assertThat(result.isSuccess).isTrue()
         assertThat(accountApi.refreshCalls).isEqualTo(1)

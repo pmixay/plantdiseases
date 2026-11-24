@@ -259,7 +259,8 @@ def test_feedback_image_stores_only_sanitized_detector_crop(
 def test_feedback_daily_quota_is_memory_only(
     client, isolated_training_store, monkeypatch
 ):
-    monkeypatch.setattr(server_main, "FEEDBACK_DAILY_QUOTA", 1)
+    import routes_diagnosis
+    monkeypatch.setattr(routes_diagnosis, "FEEDBACK_DAILY_QUOTA", 1)
     server_main._daily_write_counts.clear()
     first = isolated_training_store.issue_feedback_receipt(capture_pending=False)
     second = isolated_training_store.issue_feedback_receipt(capture_pending=False)

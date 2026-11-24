@@ -16,7 +16,6 @@ import com.plantdiseases.app.R
 import com.plantdiseases.app.data.GuideDataProvider
 import com.plantdiseases.app.data.model.GuideCategory
 import com.plantdiseases.app.databinding.FragmentGuideBinding
-import com.plantdiseases.app.util.LocaleHelper
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -144,7 +143,6 @@ class GuideFragment : Fragment() {
     }
 
     private fun loadItems() {
-        val isRu = LocaleHelper.isRussian(requireContext())
         val items = if (searchQuery.isBlank()) {
             GuideDataProvider.getByCategory(currentCategory)
         } else {
@@ -154,9 +152,9 @@ class GuideFragment : Fragment() {
             // checked first and short-circuit before the larger content scan).
             val query = searchQuery
             GuideDataProvider.getGuideItems().filter { item ->
-                val title = if (isRu) item.titleRu else item.titleEn
-                val desc = if (isRu) item.descriptionRu else item.descriptionEn
-                val content = if (isRu) item.contentRu else item.contentEn
+                val title = getString(item.title)
+                val desc = getString(item.description)
+                val content = getString(item.content)
                 title.contains(query, ignoreCase = true) ||
                     desc.contains(query, ignoreCase = true) ||
                     content.contains(query, ignoreCase = true)

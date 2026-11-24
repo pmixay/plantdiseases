@@ -16,6 +16,8 @@ from contextlib import closing
 
 import pytest
 
+import community_popular
+import community_scans
 from countries import to_iso_alpha2
 
 
@@ -47,28 +49,26 @@ def test_to_iso_alpha2(raw, expected):
 def test_record_scan_canonicalizes_country(community_store):
     """Two uploads for the same country in different spellings land in one
     ISO bucket, so popular_snapshot(country="RU") sees both."""
-    comm = community_store
-
-    comm.record_scan(
+    community_scans.record_scan(
         scan_id="canonscan01", user_pseudo_id="pseudo-canon-a",
         country="Russia", region="Moscow", disease="leaf_spot",
         species="Spathiphyllum blandum",
     )
-    comm.record_scan(
+    community_scans.record_scan(
         scan_id="canonscan02", user_pseudo_id="pseudo-canon-b",
         country="Россия", region="Moscow", disease="leaf_spot",
         species="Monstera deliciosa",
     )
 
-    snap = comm.popular_snapshot(country="RU")
+    snap = community_popular.popular_snapshot(country="RU")
     assert snap["total"] == 2
     species = {row["species"] for row in snap["top_species"]}
     assert species == {"Spathiphyllum blandum", "Monstera deliciosa"}
 
     # The query side canonicalizes too, so a localized spelling finds the same
     # bucket and an unknown country finds nothing.
-    assert comm.popular_snapshot(country="Россия")["total"] == 2
-    assert comm.popular_snapshot(country="Narnia")["total"] == 0
+    assert community_popular.popular_snapshot(country="Россия")["total"] == 2
+    assert community_popular.popular_snapshot(country="Narnia")["total"] == 0
 
 
 def test_migration_canonicalizes_legacy_country_rows(community_store, tmp_path):

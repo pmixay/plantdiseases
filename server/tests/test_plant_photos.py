@@ -6,8 +6,8 @@ cached), the non-raster rejection, and the /api/plant-photo endpoint.
 """
 from __future__ import annotations
 
-import importlib
 import io
+import queue
 
 import pytest
 
@@ -17,9 +17,20 @@ _PNG = b"\x89PNG\r\n\x1a\n" + b"0" * 64
 
 @pytest.fixture
 def photos(tmp_path, monkeypatch):
-    monkeypatch.setenv("PLANT_PHOTO_CACHE_DIR", str(tmp_path / "photos"))
+    """plant_photos with a private cache dir and fresh back-off / warm-up state.
+    Patched in place, not reloaded: a reload re-creates objects other modules
+    already hold."""
     import plant_photos as pp
-    importlib.reload(pp)
+
+    monkeypatch.setattr(pp, "PHOTO_CACHE_DIR", tmp_path / "photos")
+    monkeypatch.setattr(pp, "_backoff_until", 0.0)
+    monkeypatch.setattr(pp, "_warm_pending", set())
+    # A fresh queue and worker: an earlier test's worker may still be asleep in
+    # a back-off it read before this test reset it.
+    monkeypatch.setattr(pp, "_warm_queue", queue.Queue(maxsize=pp._WARM_QUEUE_MAX))
+    monkeypatch.setattr(pp, "_warm_thread", None)
+    # conftest stubs warm() for every other test; these tests exercise it.
+    monkeypatch.setattr(pp, "warm", pp._real_warm)
     return pp
 
 
@@ -275,10 +286,10 @@ def test_download_bounds_redirect_chain(photos, monkeypatch):
 
 
 def test_endpoint_serves_cached_photo(client, tmp_path, monkeypatch):
-    import main as server_main
+    import plant_photos
     f = tmp_path / "p.png"
     f.write_bytes(_PNG)
-    monkeypatch.setattr(server_main, "plant_photo_get_or_fetch", lambda u: f)
+    monkeypatch.setattr(plant_photos, "get_or_fetch", lambda u: f)
     r = client.get(
         "/api/plant-photo", params={"u": "https://upload.wikimedia.org/x.png"},
     )
@@ -292,14 +303,15 @@ def test_endpoint_downscales_to_webp(client, tmp_path, monkeypatch):
     Glide client decodes WebP by magic bytes."""
     from PIL import Image
 
-    import main as server_main
+    import plant_photos
+    import routes_content
     src = tmp_path / "big.png"
     Image.new("RGB", (2400, 1600), (10, 120, 30)).save(src, format="PNG")
-    monkeypatch.setattr(server_main, "plant_photo_get_or_fetch", lambda u: src)
+    monkeypatch.setattr(plant_photos, "get_or_fetch", lambda u: src)
     prune_calls = []
     monkeypatch.setattr(
-        server_main,
-        "plant_photo_prune_cache",
+        plant_photos,
+        "prune_cache",
         lambda: prune_calls.append(True),
     )
     r = client.get(
@@ -310,7 +322,7 @@ def test_endpoint_downscales_to_webp(client, tmp_path, monkeypatch):
     # RIFF....WEBP magic — a real WebP, and downscaled to the 1000px bound.
     assert r.content[:4] == b"RIFF" and r.content[8:12] == b"WEBP"
     w, h = Image.open(io.BytesIO(r.content)).size
-    assert max(w, h) <= server_main._PLANT_PHOTO_MAX_SIDE
+    assert max(w, h) <= routes_content._PLANT_PHOTO_MAX_SIDE
     assert len(r.content) < src.stat().st_size  # smaller than the PNG original
     assert prune_calls == [True]
 
@@ -321,13 +333,15 @@ def test_endpoint_never_falls_back_to_raw_oversized_source(
     monkeypatch,
 ):
     import main as server_main
+    import plant_photos
+    import routes_content
 
     src = tmp_path / "oversized.png"
     src.write_bytes(_PNG)
     loaded = False
 
     class _OversizedImage:
-        size = (server_main._WEBP_MAX_SOURCE_PIXELS + 1, 1)
+        size = (routes_content._WEBP_MAX_SOURCE_PIXELS + 1, 1)
 
         def __enter__(self):
             return self
@@ -340,7 +354,7 @@ def test_endpoint_never_falls_back_to_raw_oversized_source(
             loaded = True
             raise AssertionError("oversized image must be rejected before decode")
 
-    monkeypatch.setattr(server_main, "plant_photo_get_or_fetch", lambda _url: src)
+    monkeypatch.setattr(plant_photos, "get_or_fetch", lambda _url: src)
     monkeypatch.setattr(server_main.Image, "open", lambda _path: _OversizedImage())
 
     response = client.get(
@@ -363,11 +377,11 @@ def test_webp_variant_not_regenerated_on_mtime_touch(client, tmp_path):
 
     from PIL import Image
 
-    import main as server_main
+    import routes_content
     src = tmp_path / "p.png"
     Image.new("RGB", (1200, 800), (10, 120, 30)).save(src, format="PNG")
 
-    v1 = server_main._webp_variant(src, 1000, 80)
+    v1 = routes_content._webp_variant(src, 1000, 80)
     assert v1 is not None and v1.is_file()
     first_mtime = v1.stat().st_mtime
 
@@ -375,7 +389,7 @@ def test_webp_variant_not_regenerated_on_mtime_touch(client, tmp_path):
     future = time.time() + 100
     os.utime(src, (future, future))
 
-    v2 = server_main._webp_variant(src, 1000, 80)
+    v2 = routes_content._webp_variant(src, 1000, 80)
     assert v2 == v1  # same variant reused, not a new file
     assert v2.stat().st_mtime == first_mtime  # NOT regenerated → stable ETag
 
@@ -393,14 +407,15 @@ def test_endpoint_missing_source_is_400(client):
 def test_endpoint_resolves_by_name(client, tmp_path, monkeypatch):
     """The by-name form fully resolves the photo server-side (Wikipedia lookup
     → byte cache), so the popular carousel needs only the species name."""
-    import main as server_main
+    import plant_photos
+    import species_info
     f = tmp_path / "p.png"
     f.write_bytes(_PNG)
     monkeypatch.setattr(
-        server_main, "fetch_species_info",
+        species_info, "fetch_species_info",
         lambda n, lang="en": {"image_url": "https://upload.wikimedia.org/x.png"},
     )
-    monkeypatch.setattr(server_main, "plant_photo_get_or_fetch", lambda u: f)
+    monkeypatch.setattr(plant_photos, "get_or_fetch", lambda u: f)
     r = client.get(
         "/api/plant-photo", params={"name": "Ficus elastica", "locale": "en"},
     )
@@ -409,15 +424,15 @@ def test_endpoint_resolves_by_name(client, tmp_path, monkeypatch):
 
 
 def test_endpoint_by_name_404_when_unresolvable(client, monkeypatch):
-    import main as server_main
-    monkeypatch.setattr(server_main, "fetch_species_info", lambda n, lang="en": None)
+    import species_info
+    monkeypatch.setattr(species_info, "fetch_species_info", lambda n, lang="en": None)
     r = client.get("/api/plant-photo", params={"name": "Nope nope"})
     assert r.status_code == 404
 
 
 def test_endpoint_404_when_uncacheable(client, monkeypatch):
-    import main as server_main
-    monkeypatch.setattr(server_main, "plant_photo_get_or_fetch", lambda u: None)
+    import plant_photos
+    monkeypatch.setattr(plant_photos, "get_or_fetch", lambda u: None)
     r = client.get(
         "/api/plant-photo", params={"u": "https://upload.wikimedia.org/missing.png"},
     )
@@ -449,3 +464,126 @@ def test_original_from_thumb_host_points_back_to_upload(photos):
     assert photos._original_from_thumb(thumb) == (
         "https://upload.wikimedia.org/wikipedia/commons/a/ab/F.jpg"
     )
+
+
+# --- Wikimedia robot-policy etiquette (https://w.wiki/4wJS) -----------------
+
+
+def test_short_retry_after_is_waited_out_once(photos, monkeypatch):
+    calls = []
+
+    def _once(url):
+        calls.append(url)
+        return photos._Throttled(0.01) if len(calls) == 1 else _PNG
+
+    monkeypatch.setattr(photos, "_download_once", _once)
+    assert photos._download("https://upload.wikimedia.org/a.png") == _PNG
+    assert len(calls) == 2
+    assert photos._backoff_remaining() == 0
+
+
+def test_long_retry_after_backs_off_and_skips_the_original(photos, monkeypatch):
+    calls = []
+
+    def _once(url):
+        calls.append(url)
+        return photos._Throttled(120.0)
+
+    monkeypatch.setattr(photos, "_download_once", _once)
+    thumb = (
+        "https://upload.wikimedia.org/wikipedia/commons/thumb/a/ab/Rose.jpg/"
+        "1280px-Rose.jpg"
+    )
+    assert photos.get_or_fetch(thumb) is None
+    # One request for the thumbnail, no follow-up for the multi-MB original.
+    assert len(calls) == 1
+    assert photos._backoff_remaining() > 100
+    # During the back-off nothing is sent upstream at all.
+    assert photos._download("https://upload.wikimedia.org/b.png") is None
+    assert len(calls) == 1
+
+
+def test_at_most_two_downloads_in_flight(photos, monkeypatch):
+    import threading
+    import time
+
+    lock = threading.Lock()
+    state = {"now": 0, "peak": 0}
+
+    def _once(url):
+        with lock:
+            state["now"] += 1
+            state["peak"] = max(state["peak"], state["now"])
+        time.sleep(0.05)
+        with lock:
+            state["now"] -= 1
+        return _PNG
+
+    monkeypatch.setattr(photos, "_download_once", _once)
+    threads = [
+        threading.Thread(target=photos._download, args=(f"https://upload.wikimedia.org/{i}.png",))
+        for i in range(6)
+    ]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert state["peak"] == 2
+
+
+def test_retry_after_parsing():
+    import email.utils
+
+    import wikimedia_http
+
+    assert wikimedia_http.retry_after_seconds("7") == 7.0
+    assert wikimedia_http.retry_after_seconds(None) is None
+    assert wikimedia_http.retry_after_seconds("soon") is None
+    date = email.utils.formatdate(1_000_060, usegmt=True)
+    assert wikimedia_http.retry_after_seconds(date, now=1_000_000) == 60.0
+
+
+def test_photo_proxy_and_species_info_share_one_identity(photos, monkeypatch):
+    import wikimedia_http
+
+    monkeypatch.setenv("SPECIES_INFO_CONTACT", "https://ops.example.org/")
+    agent = wikimedia_http.user_agent("photo proxy")
+    assert agent.startswith("PlantDiseases/1.2 (plant care app; photo proxy")
+    assert "https://ops.example.org/" in agent
+    assert photos._USER_AGENT.startswith("PlantDiseases/1.2 (plant care app; photo proxy")
+
+
+def test_warm_fetches_in_the_background_and_skips_cached_and_queued(photos, monkeypatch):
+    import threading
+    import time
+
+    monkeypatch.setattr(photos, "_WARM_SPACING_S", 0.0)
+    fetched = []
+    gate = threading.Event()
+
+    def _fake_get_or_fetch(url):
+        gate.wait(2)
+        fetched.append(url)
+
+    monkeypatch.setattr(photos, "get_or_fetch", _fake_get_or_fetch)
+    a = "https://upload.wikimedia.org/wikipedia/commons/a/ab/A.jpg"
+    b = "https://upload.wikimedia.org/wikipedia/commons/b/bc/B.jpg"
+    photos.warm([a, a, None, "https://evil.example.com/x.jpg", b])
+    photos.warm([a])  # still queued: not added twice
+    gate.set()
+    deadline = time.time() + 3
+    while len(fetched) < 2 and time.time() < deadline:
+        time.sleep(0.01)
+    time.sleep(0.05)
+    assert sorted(fetched) == sorted([a, b])
+
+
+def test_warm_skips_photos_already_cached(photos, monkeypatch):
+    monkeypatch.setattr(photos, "_download", lambda url: _PNG)
+    url = "https://upload.wikimedia.org/wikipedia/commons/c/cd/C.png"
+    assert photos.get_or_fetch(url) is not None
+    calls = []
+    monkeypatch.setattr(photos, "get_or_fetch", lambda u: calls.append(u))
+    photos.warm([url])
+    assert photos._warm_queue.qsize() == 0
+    assert calls == []

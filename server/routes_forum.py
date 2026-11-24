@@ -16,6 +16,13 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Reques
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 
+# Imports work flat (``uvicorn main:app`` from ``server/``) or as ``server.*``.
+try:
+    from . import community_http, config
+except ImportError:
+    import community_http
+    import config
+
 
 class ForumPostCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -100,8 +107,17 @@ class ForumBlockRequest(BaseModel):
 
 _NO_STORE = {"Cache-Control": "no-store"}
 
+# Forum write budgets, per signed account actor (not per address).
+FORUM_POST_DAILY_QUOTA = config.get_int("FORUM_POST_DAILY_QUOTA", 20)
+FORUM_ANSWER_DAILY_QUOTA = config.get_int("FORUM_ANSWER_DAILY_QUOTA", 150)
+FORUM_MEDIA_DAILY_QUOTA = config.get_int("FORUM_MEDIA_DAILY_QUOTA", 80)
+FORUM_AVATAR_DAILY_QUOTA = config.get_int("FORUM_AVATAR_DAILY_QUOTA", 10)
+FORUM_REACTION_DAILY_QUOTA = config.get_int("FORUM_REACTION_DAILY_QUOTA", 500)
+
 
 def register(router: APIRouter, m) -> None:
+    account = m.account_dependency
+
     async def run(fn, /, *args, **kwargs):
         """Run a store call off the event loop and map rule refusals to HTTP."""
         try:
@@ -112,7 +128,7 @@ def register(router: APIRouter, m) -> None:
             raise HTTPException(status_code=exc.status, detail=exc.code) from None
 
     def check_label(value: str | None) -> None:
-        if value and value.strip().lower() not in m._FEEDBACK_ALLOWED_CORRECTIONS:
+        if value and value.strip().lower() not in m.feedback_labels.FEEDBACK_ALLOWED_CORRECTIONS:
             raise HTTPException(status_code=422, detail="unknown_label")
 
     def spend(operation: str, actor_id: str, limit: int) -> None:
@@ -212,7 +228,7 @@ def register(router: APIRouter, m) -> None:
                 )
         if path is None:
             raise HTTPException(status_code=404, detail="media_not_found")
-        return m._cached_image_response(
+        return community_http.cached_image_response(
             request,
             path,
             media_type="image/jpeg",
@@ -249,14 +265,13 @@ def register(router: APIRouter, m) -> None:
             if v == version
             else "public, max-age=300, must-revalidate"
         )
-        return m._cached_image_response(
+        return community_http.cached_image_response(
             request, path, media_type="image/jpeg", cache_control=cache_control
         )
 
     @router.get("/community/me/achievements", dependencies=[Depends(m.community_bearer)])
-    async def forum_my_achievements(request: Request):
+    async def forum_my_achievements(principal=Depends(account)):
         """My level and achievements, plus the PRO discount they have earned."""
-        principal = await m._require_account(request)
         result = await run(
             m.community_achievements.progress, principal.actor_id, include_private=True
         )
@@ -273,7 +288,7 @@ def register(router: APIRouter, m) -> None:
         """Upload one photo for a post or answer. With ``scan_token`` the bytes
         must be the photo the server analysed, so the post can show its verdict."""
         principal = await m._require_account(request)
-        spend("forum_media", principal.actor_id, m.FORUM_MEDIA_DAILY_QUOTA)
+        spend("forum_media", principal.actor_id, FORUM_MEDIA_DAILY_QUOTA)
         if image.content_type and image.content_type not in m._COMMUNITY_ALLOWED_TYPES:
             raise HTTPException(status_code=400, detail="unsupported_image_type")
         body = await m._read_upload(image)
@@ -291,7 +306,7 @@ def register(router: APIRouter, m) -> None:
         """Publish or replace my profile photo, shown beside my posts and answers.
         It is re-encoded as a square JPEG without metadata."""
         principal = await m._require_account(request)
-        spend("forum_avatar", principal.actor_id, m.FORUM_AVATAR_DAILY_QUOTA)
+        spend("forum_avatar", principal.actor_id, FORUM_AVATAR_DAILY_QUOTA)
         if image.content_type and image.content_type not in m._COMMUNITY_ALLOWED_TYPES:
             raise HTTPException(status_code=400, detail="unsupported_image_type")
         body = await m._read_upload(image)
@@ -302,9 +317,8 @@ def register(router: APIRouter, m) -> None:
         return JSONResponse(content=result, headers=_NO_STORE)
 
     @router.delete("/community/me/avatar", dependencies=[Depends(m.community_bearer)])
-    async def forum_avatar_delete(request: Request):
+    async def forum_avatar_delete(principal=Depends(account)):
         """Withdraw my profile photo from Community."""
-        principal = await m._require_account(request)
         removed = await run(m.community_forum.delete_avatar, actor_id=principal.actor_id)
         return JSONResponse(content={"ok": True, "removed": removed}, headers=_NO_STORE)
 
@@ -312,7 +326,7 @@ def register(router: APIRouter, m) -> None:
     async def forum_post_create(payload: ForumPostCreate, request: Request):
         principal = await m._require_account(request)
         check_label(payload.condition)
-        spend("forum_post", principal.actor_id, m.FORUM_POST_DAILY_QUOTA)
+        spend("forum_post", principal.actor_id, FORUM_POST_DAILY_QUOTA)
         result = await run(
             m.community_forum.create_post,
             actor_id=principal.actor_id,
@@ -345,8 +359,7 @@ def register(router: APIRouter, m) -> None:
         return JSONResponse(content=result, headers=_NO_STORE)
 
     @router.delete("/community/posts/{post_id}", dependencies=[Depends(m.community_bearer)])
-    async def forum_post_delete(post_id: str, request: Request):
-        principal = await m._require_account(request)
+    async def forum_post_delete(post_id: str, principal=Depends(account)):
         await run(m.community_forum.delete_post, actor_id=principal.actor_id, post_id=post_id)
         return JSONResponse(content={"ok": True}, headers=_NO_STORE)
 
@@ -354,7 +367,7 @@ def register(router: APIRouter, m) -> None:
     async def forum_post_like(post_id: str, payload: ForumLikeRequest, request: Request):
         principal = await m._require_account(request)
         if payload.liked:
-            spend("forum_reaction", principal.actor_id, m.FORUM_REACTION_DAILY_QUOTA)
+            spend("forum_reaction", principal.actor_id, FORUM_REACTION_DAILY_QUOTA)
         result = await run(
             m.community_forum.set_post_like,
             actor_id=principal.actor_id,
@@ -369,7 +382,7 @@ def register(router: APIRouter, m) -> None:
     async def forum_answer_create(post_id: str, payload: ForumAnswerCreate, request: Request):
         principal = await m._require_account(request)
         check_label(payload.diagnosis)
-        spend("forum_answer", principal.actor_id, m.FORUM_ANSWER_DAILY_QUOTA)
+        spend("forum_answer", principal.actor_id, FORUM_ANSWER_DAILY_QUOTA)
         result = await run(
             m.community_forum.create_answer,
             actor_id=principal.actor_id,
@@ -410,8 +423,7 @@ def register(router: APIRouter, m) -> None:
         return JSONResponse(content=result, headers=_NO_STORE)
 
     @router.delete("/community/answers/{answer_id}", dependencies=[Depends(m.community_bearer)])
-    async def forum_answer_delete(answer_id: str, request: Request):
-        principal = await m._require_account(request)
+    async def forum_answer_delete(answer_id: str, principal=Depends(account)):
         await run(
             m.community_forum.delete_answer, actor_id=principal.actor_id, answer_id=answer_id
         )
@@ -426,7 +438,7 @@ def register(router: APIRouter, m) -> None:
         """Like an answer, mark it not helpful (the only downvote), or clear."""
         principal = await m._require_account(request)
         if payload.reaction is not None:
-            spend("forum_reaction", principal.actor_id, m.FORUM_REACTION_DAILY_QUOTA)
+            spend("forum_reaction", principal.actor_id, FORUM_REACTION_DAILY_QUOTA)
         result = await run(
             m.community_forum.set_answer_reaction,
             actor_id=principal.actor_id,
@@ -458,13 +470,13 @@ def register(router: APIRouter, m) -> None:
         try:
             result = await asyncio.get_running_loop().run_in_executor(
                 None,
-                lambda: m.community_block_content_author(
+                lambda: m.community_safety.block_content_author(
                     blocker_actor_id=principal.actor_id,
                     target_type=payload.target_type,
                     target_id=payload.target_id.strip(),
                 ),
             )
         except ValueError as exc:
-            m._raise_community_safety_error(exc)
+            community_http.raise_community_safety_error(exc)
             raise AssertionError("unreachable") from exc
         return JSONResponse(content={"ok": True, **result}, headers=_NO_STORE)

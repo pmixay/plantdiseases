@@ -32,9 +32,9 @@ a care plan you can follow.
 | 🪴 **Personal garden** | Plants grouped into rooms, scan history per plant, a month-grid care calendar, treatment plans, watering and feeding reminders, a lunar calendar, side-by-side photo comparison and a health trend. |
 | 🤖 **AI plant doctor** | Opt-in chat scoped to your scan's diagnosis (OpenRouter). |
 | 🔎 **Species ID** | PlantNet identification fills in what the plant *is*, because that changes what you'd call the problem. |
-| 👥 **Community** | Opt-in shared scans on a map and nearby feed, plus second opinions from other growers. Anonymous: no account, no login. |
+| 👥 **Community** | Opt-in shared scans on a map and nearby feed, plus a forum where growers answer each other. Anonymous: no account, no login. |
 
-Every optional integration (PlantNet, OpenRouter, FCM push) degrades to a clear
+Every optional integration (PlantNet, OpenRouter) degrades to a clear
 "not configured" state instead of failing.
 
 ---
@@ -107,7 +107,7 @@ load, verify and run models. Pipeline contract: [`MODEL_CARD.md`](server/models/
 
 ## Project status
 
-**Deployed:** model **2.7.5** (first manifest-bound bundle) · app **1.9** · 39 API routes.
+**Deployed:** model **2.7.5** (first manifest-bound bundle) · app **1.9** · 72 API operations.
 Per-run numbers live in [`docs/MODEL_HISTORY.md`](docs/MODEL_HISTORY.md); the roadmap
 below is a summary of [`docs/ROADMAP.md`](docs/ROADMAP.md).
 
@@ -116,12 +116,12 @@ below is a summary of [`docs/ROADMAP.md`](docs/ROADMAP.md).
 Scorch is the model's weak spot: it is the class most often read as `healthy`. Closing
 that gap is a data problem first, so that is what the roadmap's critical path targets.
 
-| | Work left |
+| | Work left, by priority |
 |---|---|
-| 🔴 **Critical path** | Collect **v9 data** — 400 early-stage scorch families with boxes · carve the locked test set **T_v1** from 80 export rows · build **OOD benchmark v3** |
-| 🟠 **Model checks** | 2.7.5 is **not** significantly better than 2.7.2 on the shared holdout (paired bootstrap, 2026-10-27) · ablate the augmentation profile |
-| 🟡 **Hardening** | Likes and views still accept a key-less pseudo-id · Aqua has no classifier-side OOD signal |
-| 🔵 **Refactors** | Split `main.py` (~6k lines) into routers · split `ScanRepository` · retire Gson · type-check the server |
+| 🔴 **Critical path** | Carve the locked test set **T_v1** from 80 export rows · collect **v9 data**: 400 early-stage scorch families with boxes · build **OOD benchmark v3** · ablate the augmentation profile · ship Aqua's OOD floor with the next run |
+| 🟠 **Unblockers** | One server CLI that exports all training material as one bundle · check that capture-family detection catches rotated copies |
+| 🟡 **Model checks** | 2.7.5 is **not** significantly better than 2.7.2 on the shared holdout (paired bootstrap, 2026-10-27) · crop-vs-whole gap · capacity and register runs |
+| 🔵 **Hardening** | Shared request-field types · ratchet detekt · check the XML-converted cards on a phone |
 
 Full list, rationale and the "settled — do not retry" table: [`docs/ROADMAP.md`](docs/ROADMAP.md).
 
@@ -215,11 +215,8 @@ authoritative list.
 | `GET`  | `/api/community/nearby`    | Shared-scans feed (`scope=nearby` ~30 km / `country` / `worldwide`; coords stripped, distance only) |
 | `GET`  | `/api/community/map` · `/api/community/heatmap` | Map markers (rounded coords) and k-anonymized density grid |
 | `GET`  | `/api/community/by-species` | Recent shared scans of a given species |
-| `POST` | `/api/community/opinion` · `/api/community/request-opinion` | Cast / request a second opinion on a shared scan |
-| `GET`  | `/api/community/opinions/{scan_id}` | Opinions + consensus + request status for a shared scan |
-| `POST` | `/api/community/view` · `/api/community/scan-counts` | Record a view / batch-fetch opinion+view counts |
-| `POST` | `/api/community/safety/report` · `/api/community/safety/block` | Report content / mutually block its verified author (account required) |
-| `GET` · `DELETE` | `/api/community/safety/blocks[/{block_id}]` | List or remove caller-owned blocks by opaque ID |
+| `POST` | `/api/community/view` | Record a view of a shared scan |
+| `GET` · `DELETE` | `/api/community/safety/blocks[/{block_id}]` | List or remove caller-owned blocks by opaque ID (blocks are made on forum posts and answers) |
 | `GET`  | `/api/community/thumb/{filename}` | Community scan thumbnail |
 | `GET`  | `/api/community/feed` · `/api/community/search` · `/api/community/spaces` | Forum feed (`all` / `needs_help` / `solved` / `mine`, hot/new/top), RU+EN search with "search with my scan" filters, curated spaces |
 | `GET` · `POST` · `PATCH` · `DELETE` | `/api/community/posts[/{post_id}]` | Forum posts (question, scan with the server's verdict, recovery update, tip) with threaded answers |
@@ -229,7 +226,6 @@ authoritative list.
 | `GET`  | `/api/community/avatars/{author_token}` | A member's public profile photo (404 when none); authors in the feed and threads carry `avatar_version`, sent back as `?v=` to cache-bust |
 | `GET`  | `/api/community/helpers/{author_token}` · `/api/community/me/achievements` | Level, achievements and helper stats (own view adds the achievement discount) |
 | `*`    | `/api/community/admin/…` · `/api/community/moderation/…` | Staff tools (queue, remove/restore, lock, sanctions, appeals, roles, audit) and members' notices and appeals |
-| `POST` | `/api/push/register`       | Register an FCM token for opinion notifications (no-op without FCM creds) |
 
 Response shapes and validation rules are documented inline in
 [`server/main.py`](server/main.py).
@@ -249,7 +245,11 @@ plantdiseases/
 │   ├── pipeline.py         Two-stage pipeline + blur/OOD gates
 │   ├── detector.py         Stage 1 — YOLOv8n
 │   ├── classifier.py       Stage 2 — frozen DINOv2 ViT-S/14 + head
-│   ├── ai_services.py      PlantNet, OpenRouter, care plan, progression
+│   ├── ai_services.py      OpenRouter transport, caches, shared prompt prefix
+│   ├── plantnet.py         PlantNet species identification
+│   ├── plant_doctor.py     AI Plant Doctor chat sessions
+│   ├── species_ai.py       Species common diseases + species profile (OpenRouter)
+│   ├── care_plan.py        Rules-based care plan + optional LLM polish
 │   ├── training_store.py   Consent-gated, de-identified training samples + feedback receipts
 │   ├── account_auth.py     Verifies account tokens; account_entitlements.py consumes daily quotas
 │   ├── conformal.py        RAPS prediction sets

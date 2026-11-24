@@ -105,12 +105,6 @@ class LightMeterActivity :
          *  persistence. */
         const val EXTRA_PLANT_ID = "extra_plant_id"
 
-        private const val IDX_GENERAL = 0
-        private const val IDX_SUCCULENT = 1
-        private const val IDX_TROPICAL = 2
-        private const val IDX_FERN = 3
-        private const val IDX_VEGETABLE = 4
-
         private val SPECIES = listOf(
             SpeciesInfo(R.string.light_species_general, 1000, 5000),
             SpeciesInfo(R.string.light_species_succulent, 5000, 15000),
@@ -118,35 +112,6 @@ class LightMeterActivity :
             SpeciesInfo(R.string.light_species_fern, 200, 1000),
             SpeciesInfo(R.string.light_species_vegetable, 5000, 10000),
         )
-
-        /** Heuristic genus→bucket mapping. Lower-cases the genus
-         *  (first whitespace-separated token of the binomial) and
-         *  routes the popular indoor genera into the right bucket;
-         *  anything else falls through to "general". Adding more
-         *  genera here is the right place to grow coverage. */
-        @JvmStatic
-        fun pickSpeciesBucket(scientificName: String): Int {
-            val genus = scientificName.trim().substringBefore(' ').lowercase()
-            return when (genus) {
-                // Common indoor succulents.
-                "echeveria", "sedum", "crassula", "aloe", "haworthia",
-                "kalanchoe", "sansevieria", "agave", "lithops",
-                "euphorbia" -> IDX_SUCCULENT
-                // Tropical aroids + foliage favourites.
-                "monstera", "philodendron", "epipremnum", "pothos",
-                "calathea", "maranta", "spathiphyllum", "anthurium",
-                "ficus", "syngonium", "alocasia", "dieffenbachia",
-                "dracaena", "schefflera", "begonia", "peperomia",
-                "saintpaulia" -> IDX_TROPICAL
-                // Ferns.
-                "nephrolepis", "adiantum", "asplenium", "platycerium",
-                "pteris", "davallia", "polystichum" -> IDX_FERN
-                // Edible / vegetable seedlings often started indoors.
-                "solanum", "capsicum", "lactuca", "ocimum", "mentha",
-                "petroselinum" -> IDX_VEGETABLE
-                else -> IDX_GENERAL
-            }
-        }
 
         // Houseplant-relevant range. Above 30k lux you're outdoors in
         // direct sun and the species bands stop being useful — capping
@@ -179,10 +144,10 @@ class LightMeterActivity :
         // manual picker. Prefer the scientific (Latin) name's genus; fall
         // back to the common / free-text name, then to the General band.
         val sci = intent.getStringExtra(EXTRA_SCIENTIFIC_NAME).orEmpty()
-        var pick = pickSpeciesBucket(sci)
-        if (pick == IDX_GENERAL) {
+        var pick = PlantTypes.fromName(sci)
+        if (pick == PlantTypes.GENERAL) {
             val common = intent.getStringExtra(EXTRA_COMMON_NAME).orEmpty()
-            if (common.isNotBlank()) pick = pickSpeciesBucket(common)
+            if (common.isNotBlank()) pick = PlantTypes.fromName(common)
         }
         selectedSpecies = SPECIES[pick]
         contextPlantId = intent.getLongExtra(EXTRA_PLANT_ID, -1L)
@@ -243,7 +208,7 @@ class LightMeterActivity :
         }
     }
 
-    /** The log-scaled tick row (1 · 10 · 100 · 1k · 10k · 30k) placed
+    /** The log-scaled tick row (1, 10, 100, 1k, 10k, 30k) placed
      *  into the gauge card's light_scale_row container. Each label is
      *  preceded by a weighted spacer matching the bar's log position so
      *  the labels line up with the progress bar underneath. */
@@ -271,8 +236,9 @@ class LightMeterActivity :
             bar.addView(
                 TextView(this).apply {
                     text = formatLuxLabel(lux)
-                    textSize = 10f
-                    setTextColor(getColor(R.color.on_surface_secondary))
+                    textSize = 12f
+                    typeface = android.graphics.Typeface.DEFAULT_BOLD
+                    setTextColor(getColor(R.color.on_surface))
                 }
             )
         }
@@ -300,7 +266,7 @@ class LightMeterActivity :
                     TextView(this@LightMeterActivity).apply {
                         text = getString(R.string.light_no_sensor)
                         textSize = 14f
-                        setTextColor(getColor(R.color.on_surface_secondary))
+                        setTextColor(getColor(R.color.on_surface))
                         gravity = Gravity.CENTER
                         setPadding(20.dp(), 20.dp(), 20.dp(), 20.dp())
                     }
@@ -498,7 +464,7 @@ class LightMeterActivity :
         sensorManager?.unregisterListener(this)
         cameraProvider?.unbindAll()
         // Persist the session peak back to the launching plant so
-        // the Care Plan card can show "measured here: N lx · 3 days
+        // the Care Plan card can show "measured here: N lx, 3 days
         // ago". onPause runs reliably for both back-button and
         // home-button exits; doing it on a click would miss the
         // common "user just navigates away" exit.

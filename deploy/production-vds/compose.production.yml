@@ -42,8 +42,8 @@ x-account-environment: &account-environment
   RUSTORE_NOTIFICATION_KEY_EPOCH: production-v1
   RUSTORE_NOTIFICATION_MAX_ATTEMPTS: "8"
   RUSTORE_NOTIFICATION_MAX_AGE_HOURS: "168"
-  ENTITLEMENT_QUOTA_POLICY_VERSION: launch-2026-11-v1
-  ENTITLEMENT_FREE_DAILY_LIMITS: gamma_analysis=5,frontier_analysis=1,plant_identification=1,ai_doctor=3,care_plan=5
+  ENTITLEMENT_QUOTA_POLICY_VERSION: launch-2026-11-v2
+  ENTITLEMENT_FREE_DAILY_LIMITS: gamma_analysis=15,frontier_analysis=5,plant_identification=30,ai_doctor=15,care_plan=30
   ENTITLEMENT_PRO_DAILY_LIMITS: gamma_analysis=30,frontier_analysis=3,plant_identification=3,ai_doctor=15,care_plan=20
   # PlantNet stays denied until the owner approves a cohort budget (disabled = every
   # uncached PlantNet call is refused by the account-side budget authority).
@@ -242,7 +242,6 @@ services:
       ACCOUNT_INTERNAL_BASE_URL: http://prod-account-api:8000
       ACCOUNT_JWKS_URL: http://prod-account-api:8000/.well-known/jwks.json
       ACCOUNT_INTROSPECTION_URL: http://prod-account-api:8000/v1/internal/auth/verify
-      ACCOUNT_NOTIFICATION_URL: ""
       INTERNAL_SERVICE_TOKEN_FILE: /run/internal-token/internal.token
       MODELS_DIR: /app/models
       AQUA_STATIC_DIR: /app/models/aqua
@@ -259,8 +258,6 @@ services:
       # Credentials are mode-0400 files owned by the app uid; never environment values.
       PLANTNET_API_KEY_FILE: ""
       OPENROUTER_API_KEY_FILE: ${PROD_OPENROUTER_KEY_FILE:-}
-      FCM_CREDENTIALS_FILE: ${PROD_FCM_CREDENTIALS_FILE:-}
-      PUSH_DB_PATH: /data/legacy-push/push.db
       CORS_ORIGINS: ""
       TRUSTED_PROXIES: ${PROD_TRUSTED_PROXIES:?Set the exact trusted Docker proxy peer IPs}
       RATE_LIMIT_RPS: "25"
@@ -311,7 +308,6 @@ services:
       - prod_telemetry:/data/telemetry
       - prod_app_cache:/data/app-cache
       - prod_app_logs:/data/logs
-      - prod_legacy_push:/data/legacy-push
     networks:
       - prod-edge
     healthcheck:
@@ -375,5 +371,3 @@ volumes:
     name: ${PROD_VOLUME_PREFIX}_app_cache
   prod_app_logs:
     name: ${PROD_VOLUME_PREFIX}_app_logs
-  prod_legacy_push:
-    name: ${PROD_VOLUME_PREFIX}_legacy_push

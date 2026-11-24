@@ -128,7 +128,7 @@ class DetailJournalController(
                 TextView(activity).apply {
                     this.text = body
                     textSize = 14f
-                    setTextColor(activity.getColor(R.color.on_surface_secondary))
+                    setTextColor(activity.getColor(R.color.on_surface))
                     setLineSpacing(3.dp().toFloat(), 1f)
                     layoutParams = LinearLayout.LayoutParams(
                         LinearLayout.LayoutParams.MATCH_PARENT,

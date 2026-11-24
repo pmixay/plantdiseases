@@ -13,6 +13,7 @@ until the intended privacy review has been completed.
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import io
 import json
@@ -24,19 +25,19 @@ import sqlite3
 import threading
 import time
 import uuid
-from collections.abc import Iterator
-from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Iterable, Sequence
+from typing import Any, Iterable, Sequence
 
 import numpy as np
 from PIL import Image, ImageFilter, ImageOps, UnidentifiedImageError
 
 try:
+    from . import sqlite_store
     from .config import get_str
 except ImportError:  # pragma: no cover - script-mode tools
+    import sqlite_store
     from config import get_str
 
 
@@ -153,37 +154,18 @@ class FeedbackResult:
     stored_image: bool = False
 
 
-@contextmanager
-def _connect(*, read_only: bool = False) -> Iterator[sqlite3.Connection]:
-    """Yield a short-lived connection and always close its file handles.
-
-    ``sqlite3.Connection.__exit__`` commits or rolls back but does *not* close
-    the connection; relying on CPython finalisation left the database locked on
-    Windows and can retain WAL handles longer than a request.
-    """
-    if read_only:
-        uri = f"file:{TRAINING_DB_PATH.resolve()}?mode=ro"
-        connection = sqlite3.connect(
-            uri, uri=True, check_same_thread=False, isolation_level=None
-        )
-    else:
-        connection = sqlite3.connect(
-            str(TRAINING_DB_PATH), check_same_thread=False, isolation_level=None
-        )
-    try:
-        if not read_only:
-            connection.execute("PRAGMA journal_mode=WAL")
-            connection.execute("PRAGMA synchronous=NORMAL")
-        connection.execute("PRAGMA foreign_keys=ON")
-        connection.execute("PRAGMA busy_timeout=5000")
-        connection.row_factory = sqlite3.Row
-        yield connection
-        connection.commit()
-    except BaseException:
-        connection.rollback()
-        raise
-    finally:
-        connection.close()
+def _connect(
+    *, read_only: bool = False
+) -> contextlib.AbstractContextManager[sqlite3.Connection]:
+    """A short-lived connection (see ``sqlite_store.connect``) with foreign
+    keys on, a 5 s busy timeout and ``sqlite3.Row`` rows."""
+    return sqlite_store.connect(
+        TRAINING_DB_PATH,
+        read_only=read_only,
+        foreign_keys=True,
+        busy_timeout_ms=5000,
+        row_factory=sqlite3.Row,
+    )
 
 
 def init_db() -> None:
@@ -259,6 +241,7 @@ def _top_k(values: Sequence[dict] | Sequence[tuple[str, float]] | None) -> list[
     cleaned: list[dict] = []
     for entry in list(values or [])[:10]:
         try:
+            score: Any
             if isinstance(entry, dict):
                 label = entry.get("class")
                 score = entry.get("confidence", entry.get("score", entry.get("prob")))

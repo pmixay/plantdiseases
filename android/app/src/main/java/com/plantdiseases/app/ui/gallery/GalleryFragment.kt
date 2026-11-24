@@ -10,12 +10,16 @@ import android.view.animation.AnimationSet
 import android.view.animation.LayoutAnimationController
 import android.view.animation.ScaleAnimation
 import androidx.fragment.app.Fragment
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.recyclerview.widget.GridLayoutManager
 import com.google.android.material.bottomnavigation.BottomNavigationView
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.plantdiseases.app.MainActivity
 import com.plantdiseases.app.R
+import com.plantdiseases.app.data.local.AppDatabase
+import com.plantdiseases.app.data.local.changes
 import com.plantdiseases.app.data.model.ScanHistoryItem
 import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.databinding.FragmentGalleryBinding
@@ -25,6 +29,7 @@ import com.plantdiseases.app.util.Haptics
 import com.plantdiseases.app.util.applyStatusBarTopInset
 import android.widget.Toast
 import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -34,6 +39,9 @@ class GalleryFragment : Fragment() {
     @Inject
     lateinit var scanRepository: ScanRepository
 
+    @Inject
+    lateinit var database: AppDatabase
+
     private var _binding: FragmentGalleryBinding? = null
     private val binding get() = _binding!!
 
@@ -41,6 +49,11 @@ class GalleryFragment : Fragment() {
     private var allScans: List<ScanHistoryItem> = emptyList()
     private var currentFilter = Filter.ALL
     private var isFirstLoad = true
+
+    /** Whether the next render replays the staggered entry animation: the first
+     *  paint of a view and a user-driven change (delete, clear) do; a silent
+     *  refresh from a change elsewhere or a return to the tab does not. */
+    private var staggerNextRender = true
 
     enum class Filter { ALL, HEALTHY, DISEASED }
 
@@ -98,12 +111,24 @@ class GalleryFragment : Fragment() {
         }
 
         setupFilterChips()
-        // Preload the grid here, not just in onResume, so this tab is already
-        // populated while it sits off-screen as the pager's neighbour — it
-        // slides in showing photos (or the shimmer), not a blank panel. The
-        // old "loads twice" hazard is gone: the entry stagger runs once here
-        // (invisibly, off-screen) and onResume is now a guarded silent refresh.
-        loadScans()
+        // The grid follows the scans table while this view is started, which
+        // includes sitting off-screen as the pager's neighbour, so it slides in
+        // showing photos (or the shimmer), not a blank panel. The first emission
+        // is the first load (with the entry stagger); every later one is a
+        // silent refresh (a scan saved, assigned or deleted elsewhere, or a
+        // return to the tab), so the grid does not replay the animation.
+        // collectLatest drops a read a newer change made stale.
+        staggerNextRender = true
+        if (isFirstLoad) {
+            binding.shimmerLayout.visibility = View.VISIBLE
+            binding.shimmerLayout.startShimmer()
+            binding.rvGallery.visibility = View.GONE
+        }
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                database.changes("scans").collectLatest { loadScans() }
+            }
+        }
     }
 
     override fun onViewStateRestored(savedInstanceState: Bundle?) {
@@ -111,7 +136,7 @@ class GalleryFragment : Fragment() {
         // The ChipGroup restores its checked chip across a config-change
         // recreation, but currentFilter is a plain field that resets to ALL.
         // Re-derive it from the restored chip (this runs after view-state
-        // restoration and before onResume -> loadScans -> applyFilter) so the
+        // restoration and before the first started load -> applyFilter) so the
         // highlighted chip and the rendered list stay in sync. On a fresh
         // launch chip_all is checked by default, so this evaluates to ALL.
         currentFilter = when {
@@ -132,9 +157,9 @@ class GalleryFragment : Fragment() {
 
     private fun clearHistory() {
         viewLifecycleOwner.lifecycleScope.launch {
+            staggerNextRender = true
             scanRepository.clearAll()
             Toast.makeText(requireContext(), R.string.history_cleared, Toast.LENGTH_SHORT).show()
-            loadScans()
         }
     }
 
@@ -206,66 +231,21 @@ class GalleryFragment : Fragment() {
         if (animate) binding.rvGallery.scheduleLayoutAnimation()
     }
 
-    private fun loadScans(animate: Boolean = true) {
+    private suspend fun loadScans() {
+        // Rejections never belong in the gallery. ScanRepository already
+        // removes inconclusive OOD/quality rows; this natural-NAP filter is
+        // retained for its short-lived correction-feedback row.
+        allScans = scanRepository.getAllScans().filter { !it.isNotAPlant }
+
         if (isFirstLoad) {
-            binding.shimmerLayout.visibility = View.VISIBLE
-            binding.shimmerLayout.startShimmer()
-            binding.rvGallery.visibility = View.GONE
+            binding.shimmerLayout.stopShimmer()
+            binding.shimmerLayout.visibility = View.GONE
+            isFirstLoad = false
         }
 
-        viewLifecycleOwner.lifecycleScope.launch {
-            // Rejections never belong in the gallery. ScanRepository already
-            // removes inconclusive OOD/quality rows; this natural-NAP filter is
-            // retained for its short-lived correction-feedback row.
-            allScans = scanRepository.getAllScans().filter { !it.isNotAPlant }
-
-            // The stagger belongs to the true first paint; a refresh (returning
-            // to the tab) passes animate=false so the grid doesn't replay it.
-            val runStagger = animate || isFirstLoad
-
-            if (isFirstLoad) {
-                binding.shimmerLayout.stopShimmer()
-                binding.shimmerLayout.visibility = View.GONE
-                isFirstLoad = false
-            }
-
-            applyFilter(animate = runStagger)
-            loadCommunityBadges()
-        }
-    }
-
-    /**
-     * Lazily fetch community activity (opinions + per-viewer-deduped views) for
-     * the signed account's shared scans and re-render with badges. Best-effort: when
-     * community is off, nothing was shared, or the call fails, the list simply
-     * stays unbadged.
-     */
-    private fun loadCommunityBadges() {
-        if (!com.plantdiseases.app.util.CommunityPrefs.uploadsEnabled(requireContext())) return
-        val ids = allScans.map { it.clientScanId }.filter { it.isNotBlank() }
-        if (ids.isEmpty()) return
-        viewLifecycleOwner.lifecycleScope.launch {
-            val counts = scanRepository.getCommunityScanCounts(ids)
-            if (counts.isEmpty() || _binding == null) return@launch
-            val ctx = requireContext()
-            allScans = allScans.map { item ->
-                val c = counts[item.clientScanId]
-                if (c != null) {
-                    // "New" = opinions the user hasn't opened this scan to see.
-                    val viewed = com.plantdiseases.app.util.OpinionPrefs
-                        .viewedOpinions(ctx, item.clientScanId)
-                    item.copy(
-                        communityOpinions = c.opinions,
-                        communityViews = c.views,
-                        newOpinions = (c.opinions - viewed).coerceAtLeast(0),
-                    )
-                } else {
-                    item
-                }
-            }
-            // Re-render with badges but don't replay the grid entry animation.
-            applyFilter(animate = false)
-        }
+        val runStagger = staggerNextRender
+        staggerNextRender = false
+        applyFilter(animate = runStagger)
     }
 
     private fun updateEmptyState(isEmpty: Boolean, isFilterEmpty: Boolean) {
@@ -288,18 +268,9 @@ class GalleryFragment : Fragment() {
 
     private fun deleteItem(id: Long) {
         viewLifecycleOwner.lifecycleScope.launch {
+            staggerNextRender = true
             scanRepository.deleteScan(id)
-            loadScans()
         }
-    }
-
-    override fun onResume() {
-        super.onResume()
-        // onViewCreated already did the first load (this fires synchronously
-        // right after it, while isFirstLoad is still true → skip, no double
-        // load). Every genuine return refreshes automatically and silently:
-        // no pull-to-refresh gesture, spinner, or replayed entry animation.
-        if (!isFirstLoad) loadScans(animate = false)
     }
 
     override fun onDestroyView() {

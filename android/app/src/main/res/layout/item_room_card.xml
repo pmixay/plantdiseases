@@ -82,7 +82,7 @@
             android:paddingHorizontal="@dimen/space_sm"
             android:paddingVertical="2dp"
             android:background="@drawable/bg_stat_pill"
-            android:textColor="@color/on_surface_secondary"
+            android:textColor="@color/on_surface"
             android:textSize="@dimen/text_body_sm"
             tools:text="3 plants" />
 
@@ -118,7 +118,7 @@
                 android:layout_height="wrap_content"
                 android:layout_marginStart="@dimen/space_xs"
                 android:text="@string/room_empty_plants"
-                android:textColor="@color/on_surface_secondary"
+                android:textColor="@color/on_surface"
                 android:textSize="@dimen/text_body_sm" />
 
         </LinearLayout>

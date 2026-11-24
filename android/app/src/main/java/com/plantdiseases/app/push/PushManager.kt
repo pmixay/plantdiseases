@@ -9,7 +9,7 @@ import com.plantdiseases.app.BuildConfig
 import com.plantdiseases.app.PlantDiseasesApp
 import com.plantdiseases.app.auth.AuthState
 import com.plantdiseases.app.di.appEntryPoint
-import com.plantdiseases.app.util.OpinionPrefs
+import com.plantdiseases.app.util.ForumNotificationPrefs
 import kotlinx.coroutines.launch
 
 /**
@@ -19,7 +19,7 @@ import kotlinx.coroutines.launch
  * Gradle plugin, so Firebase is initialised manually from BuildConfig.FCM_*
  * (set at build time from your Firebase project). When those values are blank
  * — an unconfigured build — everything here no-ops and FCM stays dormant; the
- * WorkManager opinion poll remains the fallback.
+ * WorkManager poll for community answers remains the fallback.
  *
  * A plain Kotlin `object` — not an Android framework component — so Hilt
  * can't field-inject it via `@AndroidEntryPoint`; it resolves its repository
@@ -56,11 +56,11 @@ object PushManager {
     }
 
     /** Fetch the current FCM token and register it with the server, scoped to
-     *  the opinion-notification opt-in.
+     *  the community-answer notification switch (Profile).
      *  Safe to call on every app start / opt-in — the server upserts by token. */
     fun registerIfEnabled(context: Context) {
         val ctx = context.applicationContext
-        if (!OpinionPrefs.notificationsEnabled(ctx)) return
+        if (!ForumNotificationPrefs.answersEnabled(ctx)) return
         val authRepository = appEntryPoint(ctx).authRepository()
         val expectedSessionId = (authRepository.state.value as? AuthState.Authenticated)
             ?.session
@@ -95,7 +95,7 @@ object PushManager {
         state: AuthState,
         expectedSessionId: String,
     ): Boolean = registrationStillAllowed(
-        notificationsEnabled = OpinionPrefs.notificationsEnabled(context),
+        notificationsEnabled = ForumNotificationPrefs.answersEnabled(context),
         state = state,
         expectedSessionId = expectedSessionId,
     )

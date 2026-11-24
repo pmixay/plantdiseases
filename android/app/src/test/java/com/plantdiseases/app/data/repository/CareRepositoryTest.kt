@@ -17,8 +17,10 @@ import com.plantdiseases.app.data.model.CarePlanResponse
 import com.plantdiseases.app.util.CareQueue
 import com.plantdiseases.app.util.CareSchedule
 import com.plantdiseases.app.util.PlantHealth
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Before
@@ -396,6 +398,33 @@ class CareRepositoryTest {
             )
         )
             .hasSize(1)
+    }
+
+    @Test
+    fun attachToExistingPlant_completesWhenTheCallerIsCancelled() = runBlocking {
+        val plantId = db.plantDao().insert(PlantEntity(name = "Fig"))
+        val scanId = db.scanDao().insert(diseaseScan(plantId = null))
+        val stored = CareRepository.StoredChecklist(
+            carePlan = CarePlanResponse(treatment = listOf("Remove damaged leaves.")),
+            diseaseKey = "botrytis",
+            diseaseLabelEn = "Grey mould",
+            diseaseLabelRu = "Серая гниль",
+        )
+
+        // The Result screen starts the attach the way GardenAttachController
+        // does, then closes mid-write: the attach and its checklist still land.
+        val caller = launch(start = CoroutineStart.UNDISPATCHED) {
+            careRepository.attachScanWithStoredChecklist(
+                scanId = scanId,
+                existingPlantId = plantId,
+                storedChecklist = stored,
+            )
+        }
+        caller.cancel()
+        caller.join()
+
+        assertThat(db.scanDao().getScanById(scanId)?.plantId).isEqualTo(plantId)
+        assertThat(db.treatmentPlanDao().getAllForPlant(plantId)).hasSize(1)
     }
 
     @Test

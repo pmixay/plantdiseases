@@ -10,6 +10,7 @@ import com.plantdiseases.app.R
 import com.plantdiseases.app.data.local.ScanEntity
 import com.plantdiseases.app.data.model.CarePlanRequest
 import com.plantdiseases.app.data.repository.PlantRepository
+import com.plantdiseases.app.data.repository.AssistantRepository
 import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.databinding.ActivityResultBinding
 import com.plantdiseases.app.ui.common.CarePlanCardView
@@ -26,7 +27,7 @@ import kotlinx.coroutines.launch
 class CarePlanController(
     private val activity: AppCompatActivity,
     private val binding: ActivityResultBinding,
-    private val scanRepository: ScanRepository,
+    private val assistant: AssistantRepository,
     private val plantRepository: PlantRepository,
     private val reviewManager: InAppReviewManager,
 ) {
@@ -42,7 +43,7 @@ class CarePlanController(
             ?: scan.diseaseName.lowercase().replace(' ', '_')
 
         // Reuse a single card across re-binds, inserted just after the
-        // doctor / second-opinion action row so identity and the follow-up
+        // doctor / ask-the-community action row so identity and the follow-up
         // entry points remain above the longer care details.
         val view = card ?: CarePlanCardView(activity).also { fresh ->
             // Keyed to the diagnosis, not the species baseline.
@@ -96,7 +97,7 @@ class CarePlanController(
                 light = "bright_indirect",
                 locale = if (isRu) "ru" else "en",
             )
-            scanRepository.fetchCarePlan(request).onSuccess { plan ->
+            assistant.fetchCarePlan(request).onSuccess { plan ->
                 view.bind(
                     plan = plan,
                     speciesDisplay = speciesDisplay,
@@ -104,7 +105,13 @@ class CarePlanController(
                     onApplyToReminders = { applied -> applyToReminders(scan, applied) },
                 )
             }.onFailure { error ->
-                view.showError(onRetry = { bind(scan, repository, isRu) })
+                // A used-up daily allowance names itself on the card too.
+                val limit = if (MeteredAccessUi.handles(error)) {
+                    activity.getString(MeteredAccessUi.title(error))
+                } else {
+                    null
+                }
+                view.showError(onRetry = { bind(scan, repository, isRu) }, message = limit)
                 MeteredAccessUi.showDialog(activity, error)
             }
         }

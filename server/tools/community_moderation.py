@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
-"""Local-only moderation queue for community reports.
+"""Local-only moderation of shared community scans.
 
 This tool deliberately exposes no HTTP/admin endpoint.  Run it on the server
-with the same ``COMMUNITY_DB_PATH`` configuration as the API.  Content removal
-requires an additional explicit flag so an operator cannot delete a scan or
-reply through a mistyped command.
+with the same ``COMMUNITY_DB_PATH`` configuration as the API.  The app has no
+Report control on a scan, so a scan flagged to the moderation contact is taken
+down with ``remove-scan``; ``list`` and ``resolve`` drain the reports filed by
+older app versions.  Content removal requires an additional explicit flag so
+an operator cannot delete a scan through a mistyped command.
 """
 
 from __future__ import annotations
@@ -14,12 +16,12 @@ import json
 from pathlib import Path
 
 try:
-    from .. import community
+    from .. import community_safety
 except ImportError:  # pragma: no cover - direct script execution
     import sys
 
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-    import community
+    import community_safety
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -39,19 +41,37 @@ def _parser() -> argparse.ArgumentParser:
         action="store_true",
         help="required when --action=remove_content",
     )
+
+    remove = commands.add_parser(
+        "remove-scan", help="take one shared scan down by its public id"
+    )
+    remove.add_argument(
+        "public_id",
+        help="the scan's public id (cs..., the start of its thumbnail filename)",
+    )
+    remove.add_argument(
+        "--confirm-remove", action="store_true", help="required to delete the scan"
+    )
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     if args.command == "list":
-        reports = community.pending_content_reports(limit=args.limit)
+        reports = community_safety.pending_content_reports(limit=args.limit)
         print(json.dumps({"reports": reports}, ensure_ascii=False, indent=2))
         return 0
 
+    if args.command == "remove-scan":
+        if not args.confirm_remove:
+            raise SystemExit("--confirm-remove is required to remove community content")
+        removed = community_safety.remove_scan(args.public_id)
+        print(json.dumps({"removed": removed, "public_id": args.public_id}))
+        return 0 if removed else 2
+
     if args.action == "remove_content" and not args.confirm_remove:
         raise SystemExit("--confirm-remove is required to remove community content")
-    resolved = community.moderate_content_report(args.report_id, args.action)
+    resolved = community_safety.moderate_content_report(args.report_id, args.action)
     print(json.dumps({"resolved": resolved, "report_id": args.report_id}))
     return 0 if resolved else 2
 

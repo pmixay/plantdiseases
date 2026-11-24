@@ -33,8 +33,12 @@
         <item name="android:minLines">2</item>
         <item name="android:maxLines">2</item>
         <item name="android:ellipsize">end</item>
-        <item name="android:textColor">@color/on_surface_secondary</item>
+        <item name="android:textColor">@color/on_surface</item>
         <item name="android:textSize">@dimen/text_caption</item>
+        <item name="android:fontFamily">sans-serif-medium</item>
+        <!-- Keeps neighbouring labels apart: a label that would touch the
+             tile edge wraps onto its reserved second line instead. -->
+        <item name="android:paddingHorizontal">@dimen/space_xxs</item>
     </style>
 
 </resources>

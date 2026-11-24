@@ -24,7 +24,7 @@ class ReleaseAccountPresentationTest {
     )
 
     @Test
-    fun releaseLayoutDefaultsToYandexAvailableAndVkComingSoon() {
+    fun releaseLayoutDefaultsToYandexAvailableAndVkHidden() {
         val root = LayoutInflater.from(context).inflate(R.layout.activity_account, null)
         val yandex = root.findViewById<MaterialButton>(R.id.btn_yandex)
         val vk = root.findViewById<MaterialButton>(R.id.btn_vk)
@@ -32,9 +32,11 @@ class ReleaseAccountPresentationTest {
         assertThat(yandex.visibility).isEqualTo(View.VISIBLE)
         assertThat(yandex.isEnabled).isTrue()
         assertThat(yandex.icon).isNotNull()
-        assertThat(vk.visibility).isEqualTo(View.VISIBLE)
+        // A provider that isn't configured is not shown at all (no "coming
+        // soon" state); AccountActivity reveals VK only when it is enabled.
+        assertThat(vk.visibility).isEqualTo(View.GONE)
         assertThat(vk.isEnabled).isFalse()
-        assertThat(vk.text.toString()).isEqualTo(context.getString(R.string.account_vk_coming_soon))
+        assertThat(vk.text.toString()).isEqualTo(context.getString(R.string.account_continue_vk))
     }
 
     @Test
@@ -44,17 +46,6 @@ class ReleaseAccountPresentationTest {
 
         assertThat(createAccount.layoutParams.width).isEqualTo(ViewGroup.LayoutParams.MATCH_PARENT)
         assertThat(createAccount.minimumHeight).isAtLeast((56 * context.resources.displayMetrics.density).toInt())
-    }
-
-    @Test
-    fun releaseCommunityDetailExposesReportAndBlockActions() {
-        val root = LayoutInflater.from(context).inflate(R.layout.sheet_community_opinion, null)
-
-        assertThat(root.findViewById<MaterialButton>(R.id.btn_community_report_scan).visibility)
-            .isEqualTo(View.VISIBLE)
-        assertThat(root.findViewById<MaterialButton>(R.id.btn_community_block_scan_author).visibility)
-            .isEqualTo(View.VISIBLE)
-        assertThat(context.resources.getStringArray(R.array.community_report_reasons)).hasLength(7)
     }
 
     @Test

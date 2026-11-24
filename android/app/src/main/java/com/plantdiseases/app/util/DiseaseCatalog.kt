@@ -1,8 +1,12 @@
 package com.plantdiseases.app.util
 
+import android.content.Context
+import android.content.res.Configuration
+import android.content.res.Resources
 import com.plantdiseases.app.data.GuideDataProvider
 import com.plantdiseases.app.data.model.GuideCategory
 import com.plantdiseases.app.data.model.GuideItem
+import java.util.Locale
 
 /**
  * Bridges model/community disease *class keys* (e.g. ``gray_mold_botrytis``)
@@ -38,12 +42,18 @@ object DiseaseCatalog {
      * rows still pick up the same icon as the disease guide instead of the
      * generic placeholder.
      */
-    fun guideItemForName(name: String): GuideItem? {
+    fun guideItemForName(context: Context, name: String): GuideItem? {
         val needle = name.trim().lowercase()
         if (needle.isEmpty()) return null
-        return GuideDataProvider.getGuideItems().firstOrNull {
-            it.titleEn.trim().lowercase() == needle || it.titleRu.trim().lowercase() == needle
+        val languages = listOf(Locale.ENGLISH, Locale("ru")).map { resourcesIn(context, it) }
+        return GuideDataProvider.getGuideItems().firstOrNull { item ->
+            languages.any { it.getString(item.title).trim().lowercase() == needle }
         }
+    }
+
+    private fun resourcesIn(context: Context, locale: Locale): Resources {
+        val config = Configuration(context.resources.configuration).apply { setLocale(locale) }
+        return context.createConfigurationContext(config).resources
     }
 
     /** Every bundled disease/pest doc, in catalog order — the "Disease

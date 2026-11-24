@@ -58,16 +58,14 @@ fun FragmentActivity.showAddEditPlantDialog(
         orientation = LinearLayout.HORIZONTAL
         gravity = Gravity.CENTER_VERTICAL
         setPadding(18.dp(root), 18.dp(root), 18.dp(root), 18.dp(root))
-        setBackgroundResource(R.drawable.bg_garden_hero)
     }
     header.addView(
         FrameLayout(root).apply {
-            setBackgroundResource(R.drawable.bg_circle_semi)
             layoutParams = LinearLayout.LayoutParams(52.dp(root), 52.dp(root))
             addView(
                 ImageView(root).apply {
                     setImageResource(R.drawable.ic_garden)
-                    setColorFilter(root.getColor(R.color.on_hero))
+                    setColorFilter(root.getColor(R.color.primary))
                     layoutParams = FrameLayout.LayoutParams(28.dp(root), 28.dp(root), Gravity.CENTER)
                 }
             )
@@ -82,8 +80,8 @@ fun FragmentActivity.showAddEditPlantDialog(
                 TextView(root).apply {
                     text = getString(if (existing == null) R.string.add_plant else R.string.edit_plant)
                     textSize = 20f
-                    setTextColor(root.getColor(R.color.on_hero))
-                    typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+                    setTextColor(root.getColor(R.color.on_surface))
+                    typeface = Typeface.create("sans-serif-black", Typeface.NORMAL)
                 }
             )
             addView(
@@ -92,7 +90,7 @@ fun FragmentActivity.showAddEditPlantDialog(
                         if (existing == null) R.string.plant_dialog_add_subtitle else R.string.plant_dialog_edit_subtitle,
                     )
                     textSize = 13f
-                    setTextColor(root.getColor(R.color.on_hero_secondary))
+                    setTextColor(root.getColor(R.color.on_surface))
                     setLineSpacing(3.dp(root).toFloat(), 1f)
                     layoutParams = LinearLayout.LayoutParams(
                         LinearLayout.LayoutParams.MATCH_PARENT,
@@ -210,7 +208,7 @@ internal fun buildRoomPickerRow(
     var rooms = initialRooms
     val label = TextView(ctx).apply {
         textSize = 13f
-        setTextColor(ctx.getColor(R.color.on_surface_secondary))
+        setTextColor(ctx.getColor(R.color.on_surface))
     }
     var currentRoomId = initialRoomId
     fun applyLabel() {
@@ -245,8 +243,9 @@ internal fun buildRoomPickerRow(
                 addView(
                     TextView(ctx).apply {
                         text = ctx.getString(R.string.plant_room)
-                        textSize = 11f
-                        setTextColor(ctx.getColor(R.color.on_surface_secondary))
+                        textSize = 12f
+                        typeface = android.graphics.Typeface.DEFAULT_BOLD
+                        setTextColor(ctx.getColor(R.color.on_surface))
                     }
                 )
                 addView(label)

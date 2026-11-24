@@ -107,7 +107,7 @@ class CareTaskActivity : AppCompatActivity() {
             R.string.treatment_step_of,
             step.stepIndex + 1,
             stepWithPlan.stepCount,
-        ) + " · " + (if (isRu) plan.diseaseLabelRu else plan.diseaseLabelEn)
+        ) + ", " + (if (isRu) plan.diseaseLabelRu else plan.diseaseLabelEn)
 
         bindTextSection(binding.careTaskDescriptionSection, binding.careTaskDescription, step.detail)
         bindBullets(step.bullets)
@@ -242,7 +242,7 @@ class CareTaskActivity : AppCompatActivity() {
                 TextView(this).apply {
                     text = "•  $bullet"
                     textSize = 13f
-                    setTextColor(getColor(R.color.on_surface_secondary))
+                    setTextColor(getColor(R.color.on_surface))
                     setLineSpacing(3.dpPx().toFloat(), 1f)
                     layoutParams = LinearLayout.LayoutParams(
                         LinearLayout.LayoutParams.MATCH_PARENT,
@@ -325,7 +325,7 @@ class CareTaskActivity : AppCompatActivity() {
             TextView(this@CareTaskActivity).apply {
                 text = product.optString("active_ingredient")
                 textSize = 12f
-                setTextColor(getColor(R.color.on_surface_secondary))
+                setTextColor(getColor(R.color.on_surface))
                 layoutParams = LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT,
                     LinearLayout.LayoutParams.WRAP_CONTENT,
@@ -338,7 +338,7 @@ class CareTaskActivity : AppCompatActivity() {
                 TextView(this@CareTaskActivity).apply {
                     text = note
                     textSize = 12f
-                    setTextColor(getColor(R.color.on_surface_secondary))
+                    setTextColor(getColor(R.color.on_surface))
                     setLineSpacing(2.dpPx().toFloat(), 1f)
                     layoutParams = LinearLayout.LayoutParams(
                         LinearLayout.LayoutParams.MATCH_PARENT,

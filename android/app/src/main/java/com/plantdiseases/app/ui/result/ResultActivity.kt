@@ -23,17 +23,20 @@ import com.bumptech.glide.load.resource.bitmap.CenterCrop
 import com.bumptech.glide.load.resource.bitmap.RoundedCorners
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.plantdiseases.app.MainActivity
-import com.plantdiseases.app.PlantDiseasesApp
 import com.plantdiseases.app.R
 import com.plantdiseases.app.auth.AuthRepository
 import com.plantdiseases.app.data.GuideDataProvider
 import com.plantdiseases.app.data.local.ScanEntity
 import com.plantdiseases.app.data.repository.CareRepository
-import com.plantdiseases.app.data.repository.CommunityUploader
 import com.plantdiseases.app.data.repository.PlantRepository
+import com.plantdiseases.app.data.repository.AssistantRepository
+import com.plantdiseases.app.data.repository.CommunityScanRepository
+import com.plantdiseases.app.data.repository.FeedbackRepository
 import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.databinding.ActivityResultBinding
 import com.plantdiseases.app.ui.analysis.AnalysisActivity
+import com.plantdiseases.app.ui.account.QuickSignIn
+import com.plantdiseases.app.ui.community.CommunityJoin
 import com.plantdiseases.app.ui.onboarding.guidance.OnboardingAnchorKey
 import com.plantdiseases.app.ui.onboarding.guidance.OnboardingContext
 import com.plantdiseases.app.ui.onboarding.guidance.OnboardingCoordinator
@@ -74,6 +77,15 @@ class ResultActivity : AppCompatActivity() {
     lateinit var scanRepository: ScanRepository
 
     @Inject
+    lateinit var assistantRepository: AssistantRepository
+
+    @Inject
+    lateinit var feedbackRepository: FeedbackRepository
+
+    @Inject
+    lateinit var communityScanRepository: CommunityScanRepository
+
+    @Inject
     lateinit var onboardingState: OnboardingStateStore
 
     @Inject
@@ -84,9 +96,6 @@ class ResultActivity : AppCompatActivity() {
 
     @Inject
     lateinit var careRepository: CareRepository
-
-    @Inject
-    lateinit var communityUploader: CommunityUploader
 
     @Inject
     lateinit var authRepository: AuthRepository
@@ -112,13 +121,14 @@ class ResultActivity : AppCompatActivity() {
 
     private val diagnosisContent by lazy { DiagnosisContentController(this, binding, plantRepository) }
     private val carePlan by lazy {
-        CarePlanController(this, binding, scanRepository, plantRepository, reviewManager)
+        CarePlanController(this, binding, assistantRepository, plantRepository, reviewManager)
     }
     private val feedback by lazy {
         FeedbackController(
             this,
             binding,
             scanRepository,
+            feedbackRepository,
             privacyConsentPrefs,
             reviewManager,
         )
@@ -129,82 +139,27 @@ class ResultActivity : AppCompatActivity() {
             binding,
             plantRepository,
             scanRepository,
+            assistantRepository,
             careRepository,
             reviewManager,
         )
     }
     private val share by lazy { ShareController(this, scanRepository) }
+
+    // Both register result launchers, so they are built with the activity.
+    private val communityJoin = CommunityJoin(this)
+    private val quickSignIn = QuickSignIn.of(this)
     private val community by lazy {
         CommunityController(
             this,
             binding,
             scanRepository,
-            communityUploader,
+            communityScanRepository,
             authRepository,
             connectivity,
-            ::ensureNotificationPermission,
-            ::requestCommunityOptIn,
+            communityJoin,
+            quickSignIn,
         )
-    }
-
-    // Notifications-only prompt, fired when the user asks for a second opinion
-    // so the reply can actually reach them. nm.notify() no-ops if denied.
-    private val notifPermissionLauncher = registerForActivityResult(
-        androidx.activity.result.contract.ActivityResultContracts.RequestPermission(),
-    ) { granted ->
-        com.plantdiseases.app.util.OpinionPrefs.setNotificationsEnabled(this, granted)
-        if (granted) {
-            startOpinionDelivery()
-        }
-    }
-
-    // In-context community opt-in from the result screen (the "enable community"
-    // button under the similar-scans card and the second-opinion gate).
-    // Requests coarse location ONLY and flips community ON
-    // when it's granted — so a denial leaves the "enable community" button in
-    // place instead of silently enabling with no location. Notifications are
-    // NOT part of joining; they're requested when the user asks for a second
-    // opinion (see ensureNotificationPermission). The pending callback carries
-    // the grant result back to whichever surface asked.
-    private var pendingCommunityOptIn: ((Boolean) -> Unit)? = null
-
-    private val communityOptInLauncher = registerForActivityResult(
-        androidx.activity.result.contract.ActivityResultContracts.RequestPermission(),
-    ) { granted ->
-        val locationGranted = granted ||
-            androidx.core.content.ContextCompat.checkSelfPermission(
-                this,
-                android.Manifest.permission.ACCESS_COARSE_LOCATION,
-            ) == android.content.pm.PackageManager.PERMISSION_GRANTED
-        pendingCommunityOptIn?.invoke(locationGranted)
-        pendingCommunityOptIn = null
-    }
-
-    private fun requestCommunityOptIn(onResult: (Boolean) -> Unit) {
-        pendingCommunityOptIn = onResult
-        communityOptInLauncher.launch(android.Manifest.permission.ACCESS_COARSE_LOCATION)
-    }
-
-    private fun ensureNotificationPermission() {
-        if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.TIRAMISU) {
-            com.plantdiseases.app.util.OpinionPrefs.setNotificationsEnabled(this, true)
-            startOpinionDelivery()
-        } else if (androidx.core.content.ContextCompat.checkSelfPermission(
-                this,
-                android.Manifest.permission.POST_NOTIFICATIONS,
-            ) != android.content.pm.PackageManager.PERMISSION_GRANTED
-        ) {
-            notifPermissionLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
-        } else {
-            com.plantdiseases.app.util.OpinionPrefs.setNotificationsEnabled(this, true)
-            startOpinionDelivery()
-        }
-    }
-
-    private fun startOpinionDelivery() {
-        com.plantdiseases.app.push.PushManager.registerIfEnabled(this)
-        (application as PlantDiseasesApp).scheduleOpinionChecks()
-        (application as PlantDiseasesApp).checkOpinionsNow()
     }
 
     override fun attachBaseContext(newBase: Context) {
@@ -275,8 +230,7 @@ class ResultActivity : AppCompatActivity() {
         // the server are held back: the AI doctor and re-running an offline
         // scan online. (Whether they are shown at all is decided per-verdict in
         // displayResult; this only decides whether a shown one can be used
-        // right now.) The second-opinion control is deliberately absent — it
-        // also has to stay disabled while an ask is in flight, so
+        // right now.) The "Ask the community" button is deliberately absent:
         // CommunityController owns its enabled state outright.
         enableWhileOnline(
             connectivity.isOnline,
@@ -641,21 +595,20 @@ class ResultActivity : AppCompatActivity() {
                 )
             }
 
-            // Community second opinion on the user's OWN scan — offered on
-            // every server-diagnosed plant verdict (not just low-confidence
-            // ones; the owner may doubt any result). Hidden for NAP (the
-            // feed hides NAP scans, so nobody could answer) and for offline
-            // scans (no server scan_id to share).
+            // "Ask the community" posts the user's OWN scan to the forum,
+            // offered on every server-diagnosed plant verdict (the owner may
+            // doubt any result). Hidden for NAP and for offline scans (no
+            // server scan to attach).
             if (!isAbstained && !isOfflineAqua) {
-                btnSecondOpinion.visibility = View.VISIBLE
-                community.setupSecondOpinion(scan)
+                btnAskCommunity.visibility = View.VISIBLE
+                community.setupAskCommunity(scan)
             } else {
-                btnSecondOpinion.visibility = View.GONE
+                btnAskCommunity.visibility = View.GONE
             }
             // The row only exists to pair the two follow-up actions; it goes
             // with them so no empty gap is left above the care plan.
             resultActionRow.visibility = if (
-                btnSecondOpinion.visibility == View.VISIBLE ||
+                btnAskCommunity.visibility == View.VISIBLE ||
                 btnAskDoctor.visibility == View.VISIBLE
             ) {
                 View.VISIBLE
@@ -784,15 +737,6 @@ class ResultActivity : AppCompatActivity() {
                 .setInterpolator(DecelerateInterpolator())
                 .start()
         }
-    }
-
-    override fun onResume() {
-        super.onResume()
-        // Catches a request/reply state change made on MyScanRepliesActivity
-        // (e.g. Stop) — that screen is separate now, so this is how the
-        // second-opinion control finds out, same as every other on-resume
-        // refresh in this app (no Flow/LiveData plumbing over Room here).
-        community.onResume()
     }
 
     override fun onDestroy() {

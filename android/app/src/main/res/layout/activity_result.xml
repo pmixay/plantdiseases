@@ -19,14 +19,13 @@
     android:layout_height="match_parent"
     android:background="@color/background">
 
-    <!-- Adaptive header: green gradient in light theme, flat surface in dark
-         (the gradient drawable is overridden in drawable-night). toolbar_title
-         is theme-aware so it stays legible on both. -->
+    <!-- Plain page header, like the Home and Community tabs: the page
+         background with the title and icons in toolbar_title (page ink). -->
     <com.google.android.material.appbar.AppBarLayout
         android:id="@+id/app_bar"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:background="@drawable/bg_toolbar_gradient"
+        android:background="@color/background"
         app:elevation="0dp">
 
         <com.google.android.material.appbar.CollapsingToolbarLayout
@@ -34,7 +33,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             app:layout_scrollFlags="scroll|exitUntilCollapsed"
-            app:contentScrim="@drawable/bg_toolbar_gradient"
+            app:contentScrim="@color/background"
             app:expandedTitleGravity="bottom"
             app:expandedTitleMarginStart="@dimen/space_lg"
             app:expandedTitleTextAppearance="@style/TextAppearance.App.Toolbar"
@@ -325,7 +324,7 @@
                             android:layout_weight="1"
                             android:text="@string/confidence_label"
                             android:textSize="@dimen/text_body"
-                            android:textColor="@color/on_surface_secondary" />
+                            android:textColor="@color/on_surface" />
 
                         <TextView
                             android:id="@+id/tv_confidence"
@@ -354,7 +353,7 @@
                         android:layout_height="wrap_content"
                         android:layout_marginTop="@dimen/space_sm"
                         android:textSize="@dimen/text_body_sm"
-                        android:textColor="@color/on_surface_secondary" />
+                        android:textColor="@color/on_surface" />
 
                     <!-- One compact, actionable confidence advisory. It is
                          deliberately in the verdict card so uncertain scans
@@ -397,7 +396,7 @@
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:layout_marginTop="@dimen/space_xs"
-                            android:textColor="@color/on_surface_secondary"
+                            android:textColor="@color/on_surface"
                             android:textSize="@dimen/text_body_sm"
                             android:lineSpacingExtra="2dp" />
 
@@ -493,7 +492,7 @@
             </com.google.android.material.card.MaterialCardView>
 
             <!-- Follow-up "get help with this verdict" pair: the AI Plant
-                 Doctor and the community second opinion. Both live outside
+                 Doctor and asking the community. Both live outside
                  the verdict card so it ends on its own advisory, and they
                  share one style so they read as alternatives to each other.
                  Either can be GONE — the weights let the survivor span the
@@ -526,7 +525,7 @@
                     app:iconSize="20dp" />
 
                 <com.google.android.material.button.MaterialButton
-                    android:id="@+id/btn_second_opinion"
+                    android:id="@+id/btn_ask_community"
                     style="@style/Widget.Material3.Button.TonalButton"
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
@@ -535,7 +534,7 @@
                     android:ellipsize="end"
                     android:maxLines="2"
                     android:minHeight="48dp"
-                    android:text="@string/result_get_second_opinion"
+                    android:text="@string/result_ask_community"
                     android:visibility="gone"
                     app:autoSizeMaxTextSize="14sp"
                     app:autoSizeMinTextSize="10sp"
@@ -627,7 +626,25 @@
                         android:layout_height="wrap_content"
                         android:layout_marginTop="@dimen/space_xs"
                         android:textSize="@dimen/text_body_sm"
-                        android:textColor="?attr/colorOnSurfaceVariant" />
+                        android:textColor="@color/on_surface" />
+
+                    <!-- Scans from the user's own area are a community-member
+                         feature (location + sharing, CommunityJoin). Shown to
+                         non-members only, above a blurred preview of the strip;
+                         joining re-fetches with location. -->
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btn_similar_join"
+                        style="@style/Widget.Material3.Button.TonalButton"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="@dimen/space_md"
+                        android:minHeight="48dp"
+                        android:text="@string/similar_scans_join_cta"
+                        android:visibility="gone"
+                        app:cornerRadius="@dimen/radius_md"
+                        app:icon="@drawable/ic_map"
+                        app:iconGravity="textStart"
+                        app:iconSize="20dp" />
 
                     <!-- Empty state shown when the region has no recent
                          scans yet. Keeps the card on screen so the user
@@ -640,31 +657,34 @@
                         android:gravity="center"
                         android:padding="@dimen/space_lg"
                         android:textAppearance="@style/TextAppearance.App.Body"
-                        android:textColor="?attr/colorOnSurfaceVariant"
+                        android:textColor="@color/on_surface"
                         android:visibility="gone" />
 
-                    <androidx.recyclerview.widget.RecyclerView
-                        android:id="@+id/rv_similar_scans"
+                    <FrameLayout
+                        android:id="@+id/similar_strip"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="@dimen/space_md"
-                        android:clipToPadding="false"
-                        android:paddingEnd="@dimen/space_md" />
+                        android:visibility="gone">
 
-                    <!-- In-context opt-in: shown only when community is OFF.
-                         Tapping enables community + requests coarse location,
-                         then the card loads the nearby feed. -->
-                    <com.google.android.material.button.MaterialButton
-                        android:id="@+id/btn_enable_similar"
-                        style="@style/Widget.Material3.Button.TonalButton"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="@dimen/space_md"
-                        android:text="@string/community_enable_cta"
-                        android:textAllCaps="false"
-                        android:visibility="gone"
-                        app:icon="@drawable/ic_garden"
-                        app:cornerRadius="@dimen/radius_md" />
+                        <androidx.recyclerview.widget.RecyclerView
+                            android:id="@+id/rv_similar_scans"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:clipToPadding="false"
+                            android:paddingEnd="@dimen/space_md" />
+
+                        <!-- Non-members: the strip is blurred and a tap on it
+                             asks to join, like the button above. -->
+                        <View
+                            android:id="@+id/similar_lock_overlay"
+                            android:layout_width="match_parent"
+                            android:layout_height="match_parent"
+                            android:background="?attr/selectableItemBackground"
+                            android:contentDescription="@string/similar_scans_join_cta"
+                            android:visibility="gone" />
+
+                    </FrameLayout>
 
                 </LinearLayout>
 
@@ -698,7 +718,7 @@
                         android:layout_marginTop="@dimen/space_xs"
                         android:text="@string/alternatives_subtitle"
                         android:textSize="@dimen/text_body_sm"
-                        android:textColor="@color/on_surface_secondary" />
+                        android:textColor="@color/on_surface" />
 
                     <LinearLayout
                         android:id="@+id/alternatives_layout"
@@ -738,7 +758,7 @@
                         android:layout_marginTop="@dimen/space_xs"
                         android:text="@string/feedback_subtitle"
                         android:textSize="@dimen/text_body_sm"
-                        android:textColor="@color/on_surface_secondary" />
+                        android:textColor="@color/on_surface" />
 
                     <LinearLayout
                         android:id="@+id/feedback_choice_row"

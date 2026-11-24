@@ -15,7 +15,9 @@ import android.widget.PopupMenu
 import android.widget.TextView
 import androidx.core.view.children
 import androidx.fragment.app.Fragment
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
 import com.bumptech.glide.Glide
 import com.bumptech.glide.load.DecodeFormat
 import com.bumptech.glide.load.resource.bitmap.CenterCrop
@@ -24,7 +26,9 @@ import com.google.android.material.snackbar.Snackbar
 import com.plantdiseases.app.MainActivity
 import com.plantdiseases.app.R
 import com.plantdiseases.app.billing.EntitlementRepository
+import com.plantdiseases.app.data.local.AppDatabase
 import com.plantdiseases.app.data.local.RoomEntity
+import com.plantdiseases.app.data.local.gardenChanges
 import com.plantdiseases.app.data.repository.CareRepository
 import com.plantdiseases.app.data.repository.PlantRepository
 import com.plantdiseases.app.data.repository.RoomRepository
@@ -42,9 +46,10 @@ import com.plantdiseases.app.util.RoomPresets
 import com.plantdiseases.app.util.applyStatusBarTopInset
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineStart
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
@@ -76,7 +81,6 @@ class GardenFragment : Fragment() {
     private var isFirstLoad = true
 
     private var searchVisible = false
-    private var loadJob: Job? = null
 
     @Inject
     lateinit var plantRepository: PlantRepository
@@ -89,6 +93,9 @@ class GardenFragment : Fragment() {
 
     @Inject
     lateinit var entitlementRepository: EntitlementRepository
+
+    @Inject
+    lateinit var database: AppDatabase
 
     override fun onCreateView(
         inflater: LayoutInflater,
@@ -150,18 +157,24 @@ class GardenFragment : Fragment() {
             }
         }
 
-        loadGarden()
+        // The garden follows the database: any committed write to a table it
+        // shows (from this screen, a dialog, plant detail, a reminder action)
+        // re-renders it, and coming back to the tab re-reads it, which also
+        // moves "Do today" on when the date changed. collectLatest drops a
+        // read that a newer change has made stale.
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                database.gardenChanges().collectLatest { loadGarden() }
+            }
+        }
     }
 
     override fun onResume() {
         super.onResume()
         entitlementRepository.refreshInBackground()
-        if (_binding != null && !isFirstLoad) loadGarden(animate = false)
     }
 
     override fun onDestroyView() {
-        loadJob?.cancel()
-        loadJob = null
         (activity as? MainActivity)?.apply {
             unregisterOnboardingAnchor(OnboardingAnchorKey.GARDEN_HERO)
             unregisterOnboardingAnchor(OnboardingAnchorKey.GARDEN_PLANTS)
@@ -189,26 +202,19 @@ class GardenFragment : Fragment() {
         if (show) binding.gardenAddFab.extend()
     }
 
-    private fun loadGarden(animate: Boolean = true) {
-        if (_binding == null) return
-        // Dialog callbacks, onResume and task completion can all request a
-        // reload close together. Cancel the older snapshot so it cannot land
-        // after a newer one and repaint deleted rooms/tasks back into view.
-        loadJob?.cancel()
-        loadJob = lifecycleScope.launch {
-            val plantsRequest = async { plantRepository.getPlants() }
-            val roomsRequest = async { roomRepository.getRooms() }
-            val todayRequest = async { careRepository.today() }
-            val plants = plantsRequest.await()
-            val rooms = roomsRequest.await()
-            val currentTasks = todayRequest.await()
-            if (_binding != null) {
-                allSummaries = plants
-                allRooms = rooms
-                todayTasks = currentTasks
-                renderGarden(animate = animate && isFirstLoad)
-                isFirstLoad = false
-            }
+    private suspend fun loadGarden() = coroutineScope {
+        val plantsRequest = async { plantRepository.getPlants() }
+        val roomsRequest = async { roomRepository.getRooms() }
+        val todayRequest = async { careRepository.today() }
+        val plants = plantsRequest.await()
+        val rooms = roomsRequest.await()
+        val currentTasks = todayRequest.await()
+        if (_binding != null) {
+            allSummaries = plants
+            allRooms = rooms
+            todayTasks = currentTasks
+            renderGarden(animate = isFirstLoad)
+            isFirstLoad = false
         }
     }
 
@@ -221,9 +227,12 @@ class GardenFragment : Fragment() {
         binding.gardenActionRow.visibility = if (hasGardenContent) View.VISIBLE else View.GONE
         updateFabVisibility()
 
+        // Rooms, plants and scans once the garden has any; no generic tagline
+        // for an empty garden (the empty state below says what to do).
         val scanTotal = allSummaries.sumOf { it.scanCount }
-        binding.gardenSummaryBody.text = if (hasGardenContent) {
-            getString(
+        binding.gardenSummaryBody.visibility = if (hasGardenContent) View.VISIBLE else View.GONE
+        if (hasGardenContent) {
+            binding.gardenSummaryBody.text = getString(
                 R.string.garden_subtitle_combined,
                 resources.getQuantityString(R.plurals.room_count, allRooms.size, allRooms.size),
                 resources.getQuantityString(
@@ -233,8 +242,6 @@ class GardenFragment : Fragment() {
                     resources.getQuantityString(R.plurals.scan_count, scanTotal, scanTotal),
                 ),
             )
-        } else {
-            getString(R.string.garden_subtitle)
         }
 
         binding.gardenSearchLayout.visibility = if (searchVisible) View.VISIBLE else View.GONE
@@ -330,7 +337,7 @@ class GardenFragment : Fragment() {
                 getString(ReminderPresets.fallbackLabelRes(view.task.type))
             else -> view.task.title
         }
-        row.careTaskSubtitle.text = view.roomName?.let { "${view.plantName} · $it" } ?: view.plantName
+        row.careTaskSubtitle.text = view.roomName?.let { "${view.plantName}, $it" } ?: view.plantName
         row.careTaskCheckbox.isChecked = false
         row.careTaskCheckbox.contentDescription = getString(R.string.task_mark_done)
         row.careTaskCheckbox.setOnClickListener {
@@ -355,7 +362,6 @@ class GardenFragment : Fragment() {
                 }
                 completed
             }
-            loadGarden(animate = false)
             val currentBinding = _binding ?: return@launch
             Snackbar.make(currentBinding.gardenRoot, R.string.task_mark_done, Snackbar.LENGTH_LONG)
                 .setAction(R.string.task_undo) {
@@ -366,7 +372,6 @@ class GardenFragment : Fragment() {
                                 rescheduleRecurring(appContext, view, afterCare = false)
                             }
                         }
-                        loadGarden(animate = false)
                     }
                 }
                 .show()
@@ -440,7 +445,7 @@ class GardenFragment : Fragment() {
                 TextView(requireContext()).apply {
                     text = getString(R.string.garden_search_empty, query)
                     textSize = 14f
-                    setTextColor(requireContext().getColor(R.color.on_surface_secondary))
+                    setTextColor(requireContext().getColor(R.color.on_surface))
                     gravity = Gravity.CENTER
                     setPadding(8.dp(), 24.dp(), 8.dp(), 24.dp())
                 }
@@ -509,7 +514,7 @@ class GardenFragment : Fragment() {
             TextView(requireContext()).apply {
                 text = getString(R.string.room_why_hint)
                 textSize = 13f
-                setTextColor(requireContext().getColor(R.color.on_surface_secondary))
+                setTextColor(requireContext().getColor(R.color.on_surface))
                 setLineSpacing(3.dp().toFloat(), 1f)
                 setPadding(4.dp(), 0, 4.dp(), 8.dp())
             }
@@ -586,7 +591,7 @@ class GardenFragment : Fragment() {
         layoutParams = LinearLayout.LayoutParams(56.dp(), 56.dp()).apply { marginStart = 8.dp() }
         gravity = Gravity.CENTER
         textSize = 13f
-        setTextColor(requireContext().getColor(R.color.on_surface_secondary))
+        setTextColor(requireContext().getColor(R.color.on_surface))
         setBackgroundResource(R.drawable.bg_thumb_rounded)
     }
 
@@ -597,11 +602,11 @@ class GardenFragment : Fragment() {
             setOnMenuItemClickListener { item ->
                 when (item.itemId) {
                     1 -> {
-                        requireActivity().showRoomNameDialog(roomRepository, room) { loadGarden(animate = false) }
+                        requireActivity().showRoomNameDialog(roomRepository, room) {}
                         true
                     }
                     2 -> {
-                        requireActivity().confirmDeleteRoomDialog(roomRepository, room) { loadGarden(animate = false) }
+                        requireActivity().confirmDeleteRoomDialog(roomRepository, room) {}
                         true
                     }
                     else -> false
@@ -612,7 +617,7 @@ class GardenFragment : Fragment() {
     }
 
     private fun showCreateRoomDialog() {
-        requireActivity().showRoomNameDialog(roomRepository, existing = null) { loadGarden(animate = true) }
+        requireActivity().showRoomNameDialog(roomRepository, existing = null) {}
     }
 
     // ─── Care calendar ────────────────────────────────────────────────
@@ -626,10 +631,7 @@ class GardenFragment : Fragment() {
 
     private fun openAddPlantDialog() {
         requireActivity().showAddEditPlantDialog(plantRepository, roomRepository, allRooms, existing = null) {
-            if (_binding != null) {
-                loadGarden(animate = true)
-                stabilizeFloatingAddButton()
-            }
+            if (_binding != null) stabilizeFloatingAddButton()
         }
     }
 

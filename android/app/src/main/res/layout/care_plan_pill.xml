@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- One summary pill of the care-plan card: icon + all-caps label over a value.
+     Its host row sets the weight and the gap; match_parent height makes the
+     row stretch both pills to the taller one, so a two-line value does not
+     leave its row-mate shorter. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="0dp"
+    android:layout_height="match_parent"
+    android:layout_weight="1"
+    android:background="@drawable/bg_care_plan_pill"
+    android:orientation="vertical"
+    android:paddingStart="@dimen/care_plan_pill_padding_h"
+    android:paddingTop="@dimen/care_plan_pill_padding_v"
+    android:paddingEnd="@dimen/care_plan_pill_padding_h"
+    android:paddingBottom="@dimen/care_plan_pill_padding_v">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
+
+        <ImageView
+            android:id="@+id/care_plan_pill_icon"
+            android:layout_width="@dimen/care_plan_pill_icon"
+            android:layout_height="@dimen/care_plan_pill_icon"
+            android:contentDescription="@null"
+            android:importantForAccessibility="no"
+            app:tint="@color/primary"
+            tools:src="@drawable/ic_watering" />
+
+        <TextView
+            android:id="@+id/care_plan_pill_label"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="@dimen/care_plan_pill_label_gap"
+            android:layout_weight="1"
+            android:textAppearance="@style/TextAppearance.App.Caption"
+            tools:text="WATERING" />
+    </LinearLayout>
+
+    <TextView
+        android:id="@+id/care_plan_pill_value"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="@dimen/care_plan_pill_label_gap"
+        android:ellipsize="end"
+        android:maxLines="2"
+        android:textAppearance="@style/TextAppearance.App.CarePlan.PillValue"
+        tools:text="Every 7 days" />
+</LinearLayout>

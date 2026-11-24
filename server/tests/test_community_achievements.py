@@ -9,6 +9,7 @@ import uuid
 import pytest
 from PIL import Image
 
+import community_scans
 from tests.conftest import _test_access_token
 from tests.test_community_moderation import FakeRoles
 
@@ -99,7 +100,7 @@ def test_expert_verification_decides_and_marks_hard_examples(forum, labels, comm
 
     image = _png(42)
     token = "scan-" + uuid.uuid4().hex
-    community_store.record_analysis_token(
+    community_scans.record_analysis_token(
         token, disease="powdery_mildew", confidence=0.9, species="Jade",
         species_score=0.9, image_sha256=hashlib.sha256(image).hexdigest(),
     )
@@ -123,7 +124,7 @@ def test_label_review_lists_confident_ai_answers_people_push_back_on(forum, labe
     monkeypatch.setattr(forum, "can_mark_not_helpful", None)
     image = _png(7)
     token = "scan-" + uuid.uuid4().hex
-    community_store.record_analysis_token(
+    community_scans.record_analysis_token(
         token, disease="healthy", confidence=0.85, species=None,
         species_score=None, image_sha256=hashlib.sha256(image).hexdigest(),
     )

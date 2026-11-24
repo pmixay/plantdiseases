@@ -10,7 +10,7 @@
         android:id="@+id/app_bar"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:background="@drawable/bg_toolbar_gradient"
+        android:background="@color/background"
         app:elevation="0dp">
 
         <com.google.android.material.appbar.MaterialToolbar
@@ -51,7 +51,7 @@
             android:layout_gravity="center"
             android:gravity="center"
             android:padding="@dimen/space_xl"
-            android:textColor="@color/on_surface_secondary"
+            android:textColor="@color/on_surface"
             android:visibility="gone" />
 
     </FrameLayout>
@@ -65,7 +65,7 @@
         android:gravity="center"
         android:padding="@dimen/space_md"
         android:text="@string/forum_locked_banner"
-        android:textColor="@color/on_surface_secondary"
+        android:textColor="@color/on_surface"
         android:visibility="gone"
         app:drawableStartCompat="@drawable/ic_lock"
         app:drawableTint="@color/on_surface_secondary" />
@@ -129,15 +129,6 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="horizontal"
-            android:visibility="gone" />
-
-        <CheckBox
-            android:id="@+id/cb_answer_consent"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:checked="true"
-            android:text="@string/forum_training_consent_answer"
-            android:textSize="@dimen/text_caption"
             android:visibility="gone" />
 
         <TextView

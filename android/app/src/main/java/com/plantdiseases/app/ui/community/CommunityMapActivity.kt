@@ -15,7 +15,6 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.LinearLayout
 import android.widget.TextView
-import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
@@ -32,20 +31,17 @@ import com.bumptech.glide.request.target.CustomTarget
 import com.bumptech.glide.request.transition.Transition
 import com.google.android.material.bottomsheet.BottomSheetDialog
 import com.plantdiseases.app.R
-import com.plantdiseases.app.auth.AuthRepository
-import com.plantdiseases.app.auth.AuthState
+import com.plantdiseases.app.ui.account.QuickSignIn
 import com.plantdiseases.app.data.model.CommunityHeatmapResponse
 import com.plantdiseases.app.data.model.CommunityScanItem
-import com.plantdiseases.app.data.repository.ScanRepository
+import com.plantdiseases.app.data.repository.CommunityScanRepository
 import com.plantdiseases.app.databinding.ActivityCommunityMapBinding
-import com.plantdiseases.app.ui.result.CommunityOpinionSheet
 import com.plantdiseases.app.util.CommunityPrefs
 import com.plantdiseases.app.util.ConnectivityObserver
 import com.plantdiseases.app.util.DiseaseCatalog
 import com.plantdiseases.app.util.DiseaseLabels
 import com.plantdiseases.app.util.LocaleHelper
 import com.plantdiseases.app.util.RegionResolver
-import com.plantdiseases.app.util.ServerConfig
 import com.plantdiseases.app.util.onReconnected
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.Job
@@ -66,9 +62,9 @@ import javax.inject.Inject
 /**
  * Full-screen community scans map (osmdroid). Zoomed out it paints a
  * k-anonymized density heat (/api/community/heatmap); zoomed in it drops a
- * marker per scan (/api/community/map). Tapping a scan opens the existing
- * [CommunityOpinionSheet]; a cluster of scans at the same ~1 km point opens a
- * list of them. Viewing the (anonymized, aggregate) map needs no opt-in; the
+ * marker per scan (/api/community/map). Tapping a scan expands its photo
+ * full screen; a cluster of scans at the same ~1 km point opens a list of
+ * them. Viewing the (anonymized, aggregate) map needs no opt-in; the
  * "near me" FAB uses coarse location and never flips upload sharing on.
  */
 @AndroidEntryPoint
@@ -77,12 +73,7 @@ class CommunityMapActivity : AppCompatActivity() {
     private lateinit var binding: ActivityCommunityMapBinding
 
     @Inject
-    lateinit var scanRepository: ScanRepository
-
-    @Inject
-    lateinit var authRepository: AuthRepository
-
-    private val likeWritesInFlight = mutableSetOf<String>()
+    lateinit var communityScans: CommunityScanRepository
 
     @Inject
     lateinit var connectivity: ConnectivityObserver
@@ -92,6 +83,13 @@ class CommunityMapActivity : AppCompatActivity() {
     private val locationPermission = registerForActivityResult(
         ActivityResultContracts.RequestPermission(),
     ) { granted -> if (granted) centerOnUser(animateZoom = true) }
+
+    // The map shows scans by area, so it is members-only: location access and
+    // sharing come with it (CommunityJoin). Declining closes the map.
+    private val communityJoin = CommunityJoin(this)
+
+    // Guests sign in in place (blocked authors); also registers a launcher.
+    private val quickSignIn = QuickSignIn.of(this)
 
     override fun attachBaseContext(newBase: Context) {
         super.attachBaseContext(LocaleHelper.applyLocale(newBase))
@@ -114,14 +112,22 @@ class CommunityMapActivity : AppCompatActivity() {
         setupToolbarMenu()
         binding.offlineNotice.observe(this, connectivity.isOnline)
         binding.fabNearMe.setOnClickListener { onNearMe() }
-        supportFragmentManager.setFragmentResultListener(
-            CommunityOpinionSheet.CONTENT_BLOCKED,
-            this,
-        ) { _, _ -> reload() }
         // Pick the markers back up as soon as the server is reachable — the
         // pans made while offline deliberately fetched nothing.
         onReconnected(connectivity.isOnline) { reload() }
         applyWindowInsets()
+        // A member already opens on their area (first-layout listener below);
+        // someone who joins here is centred once they have said yes.
+        val wasMember = CommunityJoin.isMember(this)
+        communityJoin.ensureMember { joined ->
+            when {
+                !joined -> finish()
+                !wasMember -> {
+                    updateLeaveItem()
+                    centerOnUser(animateZoom = true)
+                }
+            }
+        }
 
         binding.map.apply {
             setTileSource(TileSourceFactory.MAPNIK)
@@ -151,11 +157,10 @@ class CommunityMapActivity : AppCompatActivity() {
             // boundingBox is only valid after layout — first real load fires here.
             addOnFirstLayoutListener { _, _, _, _, _ ->
                 reload()
-                // When the user is in the community, open straight to their area
-                // (coarse location) instead of the world view; otherwise stay on
-                // the world map. Zooming to the user re-triggers reload() via the
-                // debounced map listener, so the markers near them load too.
-                if (CommunityPrefs.uploadsEnabled(this@CommunityMapActivity)) {
+                // Members open straight on their area (coarse location) instead
+                // of the world view. Zooming to the user re-triggers reload() via
+                // the debounced map listener, so the markers near them load too.
+                if (CommunityJoin.isMember(this@CommunityMapActivity)) {
                     centerOnUser(animateZoom = true)
                 }
             }
@@ -168,12 +173,16 @@ class CommunityMapActivity : AppCompatActivity() {
         updateLeaveItem()
     }
 
-    /** Rules and blocked authors are always there; "stop sharing" only while
-     *  the user shares scans. */
+    /** Rules and blocked authors are always there; "leave" while a member. */
     private fun setupToolbarMenu() {
-        val safety = ScanCommunitySafety(this, scanRepository, authRepository) {
-            updateLeaveItem()
-            reload()
+        // Leaving the community also leaves the map, which is members-only.
+        val safety = ScanCommunitySafety(this, communityScans, quickSignIn) {
+            if (CommunityPrefs.uploadsEnabled(this)) {
+                updateLeaveItem()
+                reload()
+            } else {
+                finish()
+            }
         }
         binding.toolbar.inflateMenu(R.menu.community_map_menu)
         binding.toolbar.setOnMenuItemClickListener { item ->
@@ -218,7 +227,7 @@ class CommunityMapActivity : AppCompatActivity() {
         binding.mapProgress.visibility = View.VISIBLE
         loadJob = lifecycleScope.launch {
             if (zoom >= MARKER_ZOOM) {
-                val res = scanRepository.communityMap(
+                val res = communityScans.communityMap(
                     minLat = box.latSouth,
                     minLon = box.lonWest,
                     maxLat = box.latNorth,
@@ -235,7 +244,7 @@ class CommunityMapActivity : AppCompatActivity() {
                     },
                 )
             } else {
-                val res = scanRepository.communityHeatmap(
+                val res = communityScans.communityHeatmap(
                     minLat = box.latSouth,
                     minLon = box.lonWest,
                     maxLat = box.latNorth,
@@ -355,9 +364,7 @@ class CommunityMapActivity : AppCompatActivity() {
     }
 
     private fun loadThumbInto(marker: Marker, item: CommunityScanItem) {
-        val thumb = item.thumbPath
-        if (thumb.isNullOrBlank()) return
-        val url = "${ServerConfig.appBaseUrl}api/community/thumb/$thumb"
+        val url = item.photoUrl() ?: return
         val sizePx = (MARKER_SIZE_DP * resources.displayMetrics.density).toInt().coerceAtLeast(1)
         Glide.with(this).asBitmap().load(url).circleCrop().override(sizePx, sizePx)
             .into(object : CustomTarget<Bitmap>() {
@@ -430,35 +437,13 @@ class CommunityMapActivity : AppCompatActivity() {
         return BitmapDrawable(resources, out)
     }
 
-    private fun openScan(item: CommunityScanItem) {
-        CommunityOpinionSheet.show(
-            supportFragmentManager,
-            item,
-            DiseaseLabels.displayName(item.disease, isRu) ?: item.disease,
-        )
+    /** A shared scan has no detail screen: the tap expands its photo. */
+    private fun openScan(item: CommunityScanItem, from: View? = null) {
+        openScanPhoto(this, item, from)
     }
 
-    /** Optimistic like toggle for a row in the grouped-scans bottom sheet,
-     *  parameterised by which adapter instance owns the tapped row. */
-    private fun toggleLike(item: CommunityScanItem, adapter: NearbyScansAdapter) {
-        if (authRepository.state.value !is AuthState.Authenticated) {
-            Toast.makeText(this, R.string.community_sign_in_required, Toast.LENGTH_SHORT).show()
-            startActivity(com.plantdiseases.app.ui.account.AccountActivity.intent(this))
-            return
-        }
-        if (!likeWritesInFlight.add(item.scanId)) return
-        val next = !item.likedByMe
-        val optimisticCount = (item.likeCount + if (next) 1 else -1).coerceAtLeast(0)
-        adapter.updateLike(item.scanId, optimisticCount, next)
-        lifecycleScope.launch {
-            scanRepository.setCommunityLike(item.scanId, next)
-                .onSuccess { adapter.updateLike(item.scanId, it.count, it.liked) }
-                .onFailure { adapter.updateLike(item.scanId, item.likeCount, item.likedByMe) }
-        }
-    }
-
-    /** Bottom sheet listing the scans grouped at one point — reuses the feed
-     *  adapter so each row opens the same opinion sheet. */
+    /** Bottom sheet listing the scans grouped at one point; a row's photo
+     *  expands like a lone marker's. */
     private fun openGroup(group: List<CommunityScanItem>) {
         val dialog = BottomSheetDialog(this)
         val pad = (12 * resources.displayMetrics.density).toInt()
@@ -473,19 +458,8 @@ class CommunityMapActivity : AppCompatActivity() {
             clipToPadding = false
         }
         val adapter = NearbyScansAdapter(
-            onOpen = { item ->
-                dialog.dismiss()
-                openScan(item)
-            },
-            onAuthor = { item ->
-                dialog.dismiss()
-                item.authorToken
-                    ?.takeIf { it.startsWith("ca") && it.length == 32 }
-                    ?.let { token ->
-                        startActivity(CommunityProfileActivity.intent(this, token))
-                    }
-            },
-            onLike = { item -> toggleLike(item, list.adapter as NearbyScansAdapter) },
+            displayName = { key -> DiseaseLabels.displayName(key, isRu) ?: key },
+            onOpen = { item, photo -> openScan(item, photo) },
         )
         list.adapter = adapter
         adapter.submit(group)

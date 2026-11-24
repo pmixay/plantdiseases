@@ -9,7 +9,7 @@ M=/opt/pd-account-prod/migration/final
 rm -rf "$M"; install -d -m 0700 "$M"
 python3 - <<'PY'
 import sqlite3
-for name in ("community", "push"):
+for name in ("community",):
     src = sqlite3.connect(f"file:/var/lib/plantdiseases/{name}.db?mode=ro", uri=True)
     dst = sqlite3.connect(f"/opt/pd-account-prod/migration/final/{name}.db")
     src.backup(dst); dst.close(); src.close()
@@ -28,18 +28,13 @@ def rows(path, tables):
 def copy(src, dst):
     s = sqlite3.connect(f"file:{src}?mode=ro&immutable=1", uri=True); d = sqlite3.connect(dst)
     s.backup(d); d.close(); s.close()
-community_tables = ["community_scans", "community_authors", "community_opinions", "community_likes",
-                    "community_blocks", "community_reports", "community_opinion_requests", "community_scan_views"]
+community_tables = ["community_scans", "community_authors",
+                    "community_blocks", "community_reports", "community_scan_views"]
 target = "/data/community/community.db"
 if rows(target, community_tables) == 0:
     copy("/mig/community.db", target); print("community: copied legacy database")
 else:
     print("community: target already has data; left untouched")
-push = "/data/legacy-push/push.db"
-if rows(push, ["push_tokens"]) == 0:
-    copy("/mig/push.db", push); print("push: copied legacy database")
-else:
-    print("push: target already has data; left untouched")
 PY
 "$C" up -d --no-build prod-app-api >/dev/null
 for _ in $(seq 1 60); do

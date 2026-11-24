@@ -22,8 +22,6 @@
     <string name="forum_tab_mine">Mine</string>
     <string name="forum_all_spaces">All spaces</string>
     <string name="forum_spaces">Spaces</string>
-    <string name="forum_nearby">Nearby</string>
-    <string name="forum_sort">Sort</string>
     <string name="forum_sort_hot">Hot</string>
     <string name="forum_sort_new">New</string>
     <string name="forum_sort_top">Top this week</string>
@@ -52,7 +50,7 @@
     <string name="forum_kind_recovery">Recovery update</string>
     <string name="forum_kind_tip">Tip</string>
     <string name="forum_scan_title_fallback">Is the AI right? It says %1$s</string>
-    <string name="forum_ai_summary">PlantVision: %1$s · %2$d%%</string>
+    <string name="forum_ai_summary">PlantVision: %1$s, %2$d%%</string>
     <string name="forum_badge_solved">Solved</string>
     <string name="forum_badge_urgent">Urgent</string>
     <string name="forum_badge_unanswered">No answers yet</string>
@@ -82,6 +80,7 @@
     <string name="forum_recovery_link">Update: %1$s, %2$s</string>
     <string name="forum_locked_banner">Answers are closed on this post.</string>
     <string name="forum_answer_hint">Explain what to do…</string>
+    <string name="forum_answer_hint_guest">Sign in to answer</string>
     <string name="forum_steps_hint">Steps, one per line</string>
     <string name="forum_add_photo">Add a photo</string>
     <string name="forum_add_steps">Add steps</string>
@@ -91,7 +90,6 @@
     <string name="forum_send">Send</string>
     <string name="forum_cancel_reply">Cancel reply</string>
     <string name="forum_replying_to">Replying to %1$s</string>
-    <string name="forum_training_consent_answer">Let PlantVision learn from these photos</string>
     <string name="forum_report">Report</string>
     <string name="forum_reported">Thanks. A moderator will look at it.</string>
     <string name="forum_block_author">Block author</string>
@@ -124,8 +122,7 @@
     <string name="forum_similar_title">Similar questions already solved</string>
     <string name="forum_scan_attached">Scan attached: %1$s, %2$d%%</string>
     <string name="forum_scan_unavailable">This scan can\'t be shared. Only server scans from the last 30 days can.</string>
-    <string name="forum_training_consent">Let PlantVision learn from these photos</string>
-    <string name="forum_training_consent_hint">If the community agrees on a diagnosis, the photos help train the model. Location and camera details are removed. You can turn this off.</string>
+    <string name="forum_training_consent_hint">If the community agrees on a diagnosis, the photos in your post help train PlantVision. Location and camera details are removed.</string>
     <string name="forum_publish">Post</string>
 
     <!-- Search -->
@@ -136,7 +133,7 @@
     <string name="forum_filter_condition">Condition</string>
     <string name="forum_filter_any_condition">Any condition</string>
     <string name="forum_search_with_scan">Search with your last scan</string>
-    <string name="forum_scan_search_detail">%1$s · %2$s</string>
+    <string name="forum_scan_search_detail">%1$s, %2$s</string>
     <string name="forum_search_prompt">Search in Russian or English, or filter by condition.</string>
     <string name="forum_search_empty">Nothing found. Try other words or fewer filters.</string>
 
@@ -147,15 +144,14 @@
     <string name="forum_level_gardener">Gardener</string>
     <string name="forum_level_botanist">Botanist</string>
     <string name="forum_level_plant_doctor">Plant Doctor</string>
-    <string name="forum_level_line">%1$s · level %2$d</string>
+    <string name="forum_level_line">%1$s, level %2$d</string>
     <string name="forum_level_next">%1$d leaves to %2$s</string>
     <string name="forum_level_max">Highest level reached</string>
     <string name="forum_stat_accepted">%1$d\naccepted</string>
     <string name="forum_stat_saved">%1$d\nplants saved</string>
     <string name="forum_stat_taught">%1$d\nlabels taught</string>
-    <string name="forum_achievements_title">Achievements · %1$d of %2$d</string>
+    <string name="forum_achievements_title">Achievements: %1$d of %2$d</string>
     <string name="forum_achievement_progress">%1$d / %2$d</string>
-    <string name="forum_achievement_progress_tier">%1$d / %2$d · tier %3$d of %4$d</string>
     <string name="forum_achievement_complete">Complete</string>
     <string name="forum_achievement_tier_earned">Tier %1$d: %2$d. Earned</string>
     <string name="forum_achievement_tier_locked">Tier %1$d: %2$d. Not yet</string>
@@ -263,7 +259,7 @@
     <string name="mod_target_post">Post</string>
     <string name="mod_target_answer">Answer</string>
     <string name="mod_state">state: %1$s</string>
-    <string name="mod_report_heading">%1$s · %2$d reports · %3$s</string>
+    <string name="mod_report_heading">%1$s, %2$d reports, %3$s</string>
     <string name="mod_hidden_heading">%1$s hidden automatically after reports</string>
     <string name="mod_appeal_heading">Appeal: %1$s (%2$s)</string>
     <string name="mod_appeal_no_text">No message.</string>
@@ -293,7 +289,7 @@
 
     <!-- Member notices and appeals -->
     <string name="mod_notices_empty">No moderation decisions about you.</string>
-    <string name="mod_notice_heading">%1$s · %2$s</string>
+    <string name="mod_notice_heading">%1$s: %2$s</string>
     <string name="mod_notice_post_removed">Your post was removed</string>
     <string name="mod_notice_answer_removed">Your answer was removed</string>
     <string name="mod_notice_hidden">Hidden after several reports</string>
@@ -329,7 +325,7 @@
     <string name="forum_ai_note">An automatic estimate from the photo. Compare it with the answers below.</string>
     <string name="forum_ai_confidence">%1$d%%</string>
     <string name="forum_leaves_count">%1$d leaves</string>
-    <string name="forum_two_parts">%1$s · %2$s</string>
+    <string name="forum_two_parts">%1$s, %2$s</string>
 
     <!-- Community profile photo: opt-in, asked once per photo; Profile toggle. -->
     <string name="community_photo_prompt_title">Show your photo in Community?</string>

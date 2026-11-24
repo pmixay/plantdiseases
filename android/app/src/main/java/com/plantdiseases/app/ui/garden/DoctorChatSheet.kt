@@ -32,6 +32,7 @@ import com.plantdiseases.app.data.local.ScanChatMessageEntity
 import com.plantdiseases.app.data.local.ScanEntity
 import com.plantdiseases.app.data.model.ChatRequest
 import com.plantdiseases.app.data.repository.PlantRepository
+import com.plantdiseases.app.data.repository.AssistantRepository
 import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.databinding.SheetDoctorChatBinding
 import com.plantdiseases.app.ui.common.MeteredAccessUi
@@ -61,6 +62,9 @@ class DoctorChatSheet : BottomSheetDialogFragment() {
 
     @Inject
     lateinit var scanRepository: ScanRepository
+
+    @Inject
+    lateinit var assistantRepository: AssistantRepository
 
     // The chat runs in one of two modes:
     //   * plant mode — launched from the Garden plant detail; chat history
@@ -231,7 +235,7 @@ class DoctorChatSheet : BottomSheetDialogFragment() {
             val msgs: List<Triple<String, String, Long>> = when {
                 pid != null -> plantRepository.getChatMessages(pid)
                     .map { Triple(it.role, it.content, it.timestamp) }
-                sid != null -> scanRepository.getChatMessages(sid)
+                sid != null -> assistantRepository.getChatMessages(sid)
                     .map { Triple(it.role, it.content, it.timestamp) }
                 else -> emptyList()
             }
@@ -264,6 +268,7 @@ class DoctorChatSheet : BottomSheetDialogFragment() {
 
         val plantRepo = plantRepository
         val scanRepo = scanRepository
+        val assistant = assistantRepository
         val isRu = LocaleHelper.isRussian(requireContext())
         val now = System.currentTimeMillis()
 
@@ -298,7 +303,7 @@ class DoctorChatSheet : BottomSheetDialogFragment() {
                     pid != null -> plantRepo.saveChatMessage(
                         ChatMessageEntity(plantId = pid, role = "user", content = text, timestamp = now),
                     )
-                    sid != null -> scanRepo.saveChatMessage(
+                    sid != null -> assistant.saveChatMessage(
                         ScanChatMessageEntity(scanId = sid, role = "user", content = text, timestamp = now),
                     )
                 }
@@ -355,7 +360,7 @@ class DoctorChatSheet : BottomSheetDialogFragment() {
                     locale = if (isRu) "ru" else "en",
                     diagnosis = diagnosis,
                 )
-                val result = scanRepo.sendChat(request)
+                val result = assistant.sendChat(request)
 
                 removeThinkingBubble()
 
@@ -373,7 +378,7 @@ class DoctorChatSheet : BottomSheetDialogFragment() {
                     },
                     onFailure = { err ->
                         if (MeteredAccessUi.showDialog(requireContext(), err)) {
-                            getString(MeteredAccessUi.message(err))
+                            getString(MeteredAccessUi.title(err))
                         } else {
                             formatChatNetworkError(err)
                         }
@@ -393,7 +398,7 @@ class DoctorChatSheet : BottomSheetDialogFragment() {
                             timestamp = replyTime,
                         ),
                     )
-                    sid != null -> scanRepo.saveChatMessage(
+                    sid != null -> assistant.saveChatMessage(
                         ScanChatMessageEntity(
                             scanId = sid,
                             role = "bot",
@@ -491,9 +496,9 @@ class DoctorChatSheet : BottomSheetDialogFragment() {
         bubble.addView(
             TextView(requireContext()).apply {
                 text = formatTime(timestamp)
-                textSize = 10f
-                setTextColor(requireContext().getColor(R.color.chat_bubble_text_secondary))
-                alpha = 0.85f
+                textSize = 12f
+                typeface = android.graphics.Typeface.DEFAULT_BOLD
+                setTextColor(requireContext().getColor(R.color.chat_bubble_text))
                 gravity = Gravity.END
                 layoutParams = LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT,
@@ -516,7 +521,6 @@ class DoctorChatSheet : BottomSheetDialogFragment() {
         val pattern = Regex("""\*\*(.+?)\*\*|\[\[?doc:([a-z0-9_]+)]]?""")
         if (!pattern.containsMatchIn(text)) return text
 
-        val isRu = LocaleHelper.isRussian(requireContext())
         val linkColor = requireContext().getColor(R.color.primary)
         val sb = SpannableStringBuilder()
         var last = 0
@@ -539,7 +543,7 @@ class DoctorChatSheet : BottomSheetDialogFragment() {
                     val guideId = GuideDataProvider.guideIdForDisease(docKey)
                     val title = guideId?.let { id ->
                         GuideDataProvider.getGuideItems().firstOrNull { it.id == id }
-                            ?.let { if (isRu) it.titleRu else it.titleEn }
+                            ?.let { getString(it.title) }
                     }
                     if (guideId != null && title != null) {
                         val start = sb.length
@@ -592,7 +596,7 @@ class DoctorChatSheet : BottomSheetDialogFragment() {
                     inFlight?.cancelAndJoin()
                     when {
                         pid != null -> plantRepository.clearChat(pid)
-                        sid != null -> scanRepository.clearChat(sid)
+                        sid != null -> assistantRepository.clearChat(sid)
                     }
                 }
                 if (_binding != null) {

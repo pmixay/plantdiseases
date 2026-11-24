@@ -8,6 +8,7 @@
     android:background="@color/background">
 
     <LinearLayout
+        android:id="@+id/account_column"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:orientation="vertical">
@@ -20,6 +21,7 @@
             app:navigationIcon="@drawable/ic_back" />
 
         <androidx.core.widget.NestedScrollView
+            android:id="@+id/account_scroll"
             android:layout_width="match_parent"
             android:layout_height="0dp"
             android:layout_weight="1"
@@ -29,6 +31,7 @@
 
             <LinearLayout
                 android:id="@+id/content"
+                android:gravity="center_vertical"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="vertical"
@@ -36,20 +39,20 @@
                 android:paddingTop="@dimen/space_md"
                 android:paddingBottom="@dimen/space_3xl">
 
+                <!-- Page header, centred: the avatar above the account state ("Log in
+                     to your account" or the nickname), the provider line and, for guests,
+                     the sign-in pitch. No coloured block. -->
                 <LinearLayout
                     android:id="@+id/account_hero"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:background="@drawable/bg_hero_card"
                     android:gravity="center_horizontal"
-                    android:orientation="vertical"
-                    android:paddingHorizontal="@dimen/space_xl"
-                    android:paddingVertical="@dimen/space_2xl">
+                    android:orientation="vertical">
 
                     <FrameLayout
                         android:id="@+id/avatar_picker"
-                        android:layout_width="144dp"
-                        android:layout_height="144dp"
+                        android:layout_width="112dp"
+                        android:layout_height="112dp"
                         android:clickable="true"
                         android:contentDescription="@string/account_change_avatar"
                         android:enabled="false"
@@ -58,29 +61,27 @@
 
                         <com.google.android.material.imageview.ShapeableImageView
                             android:id="@+id/iv_avatar"
-                            android:layout_width="144dp"
-                            android:layout_height="144dp"
+                            android:layout_width="112dp"
+                            android:layout_height="112dp"
                             android:layout_gravity="center"
-                            android:background="@color/hero_stat_bg"
+                            android:background="@color/icon_bg"
                             android:contentDescription="@null"
                             android:scaleType="centerCrop"
                             android:src="@drawable/ic_avatar_placeholder"
                             app:shapeAppearanceOverlay="@style/ShapeAppearance.App.Avatar"
-                            app:strokeColor="@color/hero_stat_stroke"
-                            app:strokeWidth="1dp"
-                            app:tint="@color/on_hero" />
+                            app:tint="@color/primary" />
                     </FrameLayout>
 
                     <TextView
                         android:id="@+id/tv_state"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_marginTop="@dimen/space_md"
+                        android:layout_marginTop="@dimen/space_lg"
                         android:accessibilityHeading="true"
                         android:fontFamily="sans-serif-black"
                         android:gravity="center"
                         android:letterSpacing="-0.02"
-                        android:textColor="@color/on_hero"
+                        android:textColor="@color/on_surface"
                         android:textSize="28sp"
                         tools:text="likikikpa" />
 
@@ -90,10 +91,21 @@
                         android:layout_height="wrap_content"
                         android:layout_marginTop="@dimen/space_xs"
                         android:gravity="center"
-                        android:textColor="@color/on_hero_secondary"
-                        android:textSize="@dimen/text_body"
+                        android:textColor="@color/on_surface"
+                        android:textSize="@dimen/text_title_sm"
                         android:visibility="gone"
-                        tools:text="Yandex ID · gardener" />
+                        tools:text="Yandex ID: gardener" />
+
+                    <TextView
+                        android:id="@+id/tv_hero_subtitle"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="@dimen/space_xs"
+                        android:gravity="center"
+                        android:text="@string/account_login_pitch"
+                        android:textColor="@color/on_surface"
+                        android:textSize="@dimen/text_title_sm"
+                        android:visibility="gone" />
                 </LinearLayout>
 
                 <TextView
@@ -103,7 +115,7 @@
                     android:layout_marginTop="@dimen/space_md"
                     android:gravity="center"
                     android:text="@string/account_synthetic_notice"
-                    android:textColor="@color/on_surface_secondary"
+                    android:textColor="@color/on_surface"
                     android:textSize="@dimen/text_body_sm"
                     android:visibility="gone" />
 
@@ -129,25 +141,11 @@
                         android:layout_height="wrap_content"
                         android:orientation="vertical">
 
-                        <TextView
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:text="@string/account_join_title"
-                            android:textAppearance="@style/TextAppearance.App.Title" />
-
-                        <TextView
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="@dimen/space_xs"
-                            android:text="@string/account_guest_body"
-                            android:textColor="@color/on_surface_secondary"
-                            android:textSize="@dimen/text_body" />
-
                         <LinearLayout
                             android:id="@+id/email_auth_group"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:layout_marginTop="@dimen/space_lg"
+                            android:layout_marginBottom="@dimen/space_md"
                             android:orientation="vertical">
 
                             <TextView
@@ -232,21 +230,11 @@
                                 android:textSize="@dimen/text_body_sm" />
                         </LinearLayout>
 
-                        <TextView
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="@dimen/space_lg"
-                            android:gravity="center"
-                            android:text="@string/account_or_provider"
-                            android:textColor="@color/on_surface_secondary"
-                            android:textSize="@dimen/text_body_sm" />
-
                         <com.google.android.material.button.MaterialButton
                             android:id="@+id/btn_yandex"
                             style="@style/App.Button.Yandex"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:layout_marginTop="@dimen/space_md"
                             android:text="@string/account_continue_yandex"
                             app:icon="@drawable/ic_yandex_id" />
 
@@ -257,7 +245,8 @@
                             android:layout_height="56dp"
                             android:layout_marginTop="@dimen/space_sm"
                             android:enabled="false"
-                            android:text="@string/account_vk_coming_soon"
+                            android:text="@string/account_continue_vk"
+                            android:visibility="gone"
                             app:cornerRadius="28dp" />
 
                         <com.google.android.material.button.MaterialButton
@@ -295,7 +284,7 @@
                             android:layout_height="wrap_content"
                             android:layout_marginTop="@dimen/space_xs"
                             android:text="@string/account_finish_profile_body"
-                            android:textColor="@color/on_surface_secondary"
+                            android:textColor="@color/on_surface"
                             android:textSize="@dimen/text_body" />
 
                         <com.google.android.material.textfield.TextInputLayout
@@ -403,7 +392,7 @@
                                 android:layout_width="match_parent"
                                 android:layout_height="wrap_content"
                                 android:layout_marginTop="@dimen/space_xs"
-                                android:textColor="@color/on_surface_secondary"
+                                android:textColor="@color/on_surface"
                                 tools:text="Yandex ID" />
 
                             <com.google.android.material.button.MaterialButton

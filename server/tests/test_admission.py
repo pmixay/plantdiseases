@@ -108,6 +108,7 @@ def test_busy_rejections_reach_metrics(client, admission, png_bytes):
 def test_no_slot_is_held_while_waiting_on_plantnet(client, admission, png_bytes, route, monkeypatch):
     """The slot covers read/decode/inference only. A slow PlantNet must not
     hold it, or an upstream stall turns into 503s while inference sits idle."""
+    import plantnet
     m = admission
     seen: list[int] = []
 
@@ -121,7 +122,7 @@ def test_no_slot_is_held_while_waiting_on_plantnet(client, admission, png_bytes,
         seen.append(m._inference_inflight)
         return {"available": False, "results": [], "source": "no_api_key"}
 
-    monkeypatch.setattr(m, "identify_species", fake_identify)
+    monkeypatch.setattr(plantnet, "identify_species", fake_identify)
     r = client.post(route, files={"image": ("leaf.png", png_bytes, "image/png")})
     assert r.status_code == 200, r.text
     assert seen == [0]

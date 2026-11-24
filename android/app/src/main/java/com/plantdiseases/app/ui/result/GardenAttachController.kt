@@ -20,6 +20,7 @@ import com.plantdiseases.app.data.model.CarePlanRequest
 import com.plantdiseases.app.data.model.CarePlanResponse
 import com.plantdiseases.app.data.repository.CareRepository
 import com.plantdiseases.app.data.repository.PlantRepository
+import com.plantdiseases.app.data.repository.AssistantRepository
 import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.databinding.ActivityResultBinding
 import com.plantdiseases.app.ui.common.dpx
@@ -42,6 +43,7 @@ class GardenAttachController(
     private val binding: ActivityResultBinding,
     private val plantRepository: PlantRepository,
     private val scanRepository: ScanRepository,
+    private val assistant: AssistantRepository,
     private val careRepository: CareRepository,
     private val reviewManager: InAppReviewManager,
 ) {
@@ -80,7 +82,7 @@ class GardenAttachController(
                 TextView(activity).apply {
                     text = activity.getString(R.string.add_to_garden_hint)
                     textSize = 13f
-                    setTextColor(activity.getColor(R.color.on_surface_secondary))
+                    setTextColor(activity.getColor(R.color.on_surface))
                     setPadding(0, 0, 0, activity.dpx(12))
                 },
             )
@@ -233,12 +235,15 @@ class GardenAttachController(
         val speciesHint = plant.scientificName?.takeIf { it.isNotBlank() }
             ?: plant.commonName?.takeIf { it.isNotBlank() }
             ?: plant.species?.takeIf { it.isNotBlank() }
-        scanRepository.fetchCarePlan(
+        assistant.fetchCarePlan(
             CarePlanRequest(
                 disease = classKey,
                 species = speciesHint,
                 light = "bright_indirect",
                 locale = if (isRu) "ru" else "en",
+                // Background checklist fill: the structured plan is enough,
+                // so it never spends the user's care-plan allowance.
+                purpose = CarePlanRequest.PURPOSE_CHECKLIST,
             )
         ).onSuccess { plan ->
             careRepository.ensureTreatmentPlanForScan(

@@ -55,12 +55,12 @@ class AvatarImageTest {
     @Test
     fun avatarLayouts_haveNoPaddingAndAFullCircleShape() {
         listOf(
-            R.layout.fragment_profile to R.id.iv_profile_avatar,
-            R.layout.activity_account to R.id.iv_avatar,
-        ).forEach { (layout, id) ->
+            Triple(R.layout.fragment_profile, R.id.iv_profile_avatar, 72),
+            Triple(R.layout.activity_account, R.id.iv_avatar, 112),
+        ).forEach { (layout, id, sizeDp) ->
             val (_, avatar) = inflate(layout, id)
             assertNoPadding(avatar)
-            assertCircular(avatar, size = 144.dp().toFloat())
+            assertCircular(avatar, size = sizeDp.dp().toFloat())
             assertThat(avatar.drawable).isInstanceOf(InsetDrawable::class.java)
         }
     }
@@ -76,8 +76,8 @@ class AvatarImageTest {
 
         attachAndLayout(root)
 
-        assertThat(avatar.width).isEqualTo(144.dp())
-        assertThat(avatar.height).isEqualTo(144.dp())
+        assertThat(avatar.width).isEqualTo(72.dp())
+        assertThat(avatar.height).isEqualTo(72.dp())
         assertNoPadding(avatar)
         assertCircular(avatar, size = avatar.width.toFloat())
         assertThat(avatar.imageTintList).isNull()
@@ -114,7 +114,7 @@ class AvatarImageTest {
         val inset = avatar.drawable as InsetDrawable
         val outer = inset.bounds
         val icon = inset.drawable!!.bounds
-        // 25% on each side: the icon fills the middle half, 36dp of 144dp.
+        // 25% on each side: the icon fills the middle half, 18dp of 72dp.
         assertThat(icon.width() * 2).isWithin(2).of(outer.width())
         assertThat(icon.left - outer.left).isWithin(1).of(outer.width() / 4)
     }
