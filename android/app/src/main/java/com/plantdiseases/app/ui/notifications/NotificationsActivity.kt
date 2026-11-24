@@ -10,17 +10,22 @@ import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.updatePadding
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.recyclerview.widget.ItemTouchHelper
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.plantdiseases.app.R
+import com.plantdiseases.app.data.local.AppDatabase
+import com.plantdiseases.app.data.local.changes
 import com.plantdiseases.app.data.repository.ForumNotificationSync
 import com.plantdiseases.app.data.repository.NotificationRepository
 import com.plantdiseases.app.databinding.ActivityNotificationsBinding
 import com.plantdiseases.app.util.LocaleHelper
 import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -45,6 +50,9 @@ class NotificationsActivity : AppCompatActivity() {
     @Inject
     lateinit var forumSync: ForumNotificationSync
 
+    @Inject
+    lateinit var database: AppDatabase
+
     override fun attachBaseContext(newBase: Context) {
         super.attachBaseContext(LocaleHelper.applyLocale(newBase))
     }
@@ -67,10 +75,7 @@ class NotificationsActivity : AppCompatActivity() {
         binding.toolbar.setOnMenuItemClickListener { item ->
             when (item.itemId) {
                 R.id.action_mark_all_read -> {
-                    lifecycleScope.launch {
-                        notificationRepository.markAllRead()
-                        load()
-                    }
+                    lifecycleScope.launch { notificationRepository.markAllRead() }
                     true
                 }
                 R.id.action_clear_all -> {
@@ -92,26 +97,29 @@ class NotificationsActivity : AppCompatActivity() {
         binding.rvNotifications.adapter = adapter
         attachSwipeToDismiss()
 
-        load()
+        // The list follows the notifications table while started: a row
+        // recorded, read, dismissed or cleared anywhere (a push, the Community
+        // sync below, this screen) re-renders it, and coming back re-reads it.
+        // The first emission is the first load.
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                database.changes("notifications").collectLatest { load() }
+            }
+        }
     }
 
     override fun onResume() {
         super.onResume()
-        load()
-        // Community events land in the list as they arrive from the server.
-        lifecycleScope.launch {
-            forumSync.sync()
-            load()
-        }
+        // Community events land in the table as they arrive from the server;
+        // the collector above shows them.
+        lifecycleScope.launch { forumSync.sync() }
     }
 
-    private fun load() {
-        lifecycleScope.launch {
-            val items = notificationRepository.getAll()
-            adapter.submit(items)
-            binding.rvNotifications.visibility = if (items.isEmpty()) View.GONE else View.VISIBLE
-            binding.stateLayout.visibility = if (items.isEmpty()) View.VISIBLE else View.GONE
-        }
+    private suspend fun load() {
+        val items = notificationRepository.getAll()
+        adapter.submit(items)
+        binding.rvNotifications.visibility = if (items.isEmpty()) View.GONE else View.VISIBLE
+        binding.stateLayout.visibility = if (items.isEmpty()) View.VISIBLE else View.GONE
     }
 
     private fun confirmClearAll() {
@@ -120,10 +128,7 @@ class NotificationsActivity : AppCompatActivity() {
             .setMessage(R.string.notifications_clear_confirm_body)
             .setNegativeButton(R.string.cancel, null)
             .setPositiveButton(R.string.notifications_clear_all) { _, _ ->
-                lifecycleScope.launch {
-                    notificationRepository.clearAll()
-                    load()
-                }
+                lifecycleScope.launch { notificationRepository.clearAll() }
             }
             .show()
     }

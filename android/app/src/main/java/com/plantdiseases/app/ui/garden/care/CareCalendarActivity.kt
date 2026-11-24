@@ -13,8 +13,12 @@ import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.updatePadding
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
 import com.plantdiseases.app.R
+import com.plantdiseases.app.data.local.AppDatabase
+import com.plantdiseases.app.data.local.gardenChanges
 import com.plantdiseases.app.data.repository.CareRepository
 import com.plantdiseases.app.databinding.ActivityCareCalendarBinding
 import com.plantdiseases.app.util.CareQueue
@@ -22,6 +26,7 @@ import com.plantdiseases.app.util.Haptics
 import com.plantdiseases.app.util.LocaleHelper
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Calendar
@@ -42,10 +47,12 @@ class CareCalendarActivity : AppCompatActivity() {
     private var calendarView: CareCalendarView? = null
     private var monthCursor: Calendar = Calendar.getInstance()
     private var monthLoadJob: Job? = null
-    private var todayLoadJob: Job? = null
 
     @Inject
     lateinit var careRepository: CareRepository
+
+    @Inject
+    lateinit var database: AppDatabase
 
     override fun attachBaseContext(newBase: Context) {
         super.attachBaseContext(LocaleHelper.applyLocale(newBase))
@@ -71,15 +78,19 @@ class CareCalendarActivity : AppCompatActivity() {
         binding.careCalendarToolbar.setNavigationOnClickListener { finish() }
 
         attachCalendarView()
-    }
-
-    /** Reload on every resume — a task completed in the day view (or a
-     *  reminder fired while this screen was backgrounded) changes the day
-     *  states the grid paints. */
-    override fun onResume() {
-        super.onResume()
-        loadMonth(monthCursor)
-        loadToday()
+        // The grid and the Today card follow the database, like the garden tab:
+        // a task done in the day view, in the garden or from a reminder
+        // notification repaints them, and coming back re-reads them (which also
+        // moves "today" on after midnight). The first emission is the first
+        // load. collectLatest drops a read a newer change made stale.
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                database.gardenChanges().collectLatest {
+                    renderMonth(monthStartOf(monthCursor))
+                    renderToday()
+                }
+            }
+        }
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
@@ -93,7 +104,9 @@ class CareCalendarActivity : AppCompatActivity() {
             onDaySelected = { epochDay -> openDay(CareQueue.dayStartMs(epochDay)) }
             onMonthChanged = { next ->
                 monthCursor = next
-                loadMonth(next)
+                val month = monthStartOf(next)
+                monthLoadJob?.cancel()
+                monthLoadJob = lifecycleScope.launch { renderMonth(month) }
             }
         }
         binding.careCalendarContainer.addView(view)
@@ -101,38 +114,29 @@ class CareCalendarActivity : AppCompatActivity() {
         buildLegend()
     }
 
-    private fun loadMonth(cursor: Calendar) {
-        val requestedMonth = monthStartOf(cursor)
-        monthLoadJob?.cancel()
-        monthLoadJob = lifecycleScope.launch {
-            val monthStart = requestedMonth
-            val monthEnd = (monthStart.clone() as Calendar).apply { add(Calendar.MONTH, 1) }
-            val summary = careRepository.month(
-                monthStart.timeInMillis,
-                monthEnd.timeInMillis,
-                System.currentTimeMillis(),
-            )
-            if (isFinishing || isDestroyed) return@launch
-            // Room queries are cancellable, but this explicit identity check
-            // also protects the final UI write if an old result and a newer
-            // chevron tap cross on the main-thread boundary.
-            if (!sameMonth(monthStart, monthCursor)) return@launch
-            calendarView?.showMonth(monthStart, summary, selectedEpochDay = null)
-        }
+    /** [monthStart] is taken (via [monthStartOf]) when the load is requested,
+     *  not when it runs, so a cursor moved meanwhile cannot change what is read. */
+    private suspend fun renderMonth(monthStart: Calendar) {
+        val monthEnd = (monthStart.clone() as Calendar).apply { add(Calendar.MONTH, 1) }
+        val summary = careRepository.month(
+            monthStart.timeInMillis,
+            monthEnd.timeInMillis,
+            System.currentTimeMillis(),
+        )
+        if (isFinishing || isDestroyed) return
+        // Room queries are cancellable, but this explicit identity check
+        // also protects the final UI write if an old result and a newer
+        // chevron tap cross on the main-thread boundary.
+        if (!sameMonth(monthStart, monthCursor)) return
+        calendarView?.showMonth(monthStart, summary, selectedEpochDay = null)
     }
 
-    private fun loadToday() {
-        todayLoadJob?.cancel()
-        todayLoadJob = lifecycleScope.launch {
-            val nowMs = System.currentTimeMillis()
-            val todayStart = CareQueue.dayStartMs(CareQueue.epochDayOf(nowMs))
-            // This is independent from the visible month. Keeping it in a
-            // separate job means a fast month swipe cannot cancel the initial
-            // Today-card load and leave that card blank.
-            val todayTasks = careRepository.today(nowMs).map { it.task }
-            if (isFinishing || isDestroyed) return@launch
-            renderTodayCard(todayStart, todayTasks)
-        }
+    private suspend fun renderToday() {
+        val nowMs = System.currentTimeMillis()
+        val todayStart = CareQueue.dayStartMs(CareQueue.epochDayOf(nowMs))
+        val todayTasks = careRepository.today(nowMs).map { it.task }
+        if (isFinishing || isDestroyed) return
+        renderTodayCard(todayStart, todayTasks)
     }
 
     /** First day of [cursor]'s month at LOCAL midnight, taken through
