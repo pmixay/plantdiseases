@@ -125,14 +125,14 @@ def test_care_plan_past_quota_drops_only_the_llm_polish(client, m, monkeypatch):
 
 
 def test_species_ai_quota_is_shared_and_graceful(client, m, monkeypatch):
-    import ai_services
+    import species_ai
     llm_calls: list[str] = []
 
     def fake_diseases(name, *, common_name=None, lang="en"):
         llm_calls.append(name)
         return {"available": True, "diseases": []}
 
-    monkeypatch.setattr(ai_services, "species_common_diseases", fake_diseases)
+    monkeypatch.setattr(species_ai, "species_common_diseases", fake_diseases)
     monkeypatch.setattr(m._species_ai_quota, "limit", 1)
 
     ok = client.get("/api/species-diseases", params={"name": "Ficus elastica"})

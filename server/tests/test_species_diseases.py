@@ -14,19 +14,20 @@ import json
 import pytest
 
 import ai_services
+import species_ai
 
 
 @pytest.fixture(autouse=True)
 def _clear_cache(tmp_path, monkeypatch):
-    ai_services._SPECIES_DISEASES_CACHE._d.clear()
+    species_ai._SPECIES_DISEASES_CACHE._d.clear()
     # Isolate the persistent disk layer per test (point it at a tmp dir) so a
     # real result from one test never satisfies another and the repo's
     # ``server/ai_cache/`` stays clean.
     monkeypatch.setattr(
-        ai_services._SPECIES_DISEASES_DISK, "dir", tmp_path / "species_diseases",
+        species_ai._SPECIES_DISEASES_DISK, "dir", tmp_path / "species_diseases",
     )
     yield
-    ai_services._SPECIES_DISEASES_CACHE._d.clear()
+    species_ai._SPECIES_DISEASES_CACHE._d.clear()
 
 
 # ── parser ──────────────────────────────────────────────────────────
@@ -35,7 +36,7 @@ def test_parser_plain_json():
     text = json.dumps({"diseases": [
         {"name": "Powdery mildew", "doc_key": "powdery_mildew", "note": "White dust on leaves; improve airflow."},
     ]})
-    items = ai_services._parse_species_diseases(text)
+    items = species_ai._parse_species_diseases(text)
     assert items == [
         {"name": "Powdery mildew", "doc_key": "powdery_mildew",
          "note": "White dust on leaves; improve airflow."},
@@ -46,7 +47,7 @@ def test_parser_tolerates_code_fence_and_prose():
     text = "Sure! Here it is:\n```json\n" + json.dumps(
         {"diseases": [{"name": "Root rot", "doc_key": None, "note": "Soggy soil."}]}
     ) + "\n```"
-    items = ai_services._parse_species_diseases(text)
+    items = species_ai._parse_species_diseases(text)
     assert len(items) == 1 and items[0]["name"] == "Root rot"
 
 
@@ -57,7 +58,7 @@ def test_parser_drops_unknown_doc_key_and_caps():
         {"name": "L" * 200, "note": "too long a name"},  # dropped (>80)
         {"name": "Long note", "doc_key": "pests", "note": "z" * 500},
     ]})
-    items = ai_services._parse_species_diseases(text)
+    items = species_ai._parse_species_diseases(text)
     assert len(items) == 2
     assert items[0] == {"name": "X", "doc_key": None, "note": "n"}
     assert items[1]["doc_key"] == "pests"
@@ -68,26 +69,26 @@ def test_parser_limits_to_five_items():
     text = json.dumps({"diseases": [
         {"name": f"d{i}", "note": ""} for i in range(9)
     ]})
-    assert len(ai_services._parse_species_diseases(text)) == 5
+    assert len(species_ai._parse_species_diseases(text)) == 5
 
 
 @pytest.mark.parametrize("text", ["", "not json at all", "{}", json.dumps({"diseases": "x"})])
 def test_parser_returns_empty_on_junk(text):
-    assert ai_services._parse_species_diseases(text) == []
+    assert species_ai._parse_species_diseases(text) == []
 
 
 # ── helper: graceful + structured paths ─────────────────────────────
 
 def test_no_api_key_is_graceful(monkeypatch):
     monkeypatch.setattr(ai_services, "OPENROUTER_API_KEY", "")
-    out = ai_services.species_common_diseases("Ficus elastica", lang="en")
+    out = species_ai.species_common_diseases("Ficus elastica", lang="en")
     assert out["available"] is False
     assert out["diseases"] == []
     assert out["source"] == "no_api_key"
 
 
 def test_blank_name_is_graceful():
-    out = ai_services.species_common_diseases("   ", lang="en")
+    out = species_ai.species_common_diseases("   ", lang="en")
     assert out["available"] is False and out["source"] == "no_species"
 
 
@@ -95,9 +96,9 @@ def test_schema_doc_keys_stay_in_step_with_the_guide():
     """doc_key is what makes an item a tappable link into the offline guide.
     The schema's enum and the parser's allow-list are the same vocabulary — if
     they drift, the model is steered towards keys the parser then nulls out."""
-    doc_key = ai_services._SPECIES_DISEASES_SCHEMA["properties"]["diseases"][
+    doc_key = species_ai._SPECIES_DISEASES_SCHEMA["properties"]["diseases"][
         "items"]["properties"]["doc_key"]
-    assert set(doc_key["enum"]) == ai_services._GUIDE_DOC_KEYS
+    assert set(doc_key["enum"]) == species_ai._GUIDE_DOC_KEYS
     # Nullable in the shape strict mode documents: null in `type`, not in the
     # enum. Without it the schema would force a guide key onto a condition the
     # guide doesn't cover.
@@ -128,14 +129,14 @@ def test_structured_success_and_cache(monkeypatch):
 
     monkeypatch.setattr(ai_services, "_call_openrouter", fake_call)
 
-    out = ai_services.species_common_diseases("Ficus elastica", lang="en")
+    out = species_ai.species_common_diseases("Ficus elastica", lang="en")
     assert out["available"] is True
     assert out["species"] == "Ficus elastica"
     assert [d["name"] for d in out["diseases"]] == ["Spider mites", "Edema"]
     assert out["diseases"][0]["doc_key"] == "pests"
 
     # Second call for the same (species, lang) is served from cache (no API hit).
-    cached = ai_services.species_common_diseases("Ficus elastica", lang="en")
+    cached = species_ai.species_common_diseases("Ficus elastica", lang="en")
     assert cached.get("cached") is True
     assert calls["n"] == 1
 
@@ -157,12 +158,12 @@ def test_disk_cache_survives_inmemory_wipe(monkeypatch):
 
     monkeypatch.setattr(ai_services, "_call_openrouter", fake_call)
 
-    first = ai_services.species_common_diseases("Calathea orbifolia", lang="en")
+    first = species_ai.species_common_diseases("Calathea orbifolia", lang="en")
     assert first["available"] is True and calls["n"] == 1
 
     # Simulate a restart: drop the in-memory layer; the disk layer remains.
-    ai_services._SPECIES_DISEASES_CACHE._d.clear()
-    again = ai_services.species_common_diseases("Calathea orbifolia", lang="en")
+    species_ai._SPECIES_DISEASES_CACHE._d.clear()
+    again = species_ai.species_common_diseases("Calathea orbifolia", lang="en")
     assert again["available"] is True
     assert again.get("cached") is True
     assert [d["name"] for d in again["diseases"]] == ["Root rot"]
@@ -206,7 +207,7 @@ def test_api_error_is_graceful(monkeypatch):
         raise RuntimeError("upstream down")
 
     monkeypatch.setattr(ai_services, "_call_openrouter", boom)
-    out = ai_services.species_common_diseases("Monstera deliciosa", lang="en")
+    out = species_ai.species_common_diseases("Monstera deliciosa", lang="en")
     assert out["available"] is False and out["source"] == "api_error"
 
 

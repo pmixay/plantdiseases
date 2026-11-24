@@ -90,6 +90,7 @@ try:
         routes_meta,
         routes_moderation,
         runtime_paths,
+        species_ai,
         species_info,
         synthetic_pipeline,
         telemetry,
@@ -127,6 +128,7 @@ except ImportError:
     import routes_meta
     import routes_moderation
     import runtime_paths
+    import species_ai  # noqa: F401 - the routes reach it as m.species_ai
     import species_info
     import synthetic_pipeline
     import telemetry

@@ -19,10 +19,13 @@ os.environ.pop("PLANTNET_API_KEY", None)
 
 @pytest.fixture(autouse=True)
 def _reset_module_state():
-    """Give each test ai_services as it is straight after import."""
+    """Give each test ai_services, and the feature modules whose answers it
+    exercises through the routes, as they are straight after import."""
     import ai_services as ai
+    import species_ai
 
     module_state.restore(ai)
+    module_state.restore(species_ai)
 
 
 def _mock_openrouter_post(
@@ -359,11 +362,12 @@ def test_call_openrouter_cache_usage_defaults_to_zero(monkeypatch):
 
 def _all_task_blocks(ai):
     import plant_doctor
+    import species_ai
 
     return {
         "doctor": plant_doctor._DOCTOR_TASK,
-        "species_diseases": ai._SPECIES_DISEASES_TASK,
-        "species_profile": ai._SPECIES_PROFILE_TASK,
+        "species_diseases": species_ai._SPECIES_DISEASES_TASK,
+        "species_profile": species_ai._SPECIES_PROFILE_TASK,
         "care_plan_polish": ai._CARE_PLAN_POLISH_TASK,
     }
 
@@ -395,6 +399,7 @@ def test_house_preamble_care_guide_keys_match_the_code():
     filters on. They drift apart silently — the model is simply told about a
     key the parser then drops, or never told about one it could have used."""
     import ai_services as ai
+    import species_ai
 
     section = ai._HOUSE_PREAMBLE.split("## Care-guide keys", 1)[1]
     section = section.split("## Safety and scope", 1)[0]
@@ -406,7 +411,7 @@ def test_house_preamble_care_guide_keys_match_the_code():
         if tokens and all(re.fullmatch(r"[a-z][a-z0-9_]*", t) for t in tokens):
             listed = set(tokens)
             break
-    assert listed == set(ai._GUIDE_DOC_KEYS)
+    assert listed == set(species_ai._GUIDE_DOC_KEYS)
 
 
 def test_prompt_cache_key_is_sent_on_every_call(monkeypatch):

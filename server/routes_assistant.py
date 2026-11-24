@@ -290,7 +290,7 @@ def register(router: APIRouter, m) -> None:
         # part of the shared cache key, so it must not shape the cached answer.
         _ = common
         data = await asyncio.get_running_loop().run_in_executor(
-            m._get_net_executor(), lambda: m.ai_services.species_common_diseases(n, lang=lang),
+            m._get_net_executor(), lambda: m.species_ai.species_common_diseases(n, lang=lang),
         )
         headers = (
             {"Cache-Control": "public, max-age=604800"}
@@ -332,7 +332,7 @@ def register(router: APIRouter, m) -> None:
         # ``common`` is accepted for client compatibility and ignored, as above.
         _ = common
         data = await asyncio.get_running_loop().run_in_executor(
-            m._get_net_executor(), lambda: m.ai_services.species_profile(n, lang=lang),
+            m._get_net_executor(), lambda: m.species_ai.species_profile(n, lang=lang),
         )
         headers = (
             {"Cache-Control": "public, max-age=604800"}
