@@ -54,13 +54,14 @@ import logging
 import math
 import time
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 from PIL import Image
 
 try:
     from .bundle import BundleLoadError, VerifiedBundle, verify_bundle
-    from .classifier import DiseaseClassifier  # type: ignore[import-not-found]
+    from .classifier import DiseaseClassifier
     from .config import get_bool
     from .conformal import ConformalConfig, load_conformal_config, prediction_set
     from .detector import LeafDetector
@@ -372,7 +373,7 @@ def _require_contract_value(contract: dict, dotted: str, expected) -> None:
         )
     elif isinstance(expected, list):
         matches = isinstance(current, list) and len(current) == len(expected)
-        if matches:
+        if isinstance(current, list) and matches:
             for got, wanted in zip(current, expected, strict=True):
                 if isinstance(wanted, (int, float)) and not isinstance(wanted, bool):
                     if (
@@ -498,7 +499,7 @@ def _variance_of_laplacian(img: Image.Image, max_side: int = BLUR_DOWNSCALE) -> 
     scale = max_side / float(max(w, h))
     if scale < 1.0:
         new_size = (max(1, int(w * scale)), max(1, int(h * scale)))
-        scaled = img.resize(new_size, Image.BILINEAR)
+        scaled = img.resize(new_size, Image.Resampling.BILINEAR)
     else:
         scaled = img
     gray = np.asarray(scaled.convert("L"), dtype=np.float32)
@@ -788,7 +789,7 @@ class PlantDiseasePipeline:
         plus empty diagnostics and the explicit abstention fields truthfully
         distinguish a quality rejection from a natural trained-head NAP.
         """
-        final = {
+        final: dict[str, Any] = {
             "class_name": "unknown",
             "confidence": 0.0,
             "all_probs": {},
@@ -1082,7 +1083,7 @@ class PlantDiseasePipeline:
         # plant manifold, the crop is OOD. ``None`` when no bank is shipped.
         ood_score = self._embedding_ood_score(embeddings)
 
-        top1_class = max(mean_probs, key=mean_probs.get)
+        top1_class = max(mean_probs, key=lambda name: mean_probs[name])
         top1_conf = float(mean_probs[top1_class])
 
         # Invariant: do NOT reintroduce a "weak disease → healthy" fallback.
@@ -1372,8 +1373,8 @@ def _fold_votes(
     for probs in member_probs:
         for n, p in probs.items():
             sum_probs[n] = sum_probs.get(n, 0.0) + float(p)
-    n = max(len(member_probs), 1)
-    return {name: total / n for name, total in sum_probs.items()}
+    n_members = max(len(member_probs), 1)
+    return {name: total / n_members for name, total in sum_probs.items()}
 
 
 def compute_severity(

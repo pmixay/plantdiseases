@@ -38,6 +38,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
+from typing import cast
 
 from fastapi import (
     APIRouter,
@@ -49,6 +50,7 @@ from fastapi import (
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.routing import APIRoute
 from fastapi.security import HTTPBearer
 from PIL import Image, ImageOps, UnidentifiedImageError
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -157,7 +159,7 @@ LOG_DIR.mkdir(exist_ok=True)
 
 USE_STRUCTURED_LOGS = config.get("STRUCTURED_LOGS", False, cast=bool)
 if USE_STRUCTURED_LOGS:
-    _log_fmt = JSONFormatter(datefmt="%Y-%m-%d %H:%M:%S")
+    _log_fmt: logging.Formatter = JSONFormatter(datefmt="%Y-%m-%d %H:%M:%S")
 else:
     _log_fmt = logging.Formatter(
         "%(asctime)s [%(levelname)s] %(name)s: %(message)s",
@@ -699,9 +701,9 @@ def _consume_guest_feature(
             stale = [key for key in _guest_feature_receipts if key[0] != day]
             for key in stale:
                 _guest_feature_receipts.pop(key, None)
-            stale_counts = [key for key in _guest_feature_counts if key[0] != day]
-            for key in stale_counts:
-                _guest_feature_counts.pop(key, None)
+            stale_counts = [count_key for count_key in _guest_feature_counts if count_key[0] != day]
+            for count_key in stale_counts:
+                _guest_feature_counts.pop(count_key, None)
             # A same-day botnet must not make idempotency bookkeeping grow
             # without bound. Keep quota counts but stop remembering the oldest
             # logical requests once the hard cap is reached.
@@ -1656,6 +1658,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             # 4. Daily quota still applies to unthrottled keys.
             if (
                 quota_daily > 0
+                and principal_id is not None  # quota_daily is 0 without a key principal
                 and not deferred_metered_key_quota
                 and not _check_and_increment_quota(principal_id, quota_daily)
             ):
@@ -1699,6 +1702,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         # count against the key's daily budget.
         if (
             quota_daily > 0
+            and principal_id is not None  # quota_daily is 0 without a key principal
             and not deferred_metered_key_quota
             and not _check_and_increment_quota(principal_id, quota_daily)
         ):
@@ -2151,7 +2155,7 @@ async def _read_upload(image: UploadFile) -> bytes:
 def _open_image(contents: bytes) -> Image.Image:
     """Decode bytes into a validated, EXIF-normalised RGB PIL image."""
     try:
-        img = Image.open(io.BytesIO(contents))
+        img: Image.Image = Image.open(io.BytesIO(contents))
         # Reject oversized resolutions from the HEADER, before the full
         # decode: Pillow only hard-errors at 2× MAX_IMAGE_PIXELS, so a
         # ~36 MP upload would otherwise fully decode (~150 MB RSS) just
@@ -2292,7 +2296,7 @@ async def _warm_placeholder_images() -> None:
             info = None
             with contextlib.suppress(Exception):
                 info = await loop.run_in_executor(
-                    _get_net_executor(), lambda s=p.scientific, n=lang: species_info.fetch_species_info(s, n),
+                    _get_net_executor(), functools.partial(species_info.fetch_species_info, p.scientific, lang),
                 )
             # Pre-cache the lead photo bytes too, so the very first carousel
             # request serves images instantly from our disk cache.
@@ -2301,12 +2305,12 @@ async def _warm_placeholder_images() -> None:
                 warmed_photos.add(url)
                 with contextlib.suppress(Exception):
                     await loop.run_in_executor(
-                        _get_net_executor(), lambda u=url: plant_photos.get_or_fetch(u),
+                        _get_net_executor(), functools.partial(plant_photos.get_or_fetch, url),
                     )
     for locale in ("en", "ru"):
         with contextlib.suppress(Exception):
             bundle = await loop.run_in_executor(
-                _get_net_executor(), lambda n=locale: popular_bundle.build_popular_bundle(None, None, None, None, n),
+                _get_net_executor(), functools.partial(popular_bundle.build_popular_bundle, None, None, None, None, locale),
             )
             key = popular_bundle.popular_cache_key(None, None, None, locale)
             with _popular_lock:
@@ -2368,7 +2372,7 @@ for _routes in (
     _registered = len(api_router.routes)
     _routes.register(api_router, sys.modules[__name__])
     for _route in api_router.routes[_registered:]:
-        globals()[_route.endpoint.__name__] = _route.endpoint
+        globals()[cast(APIRoute, _route).endpoint.__name__] = cast(APIRoute, _route).endpoint
 
 
 app.include_router(api_router)

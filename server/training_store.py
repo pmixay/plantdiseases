@@ -28,7 +28,7 @@ import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Iterable, Sequence
+from typing import Any, Iterable, Sequence
 
 import numpy as np
 from PIL import Image, ImageFilter, ImageOps, UnidentifiedImageError
@@ -241,6 +241,7 @@ def _top_k(values: Sequence[dict] | Sequence[tuple[str, float]] | None) -> list[
     cleaned: list[dict] = []
     for entry in list(values or [])[:10]:
         try:
+            score: Any
             if isinstance(entry, dict):
                 label = entry.get("class")
                 score = entry.get("confidence", entry.get("score", entry.get("prob")))

@@ -517,6 +517,7 @@ def _download_once(url: str) -> bytes | _Throttled | None:
                         logger.info("Plant photo exceeded cache size limit")
                         return None
                 return bytes(buf)
+        return None  # unreachable: the last iteration always returns above
     except Exception:  # network blip / timeout / HTTP error — all non-fatal
         logger.info("Plant photo fetch failed; card falls back to placeholder")
         return None

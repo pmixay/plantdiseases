@@ -117,7 +117,7 @@ def _webp_variant(
             if scale < 1.0:
                 img = img.resize(
                     (max(1, int(w * scale)), max(1, int(h * scale))),
-                    Image.LANCZOS,
+                    Image.Resampling.LANCZOS,
                 )
             tmp = out.with_suffix(".webp.tmp")
             img.save(tmp, format="WEBP", quality=quality, method=4)

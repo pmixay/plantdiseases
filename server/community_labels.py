@@ -22,11 +22,13 @@ community labels are train-only weak labels until an offline review.
 
 from __future__ import annotations
 
+import sqlite3
 import time
 from collections import defaultdict
+from collections.abc import Callable
 
 try:
-    from . import community, community_forum  # type: ignore[import-not-found]
+    from . import community, community_forum
 except ImportError:
     import community
     import community_forum
@@ -62,7 +64,7 @@ CREATE INDEX IF NOT EXISTS ix_forum_label_votes_actor ON forum_label_votes(actor
 _schema_ready_for: str | None = None
 
 # Set by the achievements module: helper weight (1.0 or TRUSTED_WEIGHT).
-voter_weight = None  # Callable[[sqlite3.Connection, str], float] | None
+voter_weight: Callable[[sqlite3.Connection, str], float] | None = None
 
 
 def init_db() -> None:

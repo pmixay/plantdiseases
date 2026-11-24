@@ -33,9 +33,10 @@ import re
 import sqlite3
 import time
 from collections import defaultdict
+from typing import Any
 
 try:
-    from . import community, community_forum, community_labels  # type: ignore[import-not-found]
+    from . import community, community_forum, community_labels
 except ImportError:
     import community
     import community_forum
@@ -500,7 +501,7 @@ def progress(actor_id: str, *, include_private: bool = False, now: int | None = 
 
 def progress_for_token(author_token: str) -> dict:
     try:
-        from . import community_moderation  # type: ignore[import-not-found]
+        from . import community_moderation
     except ImportError:
         import community_moderation
     actor = community_moderation.actor_for_token(author_token)
@@ -557,7 +558,7 @@ def set_frozen(*, admin_actor_id: str, actor_id: str, frozen: bool, now: int | N
     init_db()
     timestamp = int(time.time() if now is None else now)
     try:
-        from . import community_moderation  # type: ignore[import-not-found]
+        from . import community_moderation
     except ImportError:
         import community_moderation
     with community._write_lock, community._connect() as conn:
@@ -686,7 +687,7 @@ def _voter_weight(conn: sqlite3.Connection, actor: str) -> float:
 
 
 def _on_event(event: str, payload: dict) -> None:
-    targets: list[str] = []
+    targets: list[Any] = []
     if event in {"answer_accepted", "answer_liked", "post_liked", "answer_verified"}:
         targets = [payload.get("author_id")]
     elif event == "post_created":
@@ -707,7 +708,7 @@ def _purge_actor(conn: sqlite3.Connection, actor: str) -> None:
 def install_hooks() -> None:
     """Wire levels into the forum, moderation and label weighting. Idempotent."""
     try:
-        from . import community_moderation  # type: ignore[import-not-found]
+        from . import community_moderation
     except ImportError:
         import community_moderation
     community_forum.can_mark_not_helpful = _level_at_least(2)

@@ -46,13 +46,14 @@ import sqlite3
 import threading
 import time
 import unicodedata
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from pathlib import Path
+from typing import Any
 
 from PIL import Image, ImageOps, UnidentifiedImageError
 
 try:
-    from . import community  # type: ignore[import-not-found]
+    from . import community
 except ImportError:
     import community
 
@@ -301,7 +302,7 @@ _fts_enabled: dict[str, bool] = {}
 
 # Optional hooks set by later phases (levels gate "not helpful"; achievements
 # and moderation observe events). Each is called with plain values only.
-can_mark_not_helpful = None  # Callable[[sqlite3.Connection, str], bool] | None
+can_mark_not_helpful: Callable[[sqlite3.Connection, str], bool] | None = None
 event_listeners: list = []  # Callable[[str, dict], None]
 # Guards run inside the write transaction and raise ForumError to refuse:
 #   write_guards(conn, actor, operation)  operation: "write" | "react"
@@ -945,10 +946,10 @@ def _label_words(label: str | None) -> str:
     words = label.replace("_", " ")
     try:
         try:
-            from .diseases_data import DISEASES_DATABASE  # type: ignore[import-not-found]
+            from .diseases_data import DISEASES_DATABASE
         except ImportError:
             from diseases_data import DISEASES_DATABASE
-        entry = DISEASES_DATABASE.get(label) or {}
+        entry: dict[str, Any] = DISEASES_DATABASE.get(label) or {}
         words = " ".join(
             part for part in (words, entry.get("name_en"), entry.get("name_ru")) if part
         )
@@ -1313,7 +1314,8 @@ def create_post(
                 # verdict shown on the post is about the photo people see.
                 if not any(row[4] == scan_ref for row in attached):
                     raise ForumError("scan_photo_required")
-                _insert_ai_answer(conn, post_id, ai[0], timestamp)
+                if ai is not None:  # always true when scan_ref is set
+                    _insert_ai_answer(conn, post_id, ai[0], timestamp)
             if kind_value in {"question", "recovery"} and not attached and not body_value:
                 raise ForumError("body_or_photo_required")
             _reindex(conn, post_id)
@@ -1484,9 +1486,9 @@ def edit_post(
             if space is not None:
                 updates["space"] = _require_space(conn, space)
             if species is not None:
-                value = clean_text(species, limit=SPECIES_MAX, multiline=False) or None
-                updates["species"] = value
-                updates["species_key"] = value.lower() if value else None
+                species_value = clean_text(species, limit=SPECIES_MAX, multiline=False) or None
+                updates["species"] = species_value
+                updates["species_key"] = species_value.lower() if species_value else None
             if condition is not None:
                 updates["condition"] = _clean_label(condition)
             if urgent is not None:

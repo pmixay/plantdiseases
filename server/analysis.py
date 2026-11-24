@@ -15,6 +15,7 @@ import io
 import logging
 import time
 import uuid
+from typing import Any
 
 from fastapi import BackgroundTasks, HTTPException, Request, UploadFile
 from fastapi.responses import JSONResponse
@@ -338,7 +339,7 @@ async def species_identify_best_effort(
         else None
     )
     if not raw or not raw.get("available"):
-        unavailable = {
+        unavailable: dict[str, Any] = {
             "available": False,
             "source": raw.get("source", "unavailable") if raw else "unavailable",
             "best": None,
