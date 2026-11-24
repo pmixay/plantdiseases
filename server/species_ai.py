@@ -16,8 +16,8 @@ import re
 from typing import Any
 
 try:
-    from . import ai_services  # type: ignore[import-not-found]
-    from .config import get_int, get_str  # type: ignore[import-not-found]
+    from . import ai_services
+    from .config import get_int, get_str
 except ImportError:
     import ai_services
     from config import get_int, get_str

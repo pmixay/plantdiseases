@@ -52,21 +52,21 @@ warn_unused_ignores = true
 warn_redundant_casts = true
 warn_unused_configs = true
 
-# re-enable after the ai_services/community split
+# re-enable after the community split
 [[tool.mypy.overrides]]
-module = ["server.ai_services", "server.community"]
+module = ["server.community"]
 ignore_errors = true
 
 # The flat fallback spelling (`import config`) does not resolve when mypy runs on
 # the `server.*` package. Per-module only; never a global ignore_missing_imports.
 [[tool.mypy.overrides]]
-module = ["account_auth", "account_entitlements", "account_internal", "account_roles", "ai_services", "analysis", "analysis_payload", "app_version", "beta_runtime", "bundle", "care_plan_content", "classifier", "community", "community_achievements", "community_forum", "community_geo", "community_http", "community_labels", "community_moderation", "config", "conformal", "countries", "deps", "detector", "diseases_data", "feedback_labels", "main", "ood", "pipeline", "plant_photos", "plantnet_budget", "popular_bundle", "popular_plants", "progression", "routes_assistant", "routes_community", "routes_content", "routes_diagnosis", "routes_forum", "routes_internal", "routes_meta", "routes_moderation", "runtime_paths", "species_info", "sqlite_store", "symptoms", "synthetic_pipeline", "telemetry", "text_style", "training_store", "wikimedia_http"]
+module = ["account_auth", "account_entitlements", "account_internal", "account_roles", "ai_services", "analysis", "analysis_payload", "app_version", "beta_runtime", "bundle", "care_plan", "care_plan_content", "classifier", "community", "community_achievements", "community_forum", "community_geo", "community_http", "community_labels", "community_moderation", "config", "conformal", "countries", "deps", "detector", "diseases_data", "feedback_labels", "main", "ood", "pipeline", "plant_doctor", "plant_photos", "plantnet", "plantnet_budget", "popular_bundle", "popular_plants", "progression", "routes_assistant", "routes_community", "routes_content", "routes_diagnosis", "routes_forum", "routes_internal", "routes_meta", "routes_moderation", "runtime_paths", "species_ai", "species_info", "sqlite_store", "symptoms", "synthetic_pipeline", "telemetry", "text_style", "training_store", "wikimedia_http"]
 ignore_missing_imports = true
 
 # The `except ImportError` fallback re-imports the same names, which mypy reports
 # as no-redef in each module that has one.
 [[tool.mypy.overrides]]
-module = ["server.account_entitlements", "server.account_roles", "server.analysis", "server.analysis_payload", "server.classifier", "server.community_achievements", "server.community_forum", "server.community_geo", "server.community_labels", "server.community_moderation", "server.detector", "server.feedback_labels", "server.main", "server.pipeline", "server.plant_photos", "server.plantnet_budget", "server.popular_bundle", "server.routes_assistant", "server.routes_community", "server.routes_content", "server.routes_diagnosis", "server.routes_forum", "server.routes_internal", "server.routes_meta", "server.routes_moderation", "server.species_info", "server.telemetry", "server.training_store", "server.wikimedia_http"]
+module = ["server.account_entitlements", "server.ai_services", "server.account_roles", "server.analysis", "server.analysis_payload", "server.care_plan", "server.classifier", "server.community_achievements", "server.community_forum", "server.community_geo", "server.community_labels", "server.community_moderation", "server.detector", "server.feedback_labels", "server.main", "server.pipeline", "server.plant_doctor", "server.plant_photos", "server.plantnet", "server.plantnet_budget", "server.popular_bundle", "server.routes_assistant", "server.routes_community", "server.routes_content", "server.routes_diagnosis", "server.routes_forum", "server.routes_internal", "server.routes_meta", "server.routes_moderation", "server.species_ai", "server.species_info", "server.telemetry", "server.training_store", "server.wikimedia_http"]
 disable_error_code = ["no-redef"]
 
 # No type information shipped.

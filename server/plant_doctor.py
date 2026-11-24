@@ -12,10 +12,11 @@ import logging
 import re
 import threading
 import time
+from typing import Any
 
 try:
-    from . import ai_services  # type: ignore[import-not-found]
-    from .config import get_int  # type: ignore[import-not-found]
+    from . import ai_services
+    from .config import get_int
 except ImportError:
     import ai_services
     from config import get_int
@@ -161,8 +162,9 @@ def _sanitize_diagnosis_context(ctx: dict) -> dict:
     if severity not in ("low", "medium", "high"):
         severity = None
 
+    raw_conf: Any = ctx.get("confidence")
     try:
-        conf = float(ctx.get("confidence"))
+        conf = float(raw_conf)
         conf = round(max(0.0, min(1.0, conf)), 4)
     except (TypeError, ValueError):
         conf = None

@@ -13,11 +13,12 @@ import logging
 import re
 import threading
 import uuid
+from typing import Any
 
 try:
-    from . import ai_services  # type: ignore[import-not-found]
-    from .config import get_float, get_int, get_secret, get_str  # type: ignore[import-not-found]
-    from .plantnet_budget import (  # type: ignore[import-not-found]
+    from . import ai_services
+    from .config import get_float, get_int, get_secret, get_str
+    from .plantnet_budget import (
         PlantNetBudgetDecision,
         PlantNetBudgetUnavailable,
         plantnet_budget_client,
@@ -197,7 +198,7 @@ def identify_species(
         # inside the loop and never retry; any other error breaks out to the
         # graceful degraded result below.
         attempts = max(1, PLANTNET_ATTEMPTS)
-        payload = None
+        payload: Any = None
         for attempt in range(attempts):
             if plantnet_budget_client is None:
                 _record_plantnet_metric("budget_unavailable_total")

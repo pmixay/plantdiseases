@@ -16,8 +16,8 @@ import re
 import threading
 
 try:
-    from . import ai_services  # type: ignore[import-not-found]
-    from .care_plan_content import (  # type: ignore[import-not-found]
+    from . import ai_services
+    from .care_plan_content import (
         _BASE_CARE,
         _BASE_CARE_TEXT_RU,
         _CHECKPOINT_TEXT,
@@ -28,8 +28,8 @@ try:
         _SUMMARY_COPY,
         _VALID_LIGHT_TIERS,
     )
-    from .config import get_int, get_str  # type: ignore[import-not-found]
-    from .diseases_data import (  # type: ignore[import-not-found]
+    from .config import get_int, get_str
+    from .diseases_data import (
         TREATMENT_CONDITIONS,
         TREATMENT_PRODUCTS,
     )

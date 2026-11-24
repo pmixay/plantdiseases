@@ -35,14 +35,14 @@ from pathlib import Path
 from typing import Any
 
 try:
-    from .config import (  # type: ignore[import-not-found]
+    from .config import (
         get_bool,
         get_float,
         get_int,
         get_secret,
         get_str,
     )
-    from .text_style import plain_punctuation_deep  # type: ignore[import-not-found]
+    from .text_style import plain_punctuation_deep
 except ImportError:
     from config import get_bool, get_float, get_int, get_secret, get_str
     from text_style import plain_punctuation_deep
@@ -728,7 +728,7 @@ def _call_openrouter(
         messages.append({"role": "system", "content": system_text})
     messages.extend(history)
 
-    payload = {
+    payload: dict[str, Any] = {
         "model": OPENROUTER_MODEL,
         "max_tokens": max_tokens or CHAT_MAX_TOKENS,
         "messages": messages,
