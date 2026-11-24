@@ -32,6 +32,10 @@ class TableChangesTest {
         db = Room.inMemoryDatabaseBuilder(ctx, AppDatabase::class.java)
             .allowMainThreadQueries()
             .build()
+        // Open the database before the flow is collected. Otherwise the first
+        // emission waits for the open, the schema and Room's tracker set-up, and
+        // on a loaded CI runner (parallel forks) that alone can pass the timeout.
+        check(db.openHelper.writableDatabase.isOpen)
     }
 
     @After
@@ -65,7 +69,9 @@ class TableChangesTest {
     }
 
     private companion object {
-        const val TIMEOUT_MS = 5_000L
+        // Only reached when an emission is missing; generous so a slow runner
+        // is not read as a missed write.
+        const val TIMEOUT_MS = 15_000L
         const val QUIET_MS = 500L
     }
 }

@@ -22,7 +22,7 @@ as last recorded. Line counts are approximate; re-measure before acting on one.
 | **Model** | 2.7.5 deployed (dataset v8). Weak spot: scorch read as healthy. A statistical tie with 2.7.2 on the shared holdout. |
 | **Accounts backend** | Live on the production VDS under `/id/`; real Yandex flow and deletion verified; privacy policy served at `/privacy.html`; a Telegram alert watches for stuck deletions. No backup job (owner's decision). |
 | **Data** | v8 is the corpus. v9 collection, locked test set T and OOD benchmark v3 are specified; none started. |
-| **Code / CI** | All work since 2026-11-19 is on `ccr-333aa3d6-u20r4l`; `main` has not moved since. The server job gates on ruff, mypy (every server module) and pytest; every app response is checked against the app's own models (`tests/app_contract.py`). The Android job has one flaky test (P5). |
+| **Code / CI** | All work since 2026-11-19 is on `ccr-333aa3d6-u20r4l`; `main` has not moved since. The server job gates on ruff, mypy (every server module) and pytest; every app response is checked against the app's own models (`tests/app_contract.py`). |
 
 ---
 
@@ -167,12 +167,6 @@ Each item is its own PR; don't fold one into another.
       comment) under a threshold of 1200; LongMethod is 210 over
       `ResultActivity.displayResult`'s 197. Re-measure with detekt in CI before
       lowering either.
-- [ ] **Flaky `TableChangesTest`.** `gardenChangesFollowGardenWritesOnly` timed out
-      once in CI (run 1121, `testReleaseUnitTest`) on code that passed before: a
-      write can land before Room has installed its change triggers. The four
-      live-screen tests use the same signal, so a fix belongs in the shared test
-      setup.
-
 ---
 
 ## P6 — Documentation
