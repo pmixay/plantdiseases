@@ -82,6 +82,7 @@ try:
         plantnet,
         popular_bundle,
         popular_plants,
+        progression,
         routes_assistant,
         routes_community,
         routes_content,
@@ -121,6 +122,7 @@ except ImportError:
     import plantnet
     import popular_bundle
     import popular_plants
+    import progression  # noqa: F401 - the routes reach it as m.progression
     import routes_assistant
     import routes_community
     import routes_content

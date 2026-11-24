@@ -47,14 +47,6 @@ except ImportError:
     from config import get_bool, get_float, get_int, get_secret, get_str
     from text_style import plain_punctuation_deep
 
-try:
-    from .progression import (  # type: ignore[import-not-found]  # noqa: F401 - re-exported
-        compare_progression,
-        compare_progression_history,
-    )
-except ImportError:
-    from progression import compare_progression, compare_progression_history  # noqa: F401
-
 logger = logging.getLogger(__name__)
 
 # ── Configuration (config.json + env fallback) ──────────────────────
