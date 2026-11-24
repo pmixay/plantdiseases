@@ -630,7 +630,7 @@ def register(router: APIRouter, m) -> None:
     async def community_scan_thumb(filename: str, request: Request):
         """Serve a community thumbnail by filename.
 
-        The corpus only ever stores filenames that ``community._save_thumbnail``
+        The corpus only ever stores filenames that ``community_scans._save_thumbnail``
         minted, but we still hard-guard against path traversal: any
         filename containing ``/`` or ``..`` is refused outright. Missing
         files return 404 instead of 500.

@@ -78,6 +78,10 @@ pytest tests/test_endpoints.py::test_name -q   # single test
   endpoint gets a `ROUTES` entry; the DTOs are read from `android/` at test time.
 - Run as a flat package from `server/` (`uvicorn main:app`); `main.py` resolves imports
   both flat and as `server.*` via try/except.
+- mypy checks the `server.*` spelling of every module. A new top-level module goes
+  into two lists in `server/pyproject.toml`'s `[tool.mypy]` overrides: the flat
+  fallback names (`ignore_missing_imports`) and, if it has the try/except import
+  fallback, the `no-redef` list. Its `from .x import` lines need no `type: ignore`.
 
 ### Account server (`account-server/`, tests live in `server/tests/account/`)
 ```bash

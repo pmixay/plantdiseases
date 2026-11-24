@@ -22,7 +22,7 @@ as last recorded. Line counts are approximate; re-measure before acting on one.
 | **Model** | 2.7.5 deployed (dataset v8). Weak spot: scorch read as healthy. A statistical tie with 2.7.2 on the shared holdout. |
 | **Accounts backend** | Live on the production VDS under `/id/`; real Yandex flow and deletion verified; privacy policy served at `/privacy.html`; a Telegram alert watches for stuck deletions. No backup job (owner's decision). |
 | **Data** | v8 is the corpus. v9 collection, locked test set T and OOD benchmark v3 are specified; none started. |
-| **Code / CI** | `ccr-333aa3d6-u20r4l` is 73 commits ahead of `main` (`main` last moved 2026-11-19); CI green on its head (run 1120, 2026-11-24). Tests and CI have nothing open: no test reloads a module, and every app response is checked against the app's own models (`tests/app_contract.py`). |
+| **Code / CI** | All work since 2026-11-19 is on `ccr-333aa3d6-u20r4l`; `main` has not moved since. The server job gates on ruff, mypy (every server module) and pytest; every app response is checked against the app's own models (`tests/app_contract.py`). The Android job has one flaky test (P5). |
 
 ---
 
@@ -53,7 +53,10 @@ without data. Specified in `DATASET_LABELING_PLAN.md`.
       manifest contract (a compliant v9 under the same handle is picked up
       automatically).
 - [ ] ★ **OOD benchmark v3**: 8–12 species plus a non-plant arm (the non-plant arm
-      needs no plants; do it first). Building it needs the P2 tool fixes.
+      needs no plants; do it first). The tool is ready: declare the sources in a
+      `--config sources.json` for `tools/build_ood_benchmark.py` (layout, class map,
+      arms, rights), and §6 scores the negative arms. Put the benchmark's slug in
+      §2's `KAGGLE_BENCHMARK_SLUGS`, not `KAGGLE_DENY_SLUGS` (§6 downloads it).
       `REQUIRE_OOD_BENCHMARK` stays `False` until it exists.
 - [ ] ★ **Augmentation ablation on Colab at `SEED=0`** (ready to run now). One `'off'`
       run (§4 `TRAIN_AUGMENTATION`; geometry only, profile
@@ -85,11 +88,19 @@ without data. Specified in `DATASET_LABELING_PLAN.md`.
       the labels that exist (model verdict, user feedback, community consensus) as
       hints rather than ground truth, capture-family ids so related photos stay in
       one split, and today's de-identification and metadata stripping.
-- [ ] **OOD benchmark v3 tool gaps** (blocks building v3). `build_ood_benchmark.py`
-      has one hard-coded source and layout, a two-entry `CONDITION_MAP` (`healthy`,
-      `scorch`) with no `not_a_plant`, and writes `manifest.csv` where §6 reads
-      `manifest_arms.csv`. Full list in `DATASET_LABELING_PLAN.md`. Also untested:
-      `build_ood_benchmark.report()` beyond one synthetic test.
+- [ ] **Check that capture-family detection catches rotated copies.** In a
+      synthetic run of `build_ood_benchmark.py` a 90-degree rotated copy of an image
+      stayed its own family under SIFT/RANSAC. The matcher is unchanged and the
+      cause is not known; measure it on real photos before v3's families are
+      trusted, since a missed duplicate leaks across the split.
+- [ ] **Abstention reasons in `paired_eval`'s `preds.json`.** It writes `-1` for any
+      abstention, so `build_ood_benchmark --report` cannot tell an OOD-gate
+      rejection from a blur-gate one and counts both as a rejection.
+- [ ] **OOD benchmark v3 follow-ups that block nothing yet** (details in
+      `DATASET_LABELING_PLAN.md`): per-row rights for internet sources (a rights
+      record is per source today; the non-plant arm doesn't need it), and per-arm
+      floors, since `OOD_ARM_FLOORS` is keyed by species and scorch-only (decide when
+      `REQUIRE_OOD_BENCHMARK` returns).
 
 ---
 
@@ -140,27 +151,27 @@ Each item is its own PR; don't fold one into another.
       charset validator in `CommunityScanRequest` and `..128` with no charset in
       `CommunityViewRequest`; `scan_ids` items are unbounded. Standardise on the
       looser bound (the Android client mints these ids).
-- [ ] **Split `ai_services.py` (~2,890 lines) and `community.py` (~3,000).** What is
-      left in `ai_services` is transport plus four features whose names ~100 test
-      patches target; moving a feature means moving its patches to the new module in
-      the same commit.
-- [ ] **Type-check the annotations**: no mypy/pyright config, not in CI.
+- [ ] **`community_authors.py` is dead code.** `touch_author` and `lookup_author`
+      have no callers; the split moved them rather than change behaviour. Remove
+      them, or wire them if the durable forum identity is still meant to use them.
 
 **Android**
 
-- [ ] **Replace programmatic view construction.** `DetailExtraCardsController`
-      (~1,330 lines) and `CarePlanCardView` (~1,180) build hierarchies in code with
-      hardcoded dp and colours; `DetailUiKit.baseCard()` has three call sites.
-- [ ] **Live Room reads on the remaining screens.** Room detail, the care calendar,
-      the gallery and the notifications list still re-read local data in `onResume`;
-      one screen per PR, using `AppDatabase.changes(...)` as the garden tab does.
-      Plant detail stays reload-on-resume: it rebuilds its whole tab hierarchy per
-      load, so a live re-render would reset scroll and expanded cards mid-use. The 17
-      `launch(start = UNDISPATCHED)` sites are writes that must finish if the screen
-      closes, not reloads; they stay.
-- [ ] **Ratchet detekt down** as splits land (`android/config/detekt/detekt.yml`:
-      LargeClass 1200 over `DetailExtraCardsController`'s 1103-line body, LongMethod
-      210 over `ResultActivity.displayResult`'s 197).
+- [ ] ★ **Check the XML-converted cards on a phone.** The plant-detail extra cards
+      and the care-plan card were rebuilt from XML layouts without a device. Look
+      for: 12sp captions now bold (they were regular), the "Not now" borderless
+      button's padding, icon tints, the climate-chip gaps and the health-card heart.
+- [ ] **Ratchet detekt down** (`android/config/detekt/detekt.yml`). The XML
+      conversions shrank `DetailExtraCardsController` to ~760 body lines, so the
+      worst LargeClass is now `auth/AuthRepository` (1098 by the config's own
+      comment) under a threshold of 1200; LongMethod is 210 over
+      `ResultActivity.displayResult`'s 197. Re-measure with detekt in CI before
+      lowering either.
+- [ ] **Flaky `TableChangesTest`.** `gardenChangesFollowGardenWritesOnly` timed out
+      once in CI (run 1121, `testReleaseUnitTest`) on code that passed before: a
+      write can land before Room has installed its change triggers. The four
+      live-screen tests use the same signal, so a fix belongs in the shared test
+      setup.
 
 ---
 

@@ -1317,7 +1317,7 @@
     "/api/community/thumb/{filename}": {
       "get": {
         "summary": "Community Scan Thumb",
-        "description": "Serve a community thumbnail by filename.\n\nThe corpus only ever stores filenames that ``community._save_thumbnail``\nminted, but we still hard-guard against path traversal: any\nfilename containing ``/`` or ``..`` is refused outright. Missing\nfiles return 404 instead of 500.",
+        "description": "Serve a community thumbnail by filename.\n\nThe corpus only ever stores filenames that ``community_scans._save_thumbnail``\nminted, but we still hard-guard against path traversal: any\nfilename containing ``/`` or ``..`` is refused outright. Missing\nfiles return 404 instead of 500.",
         "operationId": "community_scan_thumb_api_community_thumb__filename__get",
         "parameters": [
           {
