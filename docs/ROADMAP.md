@@ -212,9 +212,6 @@ Each item is its own PR; don't fold one into another.
 - [ ] **Retire Gson** — still live for Room field JSON, `ResponseCache`, intent
       payloads. Keeps ~390 mirrored `@SerializedName`, the `KSerializer<JsonObject>`
       bridge and the Gson ProGuard rules alive. M/L effort.
-- [ ] **The remaining bilingual Kotlin content.** The guide is in string
-      resources now and `StringParityTest` guards EN/RU parity, but ~32
-      `isRussian(` branches remain (e.g. `OfflineScanContent`'s offline cards).
 - [ ] **DAOs returning `Flow`.** Screens re-read on resume, which is the root
       of the 17 `launch(start = UNDISPATCHED)` sites. One screen per PR. Done:
       the unread-notification count (Home's bell and the Home tab's dot) and
@@ -293,6 +290,11 @@ None blocks a release.
 - **Scans by area are for community members** (owner's decision, 2026-11-22).
   Joining means location access plus sharing; there is no separate sharing switch.
   Worldwide popular counts everyone with consent, anonymously, location or not.
+- **Bilingual data stays in Kotlin where both languages are needed at once**
+  (2026-11-24): offline scan cards, disease names and the species catalog are
+  saved with each scan in EN and RU from plain-JVM code. `BilingualTablesTest`
+  guards them; on-screen text goes to string resources (`StringParityTest`).
+  The remaining `isRussian(` calls pick server or stored EN/RU fields.
 - **No Compose rewrite, single `:app` module.**
 - **Stay free and honest.** Calibrated, OOD-aware, offline-capable, privacy-first.
   Diagnosis and Community reading need no account; Community writes need a verified
