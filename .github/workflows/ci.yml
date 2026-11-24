@@ -318,17 +318,18 @@ jobs:
             sha256sum "$apk"
           done
 
-      # The signed release APK. An APK is already a zip, hence the light
-      # compression level.
+      # The signed release APK, uploaded as the bare file (archive: false), so
+      # the download is app-release.apk itself and installs straight from a
+      # phone. Wrapped in a zip it had to be unpacked first, which some phone
+      # file managers could not do. An unzipped artifact holds exactly one
+      # file and takes the file's name.
       - name: Upload signed APK (release)
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: app-release-apk
-          path: |
-            android/app/build/outputs/apk/release/*.apk
+          path: android/app/build/outputs/apk/release/app-release.apk
+          archive: false
           if-no-files-found: error
           retention-days: 7
-          compression-level: 3
 
   server:
     name: Server + account tests & lint (py3.14)

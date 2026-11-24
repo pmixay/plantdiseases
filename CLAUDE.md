@@ -97,7 +97,7 @@ cd server && pytest tests/account -q          # account tests; also part of the 
 ```
 - `assembleRelease` is CI-only for agents. The CI android job signs the release and
   APK with the permanent key from repository secrets, checks the certificate
-  and uploads them as the `app-release-apk` artifact (`DEPLOYMENT.md` §8).
+  and uploads the APK unzipped as the `app-release.apk` artifact (`DEPLOYMENT.md` §8).
 - Every build targets the production server (URLs fixed in `app/build.gradle.kts`);
   there is no staging variant. Only a local mock-stack build overrides them, as above.
   `connectedDebugAndroidTest` needs a device and CI never runs it.

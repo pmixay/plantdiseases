@@ -547,7 +547,7 @@ run only their own build-identity test.
 with the signing secrets from §8.1 as environment of that one step. The job then
 runs `apksigner verify --print-certs` on the APK, fails unless the certificate
 is the permanent one, prints its SHA-256 and uploads it as the
-`app-release-apk` artifact (kept 7 days). The identity unit tests pin package,
+`app-release.apk` artifact (the bare APK, not a zip; kept 7 days). The identity unit tests pin package,
 versionCode and the production endpoints. To ship, take the artifact from the
 green run of the exact commit and keep its SHA-256 with the release record.
 
@@ -602,7 +602,7 @@ where the app was installed *from* RuStore, not from a sideloaded build.
       200 with `available:false`.
 - [ ] End-to-end: `curl -F "image=@leaf.jpg" https://…/api/analyze` returns a
       bilingual diagnosis (HTTP 200).
-- [ ] The shipped APK is the `app-release-apk` artifact of a green CI run (§8.3).
+- [ ] The shipped APK is the `app-release.apk` artifact of a green CI run (§8.3).
       Release builds are HTTPS-only — `res/xml/network_security_config.xml` permits no
       cleartext; the `10.0.2.2`/`localhost` exemption lives only in
       `src/debug/`.
