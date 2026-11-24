@@ -71,6 +71,7 @@ try:
         beta_runtime,
         community,
         community_achievements,
+        community_feeds,  # noqa: F401  (routes reach it as m.community_feeds)
         community_forum,
         community_labels,
         config,
@@ -105,6 +106,7 @@ except ImportError:
     import beta_runtime
     import community
     import community_achievements
+    import community_feeds  # noqa: F401
     import community_forum
     import community_labels
     import config

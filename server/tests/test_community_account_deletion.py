@@ -11,6 +11,8 @@ from contextlib import closing
 import pytest
 from PIL import Image
 
+import community_feeds
+
 
 def _thumbnail_bytes() -> bytes:
     encoded = io.BytesIO()
@@ -74,7 +76,7 @@ def test_tombstone_hides_immediately_then_retryable_cleanup_removes_actor_data(
 
     assert community.request_actor_deletion(owner)
 
-    visible = community.nearby_scans(country="GB", scope="country")
+    visible = community_feeds.nearby_scans(country="GB", scope="country")
     assert [row["scan_id"] for row in visible] == ["keep-legacy-scan"]
     assert not community.thumbnail_is_visible(thumbnail)
     assert community.view_count_for("keep-legacy-scan") == 0
@@ -138,7 +140,7 @@ def test_thumbnail_failure_keeps_rows_hidden_and_schedules_bounded_retry(
     monkeypatch.setattr(type(community.COMMUNITY_THUMB_DIR), "unlink", fail_unlink)
     result = community.process_cleanup_jobs(now=1_000)
     assert result == {"completed": 0, "retried": 1}
-    assert community.nearby_scans(country="GB", scope="country") == []
+    assert community_feeds.nearby_scans(country="GB", scope="country") == []
     with closing(sqlite3.connect(community.COMMUNITY_DB_PATH)) as connection, connection:
         state, attempts, next_attempt, code = connection.execute(
             "SELECT state, attempt_count, next_attempt_at, last_error_code "
@@ -316,7 +318,7 @@ def test_replaying_the_deletion_repairs_a_community_store_restored_from_an_older
     # The account is deleted after the backup was taken.
     assert community.request_actor_deletion(owner)
     assert community.process_cleanup_jobs()["completed"] == 1
-    assert community.nearby_scans(country="GB", scope="country") == []
+    assert community_feeds.nearby_scans(country="GB", scope="country") == []
 
     # Disaster recovery restores the older community database.
     for suffix in ("-wal", "-shm"):
@@ -334,7 +336,7 @@ def test_replaying_the_deletion_repairs_a_community_store_restored_from_an_older
     assert community.request_actor_deletion(owner)
     assert community.process_cleanup_jobs()["completed"] == 1
 
-    assert community.nearby_scans(country="GB", scope="country") == []
+    assert community_feeds.nearby_scans(country="GB", scope="country") == []
     with closing(sqlite3.connect(community.COMMUNITY_DB_PATH)) as connection:
         assert connection.execute(
             "SELECT COUNT(*) FROM community_scans WHERE account_actor_id = ?", (owner,)

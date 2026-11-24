@@ -391,7 +391,7 @@ def register(router: APIRouter, m) -> None:
             )
         principal = await m._optional_account(request)
         try:
-            recommendation_cursor = m.community.decode_recommendation_cursor(cursor)
+            recommendation_cursor = m.community_feeds.decode_recommendation_cursor(cursor)
         except ValueError as exc:
             raise HTTPException(status_code=422, detail="Invalid community cursor.") from exc
         if ranking_norm == "recent" and recommendation_cursor is not None \
@@ -422,7 +422,7 @@ def register(router: APIRouter, m) -> None:
         if ranking_norm == "recommended":
             rows = await loop.run_in_executor(
                 None,
-                lambda: m.community.recommended_scans(
+                lambda: m.community_feeds.recommended_scans(
                     country=country_norm,
                     lat=geo["lat"] if nearby else None,
                     lon=geo["lon"] if nearby else None,
@@ -436,7 +436,7 @@ def register(router: APIRouter, m) -> None:
         else:
             rows = await loop.run_in_executor(
                 None,
-                lambda: m.community.nearby_scans(
+                lambda: m.community_feeds.nearby_scans(
                     country=country_norm,
                     lat=geo["lat"] if nearby else None,
                     lon=geo["lon"] if nearby else None,
@@ -456,7 +456,7 @@ def register(router: APIRouter, m) -> None:
         next_cursor = None
         if rows and len(rows) >= effective_limit:
             last = rows[-1]
-            next_cursor = m.community.encode_recommendation_cursor(
+            next_cursor = m.community_feeds.encode_recommendation_cursor(
                 int(last.get("_cursor_score", 0)),
                 int(last["created_at"]),
                 int(last["_cursor_row_id"]),
@@ -467,7 +467,7 @@ def register(router: APIRouter, m) -> None:
         # surface the scan they just uploaded.
         summary = await loop.run_in_executor(
             None,
-            lambda: m.community.region_summary(
+            lambda: m.community_feeds.region_summary(
                 country_norm or "",
                 None,
                 exclude_account_actor_id=principal.actor_id if principal else None,
@@ -541,7 +541,7 @@ def register(router: APIRouter, m) -> None:
         loop = asyncio.get_running_loop()
         data = await loop.run_in_executor(
             None,
-            lambda: m.community.map_scans(
+            lambda: m.community_feeds.map_scans(
                 lo_lat, hi_lat, lo_lon, hi_lon,
                 disease=(disease or None),
                 days=days,
@@ -575,7 +575,7 @@ def register(router: APIRouter, m) -> None:
         lo_lat, lo_lon, hi_lat, hi_lon = box
         data = await asyncio.get_running_loop().run_in_executor(
             None,
-            lambda: m.community.density_grid(
+            lambda: m.community_feeds.density_grid(
                 lo_lat, hi_lat, lo_lon, hi_lon,
                 disease=(disease or None),
                 days=days,
@@ -607,7 +607,7 @@ def register(router: APIRouter, m) -> None:
         loop = asyncio.get_running_loop()
         rows = await loop.run_in_executor(
             None,
-            lambda: m.community.scans_by_species(
+            lambda: m.community_feeds.scans_by_species(
                 sci,
                 limit=max(1, min(int(limit), 50)),
                 exclude_account_actor_id=principal.actor_id if principal else None,

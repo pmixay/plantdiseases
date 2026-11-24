@@ -14,6 +14,7 @@ from contextlib import closing
 
 import pytest
 
+import community_feeds
 from server.tests.conftest import _test_access_token
 
 
@@ -1598,7 +1599,7 @@ def test_legacy_rows_backfilled_with_public_id_and_thumb_rename(community_store,
     comm.init_db()
     token = comm.public_scan_token("legacyscan01")
     assert comm.resolve_scan_token(token) == "legacyscan01"
-    rows = comm.nearby_scans(country="FR")
+    rows = community_feeds.nearby_scans(country="FR")
     assert rows[0]["public_id"] == token
     assert rows[0]["thumb_path"] == f"{token}_abc.jpg"
     assert (tmp_path / "thumbs" / f"{token}_abc.jpg").exists()

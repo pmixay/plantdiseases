@@ -12,6 +12,7 @@ from contextlib import closing
 
 import pytest
 
+import community_feeds
 from server.tests.conftest import _test_access_token
 
 
@@ -113,10 +114,10 @@ def test_block_is_mutual_filters_all_personalized_reads_and_can_be_undone(
         target_id=blocked_post,
     )["created"] is False
 
-    blocker_feed = community.nearby_scans(
+    blocker_feed = community_feeds.nearby_scans(
         country="RU", scope="country", viewer_account_actor_id=blocker
     )
-    blocked_feed = community.nearby_scans(
+    blocked_feed = community_feeds.nearby_scans(
         country="RU", scope="country", viewer_account_actor_id=blocked
     )
     assert "blocked-scan" not in {row["scan_id"] for row in blocker_feed}
@@ -125,13 +126,13 @@ def test_block_is_mutual_filters_all_personalized_reads_and_can_be_undone(
 
     assert "blocked-scan" not in {
         row["scan_id"]
-        for row in community.scans_by_species(
+        for row in community_feeds.scans_by_species(
             "Ficus elastica", viewer_account_actor_id=blocker
         )
     }
     map_ids = {
         row["scan_id"]
-        for row in community.map_scans(
+        for row in community_feeds.map_scans(
             55.0,
             56.0,
             37.0,
@@ -140,7 +141,7 @@ def test_block_is_mutual_filters_all_personalized_reads_and_can_be_undone(
         )["items"]
     }
     assert "blocked-scan" not in map_ids
-    assert community.region_summary(
+    assert community_feeds.region_summary(
         "RU", viewer_account_actor_id=blocker
     )["total"] == 2
 
@@ -156,7 +157,7 @@ def test_block_is_mutual_filters_all_personalized_reads_and_can_be_undone(
     assert community.unblock_actor(blocker, result["block_id"]) is True
     assert "blocked-scan" in {
         row["scan_id"]
-        for row in community.nearby_scans(
+        for row in community_feeds.nearby_scans(
             country="RU", scope="country", viewer_account_actor_id=blocker
         )
     }
@@ -371,11 +372,11 @@ def test_species_scans_come_nearest_first_with_distance(safety_store):
             nickname="Fern",
         )
 
-    anchored = community.scans_by_species("Ficus elastica", country="RU", lat=55.75, lon=37.62)
+    anchored = community_feeds.scans_by_species("Ficus elastica", country="RU", lat=55.75, lon=37.62)
     assert [row["scan_id"] for row in anchored] == ["near-scan", "country-scan", "far-scan"]
     assert anchored[0]["distance_km"] is not None and anchored[0]["distance_km"] < 5
     assert all("lat" not in row and "lon" not in row for row in anchored)
 
-    unanchored = community.scans_by_species("Ficus elastica")
+    unanchored = community_feeds.scans_by_species("Ficus elastica")
     assert {row["scan_id"] for row in unanchored} == set(places)
     assert all(row["distance_km"] is None for row in unanchored)

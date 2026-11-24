@@ -7,6 +7,8 @@ import time
 import uuid
 from contextlib import closing
 
+import community_feeds
+
 _OLD_OPINION_SCHEMA = """
 CREATE TABLE community_opinions (
     id INTEGER PRIMARY KEY AUTOINCREMENT, scan_id TEXT NOT NULL,
@@ -166,7 +168,7 @@ def test_init_db_drops_the_old_scan_likes_and_keeps_the_scans(community_store):
         assert not {n for n in _names(conn, "index") if "like" in n}
     assert community.scan_exists("liked-scan")
     assert community.view_counts(["liked-scan"]) == {"liked-scan": 1}
-    (item,) = community.nearby_scans(country="GB", scope="country")
+    (item,) = community_feeds.nearby_scans(country="GB", scope="country")
     assert not {"nickname", "author_token", "like_count", "liked_by_me"} & item.keys()
 
 

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import community_feeds
+
 
 def test_security_headers_present(client):
     r = client.get("/api/health")
@@ -70,13 +72,12 @@ def test_health_capabilities_not_rate_limited(rate_limited_client):
 def test_public_community_reads_ignore_credentials_but_writes_validate_jwt(
     client, monkeypatch,
 ):
-    import community
     import main as server_main
 
     monkeypatch.setattr(server_main, "REQUIRE_API_KEY", True)
     monkeypatch.setattr(server_main, "API_KEYS", {})
     monkeypatch.setattr(
-        community, "density_grid", lambda *_args, **_kwargs: {"cells": []}
+        community_feeds, "density_grid", lambda *_args, **_kwargs: {"cells": []}
     )
     assert server_main._is_public_community_read(
         "GET", "/api/community/thumb/example.webp"

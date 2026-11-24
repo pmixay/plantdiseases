@@ -12,6 +12,8 @@ import time
 
 import pytest
 
+import community_feeds
+
 
 @pytest.fixture
 def mapenv(community_http_store):
@@ -32,7 +34,7 @@ def test_map_scans_bbox_filters_and_keeps_coords(mapenv):
     comm = mapenv
     _scan(comm, "inbox0000001", 52.23, 21.01)
     _scan(comm, "outbox000001", 10.0, 10.0)  # outside the bbox
-    res = comm.map_scans(52.0, 52.5, 20.5, 21.5)
+    res = community_feeds.map_scans(52.0, 52.5, 20.5, 21.5)
     assert {it["scan_id"] for it in res["items"]} == {"inbox0000001"}
     item = res["items"][0]
     # The map KEEPS coords (the feed strips them to distance_km).
@@ -44,7 +46,7 @@ def test_map_scans_excludes_not_a_plant(mapenv):
     comm = mapenv
     _scan(comm, "plantrow0001", 52.23, 21.01, disease="leaf_spot")
     _scan(comm, "notplant0001", 52.24, 21.02, disease="not_a_plant")
-    ids = {it["scan_id"] for it in comm.map_scans(52.0, 52.5, 20.5, 21.5)["items"]}
+    ids = {it["scan_id"] for it in community_feeds.map_scans(52.0, 52.5, 20.5, 21.5)["items"]}
     assert ids == {"plantrow0001"}
 
 
@@ -54,7 +56,7 @@ def test_map_scans_disease_filter(mapenv):
     _scan(comm, "pmrow0000001", 52.24, 21.02, disease="powdery_mildew")
     ids = {
         it["scan_id"]
-        for it in comm.map_scans(52.0, 52.5, 20.5, 21.5, disease="leaf_spot")["items"]
+        for it in community_feeds.map_scans(52.0, 52.5, 20.5, 21.5, disease="leaf_spot")["items"]
     }
     assert ids == {"lsrow0000001"}
 
@@ -63,7 +65,7 @@ def test_map_scans_truncated_flag(mapenv):
     comm = mapenv
     for i in range(5):
         _scan(comm, f"trunc{i:07d}", 52.20 + i * 0.001, 21.0)
-    res = comm.map_scans(52.0, 52.5, 20.5, 21.5, limit=3)
+    res = community_feeds.map_scans(52.0, 52.5, 20.5, 21.5, limit=3)
     assert len(res["items"]) == 3
     assert res["truncated"] is True
 
@@ -78,7 +80,7 @@ def test_map_scans_time_window(mapenv):
             "UPDATE community_scans SET created_at = ? WHERE scan_id = ?",
             (old, "stalerow0001"),
         )
-    ids = {it["scan_id"] for it in comm.map_scans(52.0, 52.5, 20.5, 21.5, days=30)["items"]}
+    ids = {it["scan_id"] for it in community_feeds.map_scans(52.0, 52.5, 20.5, 21.5, days=30)["items"]}
     assert ids == {"freshrow0001"}
 
 
@@ -114,10 +116,10 @@ def test_density_k_anonymity(mapenv):
     # Two scans in one ~5 km cell → dropped (k=3).
     _scan(comm, "kc1aaaaaaaa1", 52.231, 21.011)
     _scan(comm, "kc2aaaaaaaa2", 52.234, 21.013)
-    assert comm.density_grid(52.0, 52.5, 20.5, 21.5)["cells"] == []
+    assert community_feeds.density_grid(52.0, 52.5, 20.5, 21.5)["cells"] == []
     # A third in the same cell clears k → the cell appears with its count.
     _scan(comm, "kc3aaaaaaaa3", 52.236, 21.012)
-    res = comm.density_grid(52.0, 52.5, 20.5, 21.5)
+    res = community_feeds.density_grid(52.0, 52.5, 20.5, 21.5)
     assert len(res["cells"]) == 1
     assert res["cells"][0]["count"] == 3
     assert res["max_count"] == 3
@@ -129,7 +131,7 @@ def test_density_excludes_not_a_plant(mapenv):
     comm = mapenv
     for i in range(3):
         _scan(comm, f"napcell{i:05d}", 52.231 + i * 0.001, 21.011, disease="not_a_plant")
-    assert comm.density_grid(52.0, 52.5, 20.5, 21.5)["cells"] == []
+    assert community_feeds.density_grid(52.0, 52.5, 20.5, 21.5)["cells"] == []
 
 
 def test_density_disease_filter(mapenv):
@@ -139,13 +141,13 @@ def test_density_disease_filter(mapenv):
     for i in range(3):
         _scan(comm, f"pmcell{i:06d}", 52.231 + i * 0.001, 21.011, disease="powdery_mildew")
     # All 6 share a cell → unfiltered count 6; leaf_spot-only count 3.
-    assert comm.density_grid(52.0, 52.5, 20.5, 21.5)["cells"][0]["count"] == 6
-    only_ls = comm.density_grid(52.0, 52.5, 20.5, 21.5, disease="leaf_spot")
+    assert community_feeds.density_grid(52.0, 52.5, 20.5, 21.5)["cells"][0]["count"] == 6
+    only_ls = community_feeds.density_grid(52.0, 52.5, 20.5, 21.5, disease="leaf_spot")
     assert only_ls["cells"][0]["count"] == 3
 
 
 def test_density_empty_bbox(mapenv):
-    res = mapenv.density_grid(0.0, 1.0, 0.0, 1.0)
+    res = community_feeds.density_grid(0.0, 1.0, 0.0, 1.0)
     assert res["cells"] == [] and res["max_count"] == 0 and res["total"] == 0
 
 

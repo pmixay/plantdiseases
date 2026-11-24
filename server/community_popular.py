@@ -10,10 +10,11 @@ from __future__ import annotations
 import time
 
 try:
-    from . import community  # type: ignore[import-not-found]
+    from . import community, community_feeds  # type: ignore[import-not-found]
     from .countries import to_iso_alpha2  # type: ignore[import-not-found]
 except ImportError:
     import community
+    import community_feeds
     from countries import to_iso_alpha2
 
 
@@ -29,7 +30,7 @@ def record_anonymous_scan(species: str | None, disease: str, *, day: int | None 
     where it was taken. Hidden classes (``not_a_plant``) are not counted.
     """
     disease = (disease or "").strip()
-    if not disease or disease in community._HIDDEN_COMMUNITY_DISEASES:
+    if not disease or disease in community_feeds._HIDDEN_COMMUNITY_DISEASES:
         return
     name = " ".join((species or "").split())[:_ANON_SPECIES_MAX]
     day = int(time.time()) // 86_400 if day is None else day
@@ -92,7 +93,7 @@ def popular_snapshot(
     *,
     lat: float | None = None,
     lon: float | None = None,
-    radius_km: float = community.NEARBY_RADIUS_KM,
+    radius_km: float = community_feeds.NEARBY_RADIUS_KM,
     limit: int = 10,
 ) -> dict:
     """Live popular species + diseases for one scope.
@@ -111,32 +112,32 @@ def popular_snapshot(
     where = ""
     params: tuple = ()
     if lat is not None and lon is not None:
-        min_lat, max_lat, min_lon, max_lon = community._bbox(lat, lon, radius_km)
+        min_lat, max_lat, min_lon, max_lon = community_feeds._bbox(lat, lon, radius_km)
         where = " AND lat BETWEEN ? AND ? AND lon BETWEEN ? AND ?"
         params = (min_lat, max_lat, min_lon, max_lon)
     elif country_clean:
         where = " AND country = ?"
         params = (country_clean,)
-    hidden_clause = community._hidden_clause()
+    hidden_clause = community_feeds._hidden_clause()
     with community._connect() as conn:
         # where/hidden_clause use fixed predicates and allowlisted identifiers.
         total = int(conn.execute(
             "SELECT COUNT(*) FROM community_scans WHERE 1=1"  # nosec B608
             + where + hidden_clause,
-            (*params, *community._HIDDEN_COMMUNITY_DISEASES),
+            (*params, *community_feeds._HIDDEN_COMMUNITY_DISEASES),
         ).fetchone()[0])
         species_rows = conn.execute(
             "SELECT MAX(species) AS sp, COUNT(*) AS n FROM community_scans "  # nosec B608
             "WHERE species_lower IS NOT NULL AND species_lower != ''"
             + where + hidden_clause
             + " GROUP BY species_lower ORDER BY n DESC LIMIT ?",
-            (*params, *community._HIDDEN_COMMUNITY_DISEASES, limit),
+            (*params, *community_feeds._HIDDEN_COMMUNITY_DISEASES, limit),
         ).fetchall()
         disease_rows = conn.execute(
             "SELECT disease, COUNT(*) AS n FROM community_scans "  # nosec B608
             "WHERE 1=1" + where + hidden_clause
             + " GROUP BY disease ORDER BY n DESC LIMIT ?",
-            (*params, *community._HIDDEN_COMMUNITY_DISEASES, limit),
+            (*params, *community_feeds._HIDDEN_COMMUNITY_DISEASES, limit),
         ).fetchall()
 
     def pct(n: int) -> int:
