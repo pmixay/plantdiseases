@@ -48,8 +48,8 @@ import uuid
 from pathlib import Path
 
 try:
-    from . import sqlite_store  # type: ignore[import-not-found]
-    from .config import get_str  # type: ignore[import-not-found]
+    from . import sqlite_store
+    from .config import get_str
     from .countries import to_iso_alpha2
 except ImportError:
     import sqlite_store
@@ -400,7 +400,7 @@ def _blocked_actor_clause(
     viewer_account_actor_id: str | None,
     *,
     actor_column: str = "account_actor_id",
-) -> tuple[str, tuple[str, str]]:
+) -> tuple[str, tuple[str, ...]]:
     """SQL predicate hiding either side of a block relationship.
 
     Blocking is deliberately mutual for visibility and interaction: the

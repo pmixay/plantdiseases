@@ -21,8 +21,8 @@ import time
 from PIL import Image, ImageOps, UnidentifiedImageError
 
 try:
-    from . import community  # type: ignore[import-not-found]
-    from .countries import to_iso_alpha2  # type: ignore[import-not-found]
+    from . import community
+    from .countries import to_iso_alpha2
 except ImportError:
     import community
     from countries import to_iso_alpha2
@@ -136,13 +136,6 @@ def is_analysis_token_issued(token: str) -> bool:
         ).fetchone() is not None
 
 
-# Matches the client's own CommunityUploader.makeThumbnail (THUMB_LONG_EDGE /
-# THUMB_QUALITY) — an honest client already produces exactly this; only a
-# modified client sending something larger or EXIF-laden gets clamped.
-_THUMB_LONG_EDGE = 512
-_THUMB_QUALITY = 78
-
-
 def _save_thumbnail(scan_id: str, image_bytes: bytes) -> str | None:
     """Decode and persist a fresh, metadata-free 512px RGB JPEG."""
     if not image_bytes:
@@ -184,30 +177,6 @@ def _save_thumbnail(scan_id: str, image_bytes: bytes) -> str | None:
     body = encoded.getvalue()
     if len(body) > COMMUNITY_MAX_THUMB_BYTES:
         return None
-    try:
-        img = Image.open(io.BytesIO(image_bytes))
-        img.load()
-        # Orientation tag applied BEFORE convert("RGB"), which drops EXIF —
-        # same order main.py's _open_image uses, for the same reason: skip
-        # this and a portrait phone photo decodes sideways.
-        img = ImageOps.exif_transpose(img).convert("RGB")
-    except Image.DecompressionBombError:
-        logger.info("Community thumb rejected (decompression bomb): scan_id=%s", scan_id[:16])
-        return None
-    except UnidentifiedImageError:
-        logger.info("Community thumb rejected (not a decodable image): scan_id=%s", scan_id[:16])
-        return None
-    except Exception as exc:  # noqa: BLE001 — any decode failure is a rejection, not a 500
-        logger.info("Community thumb rejected (decode error: %s): scan_id=%s", exc, scan_id[:16])
-        return None
-    # ``info`` carries a JPEG COM comment through convert(), and Pillow would
-    # write it back; drop every upload-side metadata field before saving.
-    img.info = {}
-    if max(img.size) > _THUMB_LONG_EDGE:
-        img.thumbnail((_THUMB_LONG_EDGE, _THUMB_LONG_EDGE), Image.LANCZOS)
-    buf = io.BytesIO()
-    img.save(buf, format="JPEG", quality=_THUMB_QUALITY)  # no exif= => stripped
-    encoded = buf.getvalue()
     # Hash-prefix the filename so two scans with the same scan_id (a
     # mis-behaved client) can't collide. Truncate to 24 hex chars —
     # plenty of collision resistance for this bounded corpus.

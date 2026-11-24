@@ -16,7 +16,7 @@ import uuid
 from pathlib import Path
 
 try:
-    from . import community  # type: ignore[import-not-found]
+    from . import community
 except ImportError:
     import community
 

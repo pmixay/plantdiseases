@@ -15,7 +15,7 @@ import time
 import uuid
 
 try:
-    from . import community  # type: ignore[import-not-found]
+    from . import community
 except ImportError:
     import community
 

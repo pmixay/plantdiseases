@@ -18,9 +18,9 @@ import math
 import time
 
 try:
-    from . import community  # type: ignore[import-not-found]
-    from .config import get_str  # type: ignore[import-not-found]
-    from .countries import to_iso_alpha2  # type: ignore[import-not-found]
+    from . import community
+    from .config import get_str
+    from .countries import to_iso_alpha2
 except ImportError:
     import community
     from config import get_str
@@ -191,12 +191,15 @@ def scans_by_species(
         extra_params.extend(_HIDDEN_COMMUNITY_DISEASES)
 
     has_coords = lat is not None and lon is not None
+    # Typed views of the coordinates, read only when has_coords is true.
+    lat_v: float = lat if lat is not None else 0.0
+    lon_v: float = lon if lon is not None else 0.0
     # Geo passes, nearest first; the last one has no geo predicate at all.
     passes: list[tuple[str, list, bool]] = []
     if has_coords:
         passes.append((
             " AND lat BETWEEN ? AND ? AND lon BETWEEN ? AND ?",
-            list(_bbox(lat, lon, radius_km)), True,
+            list(_bbox(lat_v, lon_v, radius_km)), True,
         ))
     if country:
         passes.append((" AND country = ?", [country], False))
@@ -224,7 +227,7 @@ def scans_by_species(
                 row = _row_to_dict(raw)
                 if refine and (
                     row["lat"] is None or row["lon"] is None
-                    or community._haversine_km(lat, lon, row["lat"], row["lon"]) > radius_km
+                    or community._haversine_km(lat_v, lon_v, row["lat"], row["lon"]) > radius_km
                 ):
                     continue
                 if row["scan_id"] in seen:
@@ -236,7 +239,7 @@ def scans_by_species(
     for row in out:
         rlat, rlon = row.pop("lat", None), row.pop("lon", None)
         row["distance_km"] = (
-            round(community._haversine_km(lat, lon, rlat, rlon), 1)
+            round(community._haversine_km(lat_v, lon_v, rlat, rlon), 1)
             if has_coords and rlat is not None and rlon is not None
             else None
         )
@@ -274,15 +277,18 @@ def recommended_scans(
         scope_norm = "nearby"
     limit = max(1, min(int(limit), 100))
     has_coords = lat is not None and lon is not None
+    # Typed views of the coordinates, read only when has_coords is true.
+    lat_v: float = lat if lat is not None else 0.0
+    lon_v: float = lon if lon is not None else 0.0
 
     where = ["1=1"]
     params: list = []
     if scope_norm == "nearby" and has_coords:
-        min_lat, max_lat, min_lon, max_lon = _bbox(float(lat), float(lon), radius_km)
+        min_lat, max_lat, min_lon, max_lon = _bbox(float(lat_v), float(lon_v), radius_km)
         where.append("s.lat BETWEEN ? AND ? AND s.lon BETWEEN ? AND ?")
         params.extend((min_lat, max_lat, min_lon, max_lon))
         where.append("community_distance_km(?, ?, s.lat, s.lon) <= ?")
-        params.extend((float(lat), float(lon), float(radius_km)))
+        params.extend((float(lat_v), float(lon_v), float(radius_km)))
     elif scope_norm in {"nearby", "country"} and country_norm:
         where.append("s.country = ?")
         params.append(country_norm)
@@ -375,7 +381,7 @@ def recommended_scans(
         row["_cursor_row_id"] = row_id
         rlat, rlon = row.get("lat"), row.get("lon")
         row["distance_km"] = (
-            round(community._haversine_km(float(lat), float(lon), rlat, rlon), 1)
+            round(community._haversine_km(float(lat_v), float(lon_v), rlat, rlon), 1)
             if has_coords and rlat is not None and rlon is not None
             else None
         )
@@ -429,6 +435,9 @@ def nearby_scans(
         country = to_iso_alpha2(country)
     limit = max(1, min(int(limit), 100))
     has_coords = lat is not None and lon is not None
+    # Typed views of the coordinates, read only when has_coords is true.
+    lat_v: float = lat if lat is not None else 0.0
+    lon_v: float = lon if lon is not None else 0.0
     scope = (scope or "nearby").strip().lower()
     if scope not in ("nearby", "country", "worldwide"):
         scope = "nearby"
@@ -467,7 +476,7 @@ def nearby_scans(
             geo_scopes.append(("", [], False))
         else:
             if nearby and has_coords:
-                min_lat, max_lat, min_lon, max_lon = _bbox(lat, lon, radius_km)
+                min_lat, max_lat, min_lon, max_lon = _bbox(lat_v, lon_v, radius_km)
                 geo_scopes.append((
                     " AND lat BETWEEN ? AND ? AND lon BETWEEN ? AND ?",
                     [min_lat, max_lat, min_lon, max_lon], True,
@@ -502,7 +511,7 @@ def nearby_scans(
                 rows = [
                     r for r in rows
                     if r["lat"] is not None and r["lon"] is not None
-                    and community._haversine_km(lat, lon, r["lat"], r["lon"]) <= radius_km
+                    and community._haversine_km(lat_v, lon_v, r["lat"], r["lon"]) <= radius_km
                 ]
             for row in rows:
                 if row["scan_id"] in seen:
@@ -528,7 +537,7 @@ def nearby_scans(
         for row in result:
             rlat, rlon = row.get("lat"), row.get("lon")
             if has_coords and rlat is not None and rlon is not None:
-                row["distance_km"] = round(community._haversine_km(lat, lon, rlat, rlon), 1)
+                row["distance_km"] = round(community._haversine_km(lat_v, lon_v, rlat, rlon), 1)
             else:
                 row["distance_km"] = None
             row.pop("lat", None)

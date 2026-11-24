@@ -10,8 +10,8 @@ from __future__ import annotations
 import time
 
 try:
-    from . import community, community_feeds  # type: ignore[import-not-found]
-    from .countries import to_iso_alpha2  # type: ignore[import-not-found]
+    from . import community, community_feeds
+    from .countries import to_iso_alpha2
 except ImportError:
     import community
     import community_feeds
