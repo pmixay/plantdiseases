@@ -19,6 +19,7 @@ import org.robolectric.annotation.Config
 @Config(sdk = [33], application = Application::class)
 class ResponseCacheTest {
 
+    @kotlinx.serialization.Serializable
     data class Box(val v: Int)
 
     private val context: Context get() = ApplicationProvider.getApplicationContext()
@@ -30,13 +31,13 @@ class ResponseCacheTest {
 
     @Test
     fun peek_returnsNull_onMiss() {
-        assertThat(ResponseCache.peek("missing-key", Box::class.java)).isNull()
+        assertThat(ResponseCache.peek<Box>("missing-key")).isNull()
     }
 
     @Test
     fun peek_freshWithinTtl() {
         ResponseCache.put("k-fresh", Box(7), ttlMs = 60_000)
-        val hit = ResponseCache.peek("k-fresh", Box::class.java)
+        val hit = ResponseCache.peek<Box>("k-fresh")
         assertThat(hit).isNotNull()
         assertThat(hit!!.value).isEqualTo(Box(7))
         assertThat(hit.fresh).isTrue()
@@ -48,7 +49,7 @@ class ResponseCacheTest {
         // value (so the UI paints) with fresh=false (so the caller refetches).
         ResponseCache.put("k-stale", Box(3), ttlMs = 1)
         Thread.sleep(5)
-        val hit = ResponseCache.peek("k-stale", Box::class.java)
+        val hit = ResponseCache.peek<Box>("k-stale")
         assertThat(hit).isNotNull()
         assertThat(hit!!.value).isEqualTo(Box(3))
         assertThat(hit.fresh).isFalse()
@@ -60,7 +61,7 @@ class ResponseCacheTest {
         // reads keep working until a fresh fetch overwrites it.
         ResponseCache.put("k-keep", Box(9), ttlMs = 1)
         Thread.sleep(5)
-        ResponseCache.peek("k-keep", Box::class.java)
-        assertThat(ResponseCache.peek("k-keep", Box::class.java)).isNotNull()
+        ResponseCache.peek<Box>("k-keep")
+        assertThat(ResponseCache.peek<Box>("k-keep")).isNotNull()
     }
 }

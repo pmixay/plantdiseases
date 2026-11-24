@@ -62,11 +62,11 @@ class AssistantRepository(
             val checklist = request.purpose == CarePlanRequest.PURPOSE_CHECKLIST
             val cacheKey = if (checklist) "$planKey|checklist" else planKey
             com.plantdiseases.app.util.ResponseCache
-                .get(planKey, CarePlanResponse::class.java)
+                .get<CarePlanResponse>(planKey)
                 ?.let { return@withContext Result.success(it) }
             if (checklist) {
                 com.plantdiseases.app.util.ResponseCache
-                    .get(cacheKey, CarePlanResponse::class.java)
+                    .get<CarePlanResponse>(cacheKey)
                     ?.let { return@withContext Result.success(it) }
             }
             try {

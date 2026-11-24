@@ -201,6 +201,29 @@ class ScanRepositoryTest {
     }
 
     @Test
+    fun readsRoomFieldsWrittenByTheGsonEraApp() {
+        // Exactly what Gson stored before the switch to kotlinx: nulls left
+        // out, the box label under "class", floats as plain numbers.
+        val regions = repo.parseRegions(
+            """[{"x":1,"y":2,"width":30,"height":40,"class":"leaf","confidence":0.9},{"x":5,"y":6,"width":7,"height":8}]""",
+        )
+        assertThat(regions).containsExactly(
+            DetectionRegion(1, 2, 30, 40, "leaf", 0.9f),
+            DetectionRegion(5, 6, 7, 8),
+        ).inOrder()
+        assertThat(repo.parseAllProbs("""{"healthy":0.12,"leaf_spot":0.88}"""))
+            .containsExactly("healthy", 0.12f, "leaf_spot", 0.88f)
+        assertThat(repo.parseStringList("""["Remove spotted leaves","Water at the base"]"""))
+            .containsExactly("Remove spotted leaves", "Water at the base").inOrder()
+        assertThat(repo.parseWarnings("""["abstained","abstention_reason:ood"]"""))
+            .containsExactly("abstained", "abstention_reason:ood").inOrder()
+        // Damaged or absent JSON degrades to empty, as before.
+        assertThat(repo.parseRegions("not json")).isEmpty()
+        assertThat(repo.parseAllProbs(null)).isEmpty()
+        assertThat(repo.parseStringList("null")).isEmpty()
+    }
+
+    @Test
     fun feedbackReceiptIsStoredByLocalRowAndConsumedOnce() = runBlocking {
         repo.saveScan(
             "/p.jpg",

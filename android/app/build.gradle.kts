@@ -559,8 +559,8 @@ dependencies {
     ksp("androidx.room:room-compiler:$roomVersion")
 
     // OkHttp — the engine the Ktor client runs on (shared RetryInterceptor).
-    // Retrofit/converter-gson were removed once the last endpoint
-    // moved to the Ktor client; Gson itself stays for Room field + cache JSON.
+    // Retrofit and Gson are gone: the Ktor client and kotlinx.serialization
+    // (util/AppJson for Room field + cache JSON) cover all JSON.
     // OkHttp 5 keeps the OkHttpClient/Interceptor API this project uses, and
     // com.squareup.okhttp3:mockwebserver still ships the legacy
     // okhttp3.mockwebserver package, so the network tests below are unchanged.
@@ -620,9 +620,6 @@ dependencies {
     // retired billingClient API. Its public Product.amountLabel is the sole
     // source of displayed subscription prices.
     implementation("ru.rustore.sdk:pay:11.1.0")
-
-    // Gson
-    implementation("com.google.code.gson:gson:2.14.0")
 
     // Glide for images. On 5.x — the app only uses the plain
     // Glide.with(...).load(...) surface (no @GlideModule / generated GlideApp),

@@ -345,7 +345,7 @@ class HomeFragment : Fragment() {
             // (even if its 2-min TTL lapsed) so the main screen never blanks on
             // a slow connection, then refresh in the background only when stale.
             val cached = com.plantdiseases.app.util.ResponseCache
-                .peek(cacheKey, PopularResponse::class.java)
+                .peek<PopularResponse>(cacheKey)
             cached?.let {
                 val b = _binding ?: return@launch
                 renderSpecies(b, it.value)

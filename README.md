@@ -121,7 +121,7 @@ that gap is a data problem first, so that is what the roadmap's critical path ta
 | 🔴 **Critical path** | Collect **v9 data** — 400 early-stage scorch families with boxes · carve the locked test set **T_v1** from 80 export rows · build **OOD benchmark v3** |
 | 🟠 **Model checks** | 2.7.5 is **not** significantly better than 2.7.2 on the shared holdout (paired bootstrap, 2026-10-27) · ablate the augmentation profile |
 | 🟡 **Hardening** | Likes and views still accept a key-less pseudo-id · Aqua has no classifier-side OOD signal |
-| 🔵 **Refactors** | Break up `ai_services.py` and `community.py` · retire Gson · type-check the server |
+| 🔵 **Refactors** | Split `ai_services.py` and `community.py` further · type-check the server |
 
 Full list, rationale and the "settled — do not retry" table: [`docs/ROADMAP.md`](docs/ROADMAP.md).
 

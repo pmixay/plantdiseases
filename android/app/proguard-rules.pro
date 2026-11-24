@@ -10,38 +10,17 @@
 # are already kept by the com.plantdiseases.app.data.model.** rule below.)
 -dontwarn org.slf4j.**
 
-# Gson (Room field / cache JSON) + kotlinx.serialization models.
-#
-# AGP 8 runs R8 in "full mode", which is more aggressive than the legacy
-# ProGuard-compat mode: it strips generic signatures, enum metadata and
-# annotation attributes unless they are explicitly kept. Gson reads all
-# three reflectively (Signature for List<T>/Map<K,V> field generics,
-# EnumConstantName + the enum's values() for @SerializedName-less enums,
-# and the @SerializedName annotations themselves), so pin them here.
+# kotlinx.serialization models (wire, Room field JSON and the response cache).
+# The library ships its own R8 rules for generated serializers; the models are
+# also kept whole, and annotations and generic signatures stay, so full-mode
+# R8 (AGP 8+) cannot strip what reflection-free serializers still reference.
 -keepattributes *Annotation*
 -keepattributes Signature, InnerClasses, EnumConstantName, AnnotationDefault
 -keepattributes RuntimeVisibleAnnotations, RuntimeVisibleParameterAnnotations
--keep class com.google.gson.stream.** { *; }
 -keep class com.plantdiseases.app.data.model.** { *; }
--keep class com.google.gson.reflect.TypeToken { *; }
-# The `{ <init>(); }` member spec is load-bearing under AGP 9: R8's
-# strictFullModeForKeepRules defaults to true there, and a bare `-keep class`
-# with no member spec no longer implies the default constructor. Gson
-# instantiates these anonymous TypeToken subclasses reflectively, so without
-# it the constructor is stripped and every generic decode fails — in the
-# minified release build only, which is the worst place to find out.
--keep class * extends com.google.gson.reflect.TypeToken { <init>(); }
 
-# Belt-and-suspenders for any @SerializedName field on a model that R8 might
-# otherwise rename — without the keep, Gson would silently deserialise null
-# into the renamed field (a field-drop bug that only surfaces in the minified
-# release build, never in debug).
--keepclassmembers,allowobfuscation class * {
-    @com.google.gson.annotations.SerializedName <fields>;
-}
-
-# Gson serialises enums by their constant names; full-mode R8 would rename
-# the constants and break the value↔name round-trip (e.g. GuideCategory).
+# Enums looked up by name (valueOf on stored strings): full-mode R8 would
+# otherwise rename the constants and break the name round-trip.
 -keepclassmembers enum * {
     <fields>;
     public static **[] values();

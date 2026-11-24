@@ -244,11 +244,13 @@ detail screen only.
   (`android/config/detekt/baseline.xml`, `android/app/config/ktlint/baseline.xml`) — never
   baseline a new violation. Android Lint is deliberately not the gate; ktlint relaxations
   live in `android/.editorconfig`.
-- **Dual-annotated DTOs.** kotlinx.serialization is the wire format, but Gson is still live
-  (Room field JSON, `util/ResponseCache.kt`, intent payloads). DTOs in `data/model/Models.kt`
-  carry both `@SerialName` and `@SerializedName`, and `proguard-rules.pro` keeps both —
-  drop either and R8 builds break silently. `data/remote/ApiService.kt` has no Retrofit
-  interface: it is `RetryInterceptor` + the Ktor `PlantApiClient`.
+- **One JSON library: kotlinx.serialization.** The Ktor client decodes the wire;
+  `util/AppJson` handles Room field JSON and `util/ResponseCache` (lenient, so rows
+  and cache files from the Gson-era app still decode). `@SerialName` is the JSON
+  name for both, so renaming one changes stored data too. Cache reads are typed
+  (`ResponseCache.get<T>(key)`), with no reflection for R8 to break.
+  `data/remote/ApiService.kt` has no Retrofit interface: it is `RetryInterceptor`
+  + the Ktor `PlantApiClient`.
 - **No `HiltWorkerFactory`, on purpose** (`hilt-work` would double-initialise WorkManager
   against `androidx.startup`). Workers get DI via `di/AppEntryPoint.kt`.
 - **Room `exportSchema = false`.** Every migration is hand-written and registered

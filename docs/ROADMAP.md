@@ -203,9 +203,6 @@ Each item is its own PR; don't fold one into another.
 - [ ] **Replace programmatic view construction.** `DetailExtraCardsController`
       (~1,330) and `CarePlanCardView` (~1,180) build hierarchies in code with
       hardcoded dp/colours; `DetailUiKit.baseCard()` has few call sites.
-- [ ] **Retire Gson** — still live for Room field JSON, `ResponseCache`, intent
-      payloads. Keeps ~390 mirrored `@SerializedName`, the `KSerializer<JsonObject>`
-      bridge and the Gson ProGuard rules alive. M/L effort.
 - [ ] **DAOs returning `Flow`.** Screens re-read on resume, which is the root
       of the 17 `launch(start = UNDISPATCHED)` sites. One screen per PR. Done:
       the unread-notification count (Home's bell and the Home tab's dot) and

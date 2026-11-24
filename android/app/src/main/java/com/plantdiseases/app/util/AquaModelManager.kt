@@ -1,11 +1,16 @@
 package com.plantdiseases.app.util
 
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.double
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import android.content.Context
 import android.util.Log
-import com.google.gson.JsonElement
-import com.google.gson.JsonObject
-import com.google.gson.JsonParser
-import com.google.gson.JsonPrimitive
 import org.tensorflow.lite.schema.TensorType
 import org.tensorflow.lite.support.metadata.MetadataExtractor
 import java.io.File
@@ -146,24 +151,19 @@ object AquaModelManager {
             if (!model.isFile || model.length() !in 1..MAX_MODEL_BYTES || !sidecar.isFile) {
                 return null
             }
-            val parsed = JsonParser.parseString(sidecar.readText()).asJsonObject
-            if (!validClasses(parsed, parsed.get("_model_version")?.asString)) return null
+            val parsed = AppJson.parseToJsonElement(sidecar.readText()).jsonObject
+            if (!validClasses(parsed, parsed["_model_version"].textOrNull())) return null
             if (
-                parsed.get("_model_sha256")?.asString
+                parsed["_model_sha256"].textOrNull()
                     ?.equals(bundle.modelSha256, ignoreCase = true) != true ||
-                parsed.get("_classes_sha256")?.asString
+                parsed["_classes_sha256"].textOrNull()
                     ?.equals(bundle.classesSha256, ignoreCase = true) != true ||
-                parsed.get("_bundle_sha256")?.asString
+                parsed["_bundle_sha256"].textOrNull()
                     ?.equals(bundle.bundleSha256, ignoreCase = true) != true
             ) {
                 return null
             }
-            val semanticClasses = parsed.deepCopy().apply {
-                remove("_model_sha256")
-                remove("_classes_sha256")
-                remove("_bundle_sha256")
-                remove("_model_version")
-            }
+            val semanticClasses = JsonObject(parsed.filterKeys { it !in RESERVED_BINDINGS })
             if (!classesSha256(semanticClasses).equals(bundle.classesSha256, ignoreCase = true)) {
                 return null
             }
@@ -247,12 +247,7 @@ object AquaModelManager {
         val modelSha = expectedModelSha.lowercase()
         val classesSha = expectedClassesSha.lowercase()
         val bundleSha = expectedBundleSha.lowercase()
-        val hasReservedBindings = listOf(
-            "_model_sha256",
-            "_classes_sha256",
-            "_bundle_sha256",
-            "_model_version",
-        ).any(classes::has)
+        val hasReservedBindings = RESERVED_BINDINGS.any(classes::containsKey)
         val contractMatches = runCatching {
             classesSha256(classes).equals(classesSha, ignoreCase = true) &&
                 bundleSha256(modelSha, classesSha).equals(bundleSha, ignoreCase = true)
@@ -299,12 +294,14 @@ object AquaModelManager {
             // Bind the sidecar to these exact bytes. A crash can leave a
             // complete inactive slot, never a live model with another run's
             // class order/preprocessing metadata.
-            val boundClasses = classes.deepCopy().apply {
-                addProperty("_model_sha256", actualSha)
-                addProperty("_classes_sha256", classesSha)
-                addProperty("_bundle_sha256", bundleSha)
-                if (version != null) addProperty("_model_version", version)
-            }
+            val boundClasses = JsonObject(
+                classes + buildMap {
+                    put("_model_sha256", JsonPrimitive(actualSha))
+                    put("_classes_sha256", JsonPrimitive(classesSha))
+                    put("_bundle_sha256", JsonPrimitive(bundleSha))
+                    if (version != null) put("_model_version", JsonPrimitive(version))
+                },
+            )
             File(staging, CLASSES_FILE).writeText(boundClasses.toString())
             publishDirectory(staging, published)
 
@@ -338,44 +335,36 @@ object AquaModelManager {
     }
 
     private fun validClasses(classes: JsonObject, manifestVersion: String?): Boolean = try {
-        val names = classes.getAsJsonArray("class_names") ?: return false
-        if (names.size() == 0) return false
+        val names = classes["class_names"] as? JsonArray ?: return false
+        if (names.isEmpty()) return false
         val unique = LinkedHashSet<String>()
         for (entry in names) {
-            if (!entry.isJsonPrimitive || !entry.asJsonPrimitive.isString) return false
-            val key = entry.asString
+            val key = entry.stringOrNull() ?: return false
             if (key.isBlank() || key != key.trim() || !unique.add(key)) return false
         }
-        val family = classes.get("model_family")?.asString
-        val sidecarVersion = classes.get("model_version")?.asString
+        val family = classes["model_family"].textOrNull()
+        val sidecarVersion = classes["model_version"].textOrNull()
         val versionsAgree = !sidecarVersion.isNullOrBlank() &&
             !manifestVersion.isNullOrBlank() &&
             sidecarVersion == manifestVersion
         if (family != ModelFamily.AQUA.id || !versionsAgree) return false
 
-        val training = classes.getAsJsonObject("training") ?: return false
-        val sizeValue = training.get("img_size")
-        if (sizeValue == null || !sizeValue.isJsonPrimitive || !sizeValue.asJsonPrimitive.isNumber) {
-            return false
-        }
-        val size = sizeValue.asDouble
+        val training = classes["training"] as? JsonObject ?: return false
+        val size = training["img_size"].numberOrNull() ?: return false
         if (!size.isFinite() || size % 1.0 != 0.0 || size !in 1.0..4096.0) return false
-        val ratioValue = training.get("eval_resize_ratio") ?: return false
-        if (!ratioValue.isJsonPrimitive || !ratioValue.asJsonPrimitive.isNumber) return false
-        val ratio = ratioValue.asDouble
+        val ratio = training["eval_resize_ratio"].numberOrNull() ?: return false
         if (!ratio.isFinite() || ratio !in 1.0..4.0) return false
 
-        val inference = classes.getAsJsonObject("inference") ?: return false
-        if (inference.get("layout")?.asString != "NHWC") return false
-        if (inference.get("tta")?.asString != "none") return false
-        if (inference.get("output_semantics")?.asString != "logits") return false
+        val inference = classes["inference"] as? JsonObject ?: return false
+        if (inference["layout"].textOrNull() != "NHWC") return false
+        if (inference["tta"].textOrNull() != "none") return false
+        if (inference["output_semantics"].textOrNull() != "logits") return false
 
         fun numericTriple(key: String, positive: Boolean): Boolean {
-            val values = inference.getAsJsonArray(key) ?: return false
-            if (values.size() != 3) return false
+            val values = inference[key] as? JsonArray ?: return false
+            if (values.size != 3) return false
             return values.all { value ->
-                if (!value.isJsonPrimitive || !value.asJsonPrimitive.isNumber) return@all false
-                val number = value.asDouble
+                val number = value.numberOrNull() ?: return@all false
                 number.isFinite() && (!positive || number > 0.0)
             }
         }
@@ -389,21 +378,19 @@ object AquaModelManager {
     /** The optional `ood` block (notebook §5's MaxLogit floor); same rules as
      *  [AquaOodGate.fromSidecar] and the server's `_valid_aqua_ood`. */
     private fun validOod(classes: JsonObject, names: List<String>): Boolean {
-        val ood = classes.get("ood") ?: return true
-        if (ood.isJsonNull) return true
-        if (!ood.isJsonObject) return false
-        val floor = ood.asJsonObject.get("max_logit_floor")
-        if (floor == null || floor.isJsonNull) return true
-        if (!floor.isJsonPrimitive || !floor.asJsonPrimitive.isNumber) return false
-        val scope = ood.asJsonObject.get("max_logit_scope")
-            ?.takeIf { it.isJsonPrimitive && it.asJsonPrimitive.isString }
-            ?.asString
-        return runCatching { AquaOodGate.fromSidecar(floor.asDouble, scope, names) != null }.getOrDefault(false)
+        val ood = classes["ood"] ?: return true
+        if (ood is JsonNull) return true
+        if (ood !is JsonObject) return false
+        val floor = ood["max_logit_floor"]
+        if (floor == null || floor is JsonNull) return true
+        val floorValue = floor.numberOrNull() ?: return false
+        val scope = ood["max_logit_scope"].stringOrNull()
+        return runCatching { AquaOodGate.fromSidecar(floorValue, scope, names) != null }.getOrDefault(false)
     }
 
     private fun validateStagedTensorContract(model: File, classes: JsonObject) {
-        val names = classes.getAsJsonArray("class_names")
-        val inputSize = classes.getAsJsonObject("training").get("img_size").asInt
+        val names = classes.getValue("class_names").jsonArray
+        val inputSize = classes.getValue("training").jsonObject.getValue("img_size").jsonPrimitive.double.toInt()
         // MetadataExtractor is a pure-Java FlatBuffer reader. A heap buffer
         // avoids a mapped-file handle surviving long enough to block the
         // staging-directory rename on Windows/Robolectric.
@@ -418,7 +405,7 @@ object AquaModelManager {
             "Aqua output tensor must be FLOAT32 logits"
         }
         val expectedInput = intArrayOf(1, inputSize, inputSize, 3)
-        val expectedOutput = intArrayOf(1, names.size())
+        val expectedOutput = intArrayOf(1, names.size)
         require(graph.getInputTensorShape(0).contentEquals(expectedInput)) {
             "Aqua input tensor does not match ${expectedInput.contentToString()}"
         }
@@ -452,18 +439,33 @@ object AquaModelManager {
     }
 
     /** Canonical semantic JSON shared with the server's sidecar digest. */
-    private fun canonicalJson(element: JsonElement): String = when {
-        element.isJsonNull -> "null"
-        element.isJsonArray -> element.asJsonArray.joinToString(",", "[", "]") {
-            canonicalJson(it)
-        }
-        element.isJsonObject -> element.asJsonObject.entrySet()
-            .sortedBy { it.key }
-            .joinToString(",", "{", "}") { entry ->
-                "${JsonPrimitive(entry.key)}:${canonicalJson(entry.value)}"
-            }
-        else -> element.toString()
+    private fun canonicalJson(element: JsonElement): String = when (element) {
+        is JsonNull -> "null"
+        is JsonArray -> element.joinToString(",", "[", "]") { canonicalJson(it) }
+        is JsonObject ->
+            element.entries
+                .sortedBy { it.key }
+                .joinToString(",", "{", "}") { (key, value) -> "${JsonPrimitive(key)}:${canonicalJson(value)}" }
+        // Numbers keep their text as received; strings are quoted and escaped
+        // like the server's json.dumps(ensure_ascii=False).
+        is JsonPrimitive -> element.toString()
     }
+
+    /** The sidecar's own keys binding it to one install; not part of the
+     *  semantic classes digest. */
+    private val RESERVED_BINDINGS = setOf("_model_sha256", "_classes_sha256", "_bundle_sha256", "_model_version")
+
+    /** A string's or number's text, like Gson's ``asString``; null otherwise. */
+    private fun JsonElement?.textOrNull(): String? =
+        (this as? JsonPrimitive)?.takeUnless { it is JsonNull }?.content
+
+    /** The value of a JSON string only. */
+    private fun JsonElement?.stringOrNull(): String? =
+        (this as? JsonPrimitive)?.takeIf { it.isString }?.content
+
+    /** The value of a JSON number only (not a string, boolean or null). */
+    private fun JsonElement?.numberOrNull(): Double? =
+        (this as? JsonPrimitive)?.takeIf { !it.isString && it !is JsonNull }?.content?.toDoubleOrNull()
 
     private fun classesSha256(classes: JsonObject): String {
         val digest = MessageDigest.getInstance("SHA-256")

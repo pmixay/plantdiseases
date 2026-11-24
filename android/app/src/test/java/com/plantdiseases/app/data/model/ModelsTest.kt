@@ -1,7 +1,7 @@
 package com.plantdiseases.app.data.model
 
 import com.google.common.truth.Truth.assertThat
-import com.google.gson.Gson
+import com.plantdiseases.app.util.AppJson
 import kotlinx.serialization.json.Json
 import org.junit.Test
 
@@ -12,14 +12,12 @@ import org.junit.Test
  * being accepted or saved as a real HTTP diagnosis.
  *
  * Two decoders are exercised on purpose. [ktxJson] mirrors the app's Ktor
- * config and is the production HTTP path. [gson] is the *persistence* path:
+ * config and is the production HTTP path. [AppJson] is the *persistence* path:
  * the types it decodes here (care plans, popular bundles, community feeds)
- * are the ones written to util/ResponseCache and to Room field JSON, so
- * their @SerializedName mapping stays load-bearing for data already on disk.
+ * are the ones written to util/ResponseCache, so files already on disk must
+ * keep decoding into them.
  */
 class ModelsTest {
-
-    private val gson = Gson()
 
     private fun canonicalProbs(vararg values: Pair<String, Float>): Map<String, Float> =
         linkedMapOf(
@@ -36,7 +34,7 @@ class ModelsTest {
 
     @Test
     fun analysisResponse_missingFields_useSafeDefaults() {
-        // AnalysisResponse never goes through Gson in production — it is
+        // AnalysisResponse never goes through the cache in production — it is
         // decoded by Ktor + kotlinx.serialization (and built directly by
         // AquaInference on-device), so assert the missing-field tolerance
         // against the decoder the app actually uses.
@@ -234,12 +232,8 @@ class ModelsTest {
     }
 
     @Test
-    fun carePlan_wateringDays_parsedFromGsonNumber() {
-        // Gson deserialises a bare JSON number into a Double for Any?.
-        val plan = gson.fromJson(
-            """{"species":"Ficus","disease":"leaf_spot","light_tier":"t","watering_days":3}""",
-            CarePlanResponse::class.java,
-        )
+    fun carePlan_wateringDays_parsedFromABareNumber() {
+        val plan = AppJson.decodeFromString<CarePlanResponse>("""{"species":"Ficus","disease":"leaf_spot","light_tier":"t","watering_days":3}""")
         assertThat(plan.wateringDaysInt).isEqualTo(3)
         assertThat(plan.wateringDaysIsAsNeeded).isFalse()
     }
@@ -249,10 +243,7 @@ class ModelsTest {
         // Pre-Garden-refactor server response shape — no "products" or
         // "treatment_conditions" keys at all. Must degrade to null, the
         // same way every other v2-additive field already does.
-        val plan = gson.fromJson(
-            """{"species":"Ficus","disease":"leaf_spot","light_tier":"t"}""",
-            CarePlanResponse::class.java,
-        )
+        val plan = AppJson.decodeFromString<CarePlanResponse>("""{"species":"Ficus","disease":"leaf_spot","light_tier":"t"}""")
         assertThat(plan.products).isNull()
         assertThat(plan.treatmentConditions).isNull()
     }
@@ -265,7 +256,7 @@ class ModelsTest {
                "active_ingredient":"cyprodinil + fludioxonil","note":"Alternate modes of action."}],
              "treatment_conditions":{"best_time":"Morning.","temp_c":[15,25],"dry_hours":24}}
         """.trimIndent()
-        val plan = gson.fromJson(json, CarePlanResponse::class.java)
+        val plan = AppJson.decodeFromString<CarePlanResponse>(json)
         assertThat(plan.products).hasSize(1)
         assertThat(plan.products!![0].activeIngredient).isEqualTo("cyprodinil + fludioxonil")
         assertThat(plan.treatmentConditions?.tempC).containsExactly(15, 25).inOrder()
@@ -298,7 +289,7 @@ class ModelsTest {
              "items":[{"scientific":"Monstera deliciosa","common_en":"Swiss cheese plant",
                        "common_ru":"Монстера","image_url":"https://img/m.jpg"}]}
         """.trimIndent()
-        val r = gson.fromJson(json, PopularResponse::class.java)
+        val r = AppJson.decodeFromString<PopularResponse>(json)
         assertThat(r.scope).isEqualTo("country")
         assertThat(r.country).isEqualTo("RU")
         assertThat(r.items).hasSize(1)
@@ -311,21 +302,18 @@ class ModelsTest {
 
     @Test
     fun popularResponse_missingFields_useSafeDefaults() {
-        val r = gson.fromJson("""{"scope":"global"}""", PopularResponse::class.java)
+        val r = AppJson.decodeFromString<PopularResponse>("""{"scope":"global"}""")
         assertThat(r.scope).isEqualTo("global")
         assertThat(r.items).isEmpty()
         // A bare item with no image still parses (client shows a placeholder).
-        val item = gson.fromJson("""{"scientific":"Aloe vera"}""", PopularItem::class.java)
+        val item = AppJson.decodeFromString<PopularItem>("""{"scientific":"Aloe vera"}""")
         assertThat(item.scientific).isEqualTo("Aloe vera")
         assertThat(item.imageUrl).isNull()
     }
 
     @Test
     fun communityScansResponse_countryScopeFields_parse() {
-        val r = gson.fromJson(
-            """{"scope":"country","country":"US","country_name_en":"United States","country_name_ru":"United States","summary":{"scope":"country","country":"US","country_name_en":"United States","total":3}}""",
-            CommunityScansResponse::class.java,
-        )
+        val r = AppJson.decodeFromString<CommunityScansResponse>("""{"scope":"country","country":"US","country_name_en":"United States","country_name_ru":"United States","summary":{"scope":"country","country":"US","country_name_en":"United States","total":3}}""")
         assertThat(r.scope).isEqualTo("country")
         assertThat(r.country).isEqualTo("US")
         assertThat(r.countryNameEn).isEqualTo("United States")
@@ -339,10 +327,7 @@ class ModelsTest {
 
     @Test
     fun communityScansResponse_locationRequiredFlag_parses() {
-        val r = gson.fromJson(
-            """{"scope":"global","items":[],"location_required":true}""",
-            CommunityScansResponse::class.java,
-        )
+        val r = AppJson.decodeFromString<CommunityScansResponse>("""{"scope":"global","items":[],"location_required":true}""")
         assertThat(r.locationRequired).isTrue()
         assertThat(r.items).isEmpty()
     }

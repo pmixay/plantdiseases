@@ -1,8 +1,12 @@
 package com.plantdiseases.app.data.repository
 
-import com.google.gson.JsonParser
 import com.plantdiseases.app.data.local.ScanEntity
 import com.plantdiseases.app.data.model.AnalysisAbstentionReasons
+import com.plantdiseases.app.util.AppJson
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.floatOrNull
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
 
 /**
  * One backward-compatible rejection policy for persisted scan rows.
@@ -36,10 +40,9 @@ internal object PersistedScanAbstentionPolicy {
 
     private fun diagnosticClassKey(scan: ScanEntity): String? =
         scan.displayedClassKey?.takeIf { it.isNotBlank() } ?: runCatching {
-            val probs = JsonParser.parseString(scan.allProbs).asJsonObject
-            probs.entrySet()
-                .mapNotNull { entry ->
-                    runCatching { entry.key to entry.value.asFloat }.getOrNull()
+            AppJson.parseToJsonElement(scan.allProbs.orEmpty()).jsonObject.entries
+                .mapNotNull { (key, value) ->
+                    (value as? JsonPrimitive)?.floatOrNull?.let { key to it }
                 }
                 .maxByOrNull { it.second }
                 ?.first
@@ -48,10 +51,10 @@ internal object PersistedScanAbstentionPolicy {
     private fun warningTokens(raw: String?): List<String> {
         if (raw.isNullOrBlank()) return emptyList()
         return runCatching {
-            JsonParser.parseString(raw).asJsonArray
+            AppJson.parseToJsonElement(raw).jsonArray
                 .mapNotNull { item ->
-                    item.takeIf { it.isJsonPrimitive && it.asJsonPrimitive.isString }
-                        ?.asString
+                    (item as? JsonPrimitive)?.takeIf { it.isString }
+                        ?.content
                         ?.trim()
                         ?.lowercase()
                         ?.takeIf { it.isNotBlank() }

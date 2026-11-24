@@ -27,7 +27,7 @@ class SpeciesRepository(private val apiClient: PlantApiClient) {
             // misses that would otherwise stick for a week.
             val cacheKey = "species:v4:${name.trim().lowercase()}|$locale"
             ResponseCache
-                .get(cacheKey, SpeciesInfoResponse::class.java)
+                .get<SpeciesInfoResponse>(cacheKey)
                 ?.let { return@withContext Result.success(it) }
             try {
                 val body = apiClient.speciesInfo(name, locale)
@@ -71,10 +71,7 @@ class SpeciesRepository(private val apiClient: PlantApiClient) {
         locale: String,
     ): SpeciesDiseasesResponse? =
         withContext(Dispatchers.IO) {
-            ResponseCache.get(
-                speciesDiseasesCacheKey(name, locale),
-                SpeciesDiseasesResponse::class.java,
-            )
+            ResponseCache.get<SpeciesDiseasesResponse>(speciesDiseasesCacheKey(name, locale))
         }
 
     /** Conditions a species is commonly affected by (AI, best-effort). The
@@ -89,7 +86,7 @@ class SpeciesRepository(private val apiClient: PlantApiClient) {
         withContext(Dispatchers.IO) {
             val cacheKey = speciesDiseasesCacheKey(name, locale)
             ResponseCache
-                .get(cacheKey, SpeciesDiseasesResponse::class.java)
+                .get<SpeciesDiseasesResponse>(cacheKey)
                 ?.let { return@withContext Result.success(it) }
             try {
                 val body = apiClient.speciesDiseases(name, common, locale)
@@ -138,7 +135,7 @@ class SpeciesRepository(private val apiClient: PlantApiClient) {
             // safe to reuse after an offline language switch.
             val cacheKey = speciesProfileCacheKey(name)
             ResponseCache
-                .get(cacheKey, SpeciesProfileResponse::class.java)
+                .get<SpeciesProfileResponse>(cacheKey)
                 ?.let { return@withContext Result.success(it) }
             try {
                 val body = apiClient.speciesProfile(name, common, locale)

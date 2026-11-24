@@ -1,7 +1,6 @@
 package com.plantdiseases.app.data.repository
 
 import android.util.AtomicFile
-import com.google.gson.Gson
 import com.plantdiseases.app.auth.AuthRepository
 import com.plantdiseases.app.data.local.ScanDao
 import com.plantdiseases.app.data.local.ScanEntity
@@ -13,6 +12,7 @@ import com.plantdiseases.app.data.model.ScanHistoryItem
 import com.plantdiseases.app.data.model.diagnosticContractViolation
 import com.plantdiseases.app.data.model.effectiveAbstentionReason
 import com.plantdiseases.app.data.remote.PlantApiClient
+import com.plantdiseases.app.util.AppJson
 import com.plantdiseases.app.util.AquaModelManager
 import com.plantdiseases.app.util.DefaultUploadImageSanitizer
 import com.plantdiseases.app.util.FeedbackReceiptStore
@@ -39,6 +39,7 @@ import java.net.UnknownHostException
 import java.security.MessageDigest
 import java.util.UUID
 import kotlinx.coroutines.Dispatchers
+import kotlinx.serialization.encodeToString
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -63,7 +64,6 @@ class ScanRepository(
     }
 
     private val calls = AppApiCalls(authRepository)
-    private val gson = Gson()
     private val retainedAnalysisImageLock = Any()
     private val pendingAnalysisImages = LinkedHashMap<PendingAnalysisImageKey, SanitizedImage>()
     private val scanArtifactMutex = Mutex()
@@ -411,7 +411,7 @@ class ScanRepository(
             }
             val warningsJson = persistedWarnings
                 .takeIf { it.isNotEmpty() }
-                ?.let { gson.toJson(it.toList()) }
+                ?.let { AppJson.encodeToString(it.toList()) }
             val best = if (accepted) result.species?.best else null
             // Keep the server-issued community publication capability when
             // present. Feedback uses a separate one-use receipt and never
@@ -421,7 +421,7 @@ class ScanRepository(
             val predictionSetJson = result.predictionSet?.classes
                 ?.takeIf { accepted }
                 ?.takeIf { it.isNotEmpty() }
-                ?.let { gson.toJson(it) }
+                ?.let { AppJson.encodeToString(it) }
             // The probability-backed diagnostic argmax is preserved even when
             // a separate abstention verdict prevents diagnosis presentation.
             // Persisting it as ``displayedClassKey`` keeps local UI labels
@@ -442,21 +442,21 @@ class ScanRepository(
                 confidence = result.confidence,
                 description = result.description,
                 descriptionRu = result.descriptionRu,
-                treatment = gson.toJson(if (accepted) result.treatment else emptyList<String>()),
-                treatmentRu = gson.toJson(if (accepted) result.treatmentRu else emptyList<String>()),
-                prevention = gson.toJson(if (accepted) result.prevention else emptyList<String>()),
-                preventionRu = gson.toJson(if (accepted) result.preventionRu else emptyList<String>()),
+                treatment = AppJson.encodeToString(if (accepted) result.treatment else emptyList<String>()),
+                treatmentRu = AppJson.encodeToString(if (accepted) result.treatmentRu else emptyList<String>()),
+                prevention = AppJson.encodeToString(if (accepted) result.prevention else emptyList<String>()),
+                preventionRu = AppJson.encodeToString(if (accepted) result.preventionRu else emptyList<String>()),
                 isHealthy = accepted && result.isHealthy,
-                regions = if (regions.isEmpty()) null else gson.toJson(regions),
+                regions = if (regions.isEmpty()) null else AppJson.encodeToString(regions),
                 primaryRegionIndex = primaryIndex,
                 detectionImageWidth = detection?.imageWidth ?: 0,
                 detectionImageHeight = detection?.imageHeight ?: 0,
-                allProbs = result.allProbs?.let { gson.toJson(it) },
+                allProbs = result.allProbs?.let { AppJson.encodeToString(it) },
                 warnings = warningsJson,
                 toxicToPets = accepted && result.toxicToPets,
                 toxicSpeciesList = result.toxicSpeciesList
                     .takeIf { accepted && it.isNotEmpty() }
-                    ?.let { gson.toJson(it) },
+                    ?.let { AppJson.encodeToString(it) },
                 toxicitySource = if (accepted) result.toxicitySource else "unknown",
                 severity = result.severity ?: "low",
             )
@@ -485,10 +485,7 @@ class ScanRepository(
     fun parseRegions(json: String?): List<com.plantdiseases.app.data.model.DetectionRegion> {
         if (json.isNullOrEmpty()) return emptyList()
         return try {
-            gson.fromJson(
-                json,
-                Array<com.plantdiseases.app.data.model.DetectionRegion>::class.java,
-            ).toList()
+            AppJson.decodeFromString<List<com.plantdiseases.app.data.model.DetectionRegion>>(json)
         } catch (e: Exception) {
             emptyList()
         }
@@ -796,7 +793,7 @@ class ScanRepository(
 
     /** Parse treatment/prevention JSON arrays */
     fun parseStringList(json: String): List<String> = try {
-        gson.fromJson(json, Array<String>::class.java).toList()
+        AppJson.decodeFromString<List<String>>(json)
     } catch (e: Exception) {
         emptyList()
     }
@@ -805,8 +802,7 @@ class ScanRepository(
     fun parseAllProbs(json: String?): Map<String, Float> {
         if (json.isNullOrEmpty()) return emptyMap()
         return try {
-            val type = object : com.google.gson.reflect.TypeToken<Map<String, Float>>() {}.type
-            gson.fromJson(json, type)
+            AppJson.decodeFromString<Map<String, Float>>(json)
         } catch (e: Exception) {
             emptyMap()
         }
@@ -816,7 +812,7 @@ class ScanRepository(
     fun parseWarnings(json: String?): List<String> {
         if (json.isNullOrEmpty()) return emptyList()
         return try {
-            gson.fromJson(json, Array<String>::class.java).toList()
+            AppJson.decodeFromString<List<String>>(json)
         } catch (e: Exception) {
             emptyList()
         }
