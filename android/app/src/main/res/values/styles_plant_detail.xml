@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Text styles for the plant-detail extra cards. Every ink is on_surface (the
+     muted ink is for icon tints only); captions are 12sp and bold. -->
+<resources>
+    <style name="TextAppearance.Detail.CardTitle" parent="">
+        <item name="android:textSize">@dimen/detail_text_title</item>
+        <item name="android:textColor">@color/on_surface</item>
+        <item name="android:fontFamily">sans-serif-medium</item>
+    </style>
+
+    <style name="TextAppearance.Detail.HeaderTitle" parent="">
+        <item name="android:textSize">@dimen/detail_text_header</item>
+        <item name="android:textColor">@color/on_surface</item>
+        <item name="android:textStyle">bold</item>
+    </style>
+
+    <style name="TextAppearance.Detail.StepTitle" parent="">
+        <item name="android:textSize">@dimen/detail_text_body</item>
+        <item name="android:textColor">@color/on_surface</item>
+    </style>
+
+    <style name="TextAppearance.Detail.Body" parent="">
+        <item name="android:textSize">@dimen/detail_text_body_sm</item>
+        <item name="android:textColor">@color/on_surface</item>
+    </style>
+
+    <style name="TextAppearance.Detail.Caption" parent="">
+        <item name="android:textSize">@dimen/detail_text_caption</item>
+        <item name="android:textColor">@color/on_surface</item>
+        <item name="android:textStyle">bold</item>
+    </style>
+
+    <style name="TextAppearance.Detail.Score" parent="">
+        <item name="android:textSize">@dimen/detail_text_score</item>
+        <item name="android:textColor">@color/on_surface</item>
+        <item name="android:fontFamily">sans-serif-medium</item>
+    </style>
+</resources>
