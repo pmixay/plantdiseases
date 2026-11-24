@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Treatment-plan card on the plant-detail Overview tab. Either the active
+     plan (title, disease, step counter, step rows) or the one-line "finished"
+     state; the controller toggles the two groups. -->
+<com.google.android.material.card.MaterialCardView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    app:cardBackgroundColor="@color/surface"
+    app:cardCornerRadius="@dimen/radius_lg"
+    app:cardElevation="@dimen/detail_card_elevation"
+    app:strokeColor="@color/card_stroke"
+    app:strokeWidth="@dimen/detail_card_stroke">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:paddingHorizontal="@dimen/detail_card_pad_h"
+        android:paddingVertical="@dimen/detail_card_pad_v">
+
+        <TextView
+            android:id="@+id/detail_treatment_finished"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:lineSpacingExtra="@dimen/detail_line_spacing"
+            android:textAppearance="@style/TextAppearance.Detail.Body"
+            android:visibility="gone" />
+
+        <LinearLayout
+            android:id="@+id/detail_treatment_active"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/treatment_plan_current"
+                android:textAppearance="@style/TextAppearance.Detail.CardTitle" />
+
+            <TextView
+                android:id="@+id/detail_treatment_disease"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/detail_treatment_subtitle_gap"
+                android:textAppearance="@style/TextAppearance.Detail.Body" />
+
+            <TextView
+                android:id="@+id/detail_treatment_step_of"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/detail_treatment_step_of_gap"
+                android:textAppearance="@style/TextAppearance.Detail.Caption" />
+
+            <LinearLayout
+                android:id="@+id/detail_treatment_steps"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical" />
+        </LinearLayout>
+    </LinearLayout>
+</com.google.android.material.card.MaterialCardView>

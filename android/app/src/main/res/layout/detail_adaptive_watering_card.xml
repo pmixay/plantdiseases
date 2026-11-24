@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- "Tighten the watering schedule from N to M days?" nudge on the plant-detail Care tab. -->
+<com.google.android.material.card.MaterialCardView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_marginTop="@dimen/detail_card_gap"
+    android:clickable="true"
+    android:focusable="true"
+    android:foreground="?attr/selectableItemBackground"
+    app:cardBackgroundColor="@color/surface"
+    app:cardCornerRadius="@dimen/detail_card_radius"
+    app:cardElevation="@dimen/detail_card_elevation"
+    app:strokeColor="@color/primary"
+    app:strokeWidth="@dimen/detail_card_stroke">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:paddingHorizontal="@dimen/detail_entry_pad_h"
+        android:paddingVertical="@dimen/detail_entry_pad_v">
+
+        <TextView
+            android:id="@+id/detail_adaptive_title"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:textAppearance="@style/TextAppearance.Detail.StepTitle"
+            android:fontFamily="sans-serif-medium" />
+
+        <TextView
+            android:id="@+id/detail_adaptive_subtitle"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/detail_entry_subtitle_gap"
+            android:textAppearance="@style/TextAppearance.Detail.Caption" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/detail_adaptive_actions_gap"
+            android:orientation="horizontal">
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/detail_adaptive_apply"
+                style="?attr/materialButtonOutlinedStyle"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                app:cornerRadius="@dimen/detail_adaptive_button_radius" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/detail_adaptive_dismiss"
+                style="?attr/borderlessButtonStyle"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="@dimen/detail_adaptive_dismiss_start"
+                android:text="@string/adaptive_watering_dismiss" />
+        </LinearLayout>
+    </LinearLayout>
+</com.google.android.material.card.MaterialCardView>

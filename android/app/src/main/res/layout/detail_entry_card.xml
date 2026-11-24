@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Plant-detail shortcut card: icon circle, title, subtitle, chevron. Shared by
+     the guide link, light meter, water calculator and doctor entries; the
+     controller sets the icon, texts and click action. -->
+<com.google.android.material.card.MaterialCardView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_marginTop="@dimen/detail_card_gap"
+    android:clickable="true"
+    android:focusable="true"
+    android:foreground="?attr/selectableItemBackground"
+    app:cardBackgroundColor="@color/surface"
+    app:cardCornerRadius="@dimen/detail_card_radius"
+    app:cardElevation="@dimen/detail_card_elevation"
+    app:strokeColor="@color/card_stroke"
+    app:strokeWidth="@dimen/detail_card_stroke">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingHorizontal="@dimen/detail_entry_pad_h"
+        android:paddingVertical="@dimen/detail_entry_pad_v">
+
+        <FrameLayout
+            android:layout_width="@dimen/detail_entry_icon_circle"
+            android:layout_height="@dimen/detail_entry_icon_circle"
+            android:background="@drawable/bg_icon_circle">
+
+            <ImageView
+                android:id="@+id/detail_entry_icon"
+                android:layout_width="@dimen/detail_entry_icon"
+                android:layout_height="@dimen/detail_entry_icon"
+                android:layout_gravity="center"
+                android:importantForAccessibility="no"
+                android:tint="@color/primary" />
+        </FrameLayout>
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="@dimen/detail_entry_text_start"
+            android:layout_weight="1"
+            android:orientation="vertical">
+
+            <TextView
+                android:id="@+id/detail_entry_title"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:textAppearance="@style/TextAppearance.Detail.CardTitle" />
+
+            <TextView
+                android:id="@+id/detail_entry_subtitle"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/detail_entry_subtitle_gap"
+                android:ellipsize="end"
+                android:maxLines="2"
+                android:textAppearance="@style/TextAppearance.Detail.Caption" />
+        </LinearLayout>
+
+        <ImageView
+            android:layout_width="@dimen/detail_entry_chevron"
+            android:layout_height="@dimen/detail_entry_chevron"
+            android:importantForAccessibility="no"
+            android:src="@drawable/ic_chevron_right"
+            android:tint="@color/on_surface_secondary" />
+    </LinearLayout>
+</com.google.android.material.card.MaterialCardView>

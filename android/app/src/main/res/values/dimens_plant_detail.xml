@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Plant-detail extra cards (DetailExtraCardsController): the cards that sit
+     between the header and the tabs and below them. Text sizes live here so the
+     layouts and styles stay free of literals. -->
+<resources>
+    <!-- Card chrome -->
+    <dimen name="detail_card_radius">18dp</dimen>
+    <dimen name="detail_card_stroke">1dp</dimen>
+    <dimen name="detail_card_elevation">0dp</dimen>
+    <dimen name="detail_card_gap">10dp</dimen>
+    <dimen name="detail_card_gap_lg">12dp</dimen>
+    <dimen name="detail_card_pad_h">16dp</dimen>
+    <dimen name="detail_card_pad_v">14dp</dimen>
+
+    <!-- Entry card (guide link, light meter, water calculator, doctor) -->
+    <dimen name="detail_entry_pad_h">14dp</dimen>
+    <dimen name="detail_entry_pad_v">12dp</dimen>
+    <dimen name="detail_entry_icon_circle">42dp</dimen>
+    <dimen name="detail_entry_icon">23dp</dimen>
+    <dimen name="detail_entry_text_start">12dp</dimen>
+    <dimen name="detail_entry_chevron">22dp</dimen>
+    <dimen name="detail_entry_subtitle_gap">2dp</dimen>
+
+    <!-- Adaptive watering card -->
+    <dimen name="detail_adaptive_actions_gap">8dp</dimen>
+    <dimen name="detail_adaptive_button_radius">12dp</dimen>
+    <dimen name="detail_adaptive_dismiss_start">4dp</dimen>
+
+    <!-- Last-watered strip -->
+    <dimen name="detail_strip_pad_h">4dp</dimen>
+    <dimen name="detail_strip_gap">8dp</dimen>
+
+    <!-- Progression and health cards -->
+    <dimen name="detail_sparkline_height">64dp</dimen>
+    <dimen name="detail_sparkline_gap">10dp</dimen>
+    <dimen name="detail_meta_gap">8dp</dimen>
+    <dimen name="detail_pill_pad_h">10dp</dimen>
+    <dimen name="detail_pill_pad_v">4dp</dimen>
+    <dimen name="detail_health_icon">36dp</dimen>
+    <dimen name="detail_health_icon_pad">8dp</dimen>
+    <dimen name="detail_health_icon_gap">12dp</dimen>
+    <dimen name="detail_health_empty_gap">10dp</dimen>
+    <dimen name="detail_health_delta_gap">6dp</dimen>
+    <dimen name="detail_line_spacing">3dp</dimen>
+
+    <!-- Treatment plan card -->
+    <dimen name="detail_treatment_subtitle_gap">2dp</dimen>
+    <dimen name="detail_treatment_step_of_gap">6dp</dimen>
+    <dimen name="detail_treatment_step_gap">10dp</dimen>
+    <dimen name="detail_treatment_glyph">22dp</dimen>
+    <dimen name="detail_treatment_text_start">10dp</dimen>
+
+    <!-- Type scale -->
+    <dimen name="detail_text_title">15sp</dimen>
+    <dimen name="detail_text_body">14sp</dimen>
+    <dimen name="detail_text_body_sm">13sp</dimen>
+    <dimen name="detail_text_caption">12sp</dimen>
+    <dimen name="detail_text_score">24sp</dimen>
+    <dimen name="detail_text_header">16sp</dimen>
+</resources>
