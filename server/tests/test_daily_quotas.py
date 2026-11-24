@@ -66,14 +66,14 @@ def test_inference_routes_answer_429_past_the_daily_quota(
 
 
 def test_plantnet_allowance_is_shared_by_analyze_and_identify(client, m, monkeypatch):
-    import ai_services
+    import plantnet
     calls: list[str] = []
 
     def fake_identify(image_bytes, *, organ="leaf", lang="en"):
         calls.append(organ)
         return {"available": False, "results": [], "source": "no_api_key"}
 
-    monkeypatch.setattr(ai_services, "identify_species", fake_identify)
+    monkeypatch.setattr(plantnet, "identify_species", fake_identify)
     monkeypatch.setattr(m._plantnet_quota, "limit", 1)
 
     first = client.post("/api/analyze", files={"image": ("a.png", _png((40, 150, 60)), "image/png")})
@@ -160,14 +160,14 @@ def test_a_quota_blanked_species_block_is_not_cached_for_everyone(client, m, mon
     """The analyze cache is shared by everyone uploading the same bytes; a
     species block blanked by one caller's PlantNet allowance must not be
     replayed to the next."""
-    import ai_services
+    import plantnet
     calls: list[str] = []
 
     def fake_identify(image_bytes, *, organ="leaf", lang="en"):
         calls.append(organ)
         return {"available": False, "results": [], "source": "no_api_key"}
 
-    monkeypatch.setattr(ai_services, "identify_species", fake_identify)
+    monkeypatch.setattr(plantnet, "identify_species", fake_identify)
     monkeypatch.setattr(m._plantnet_quota, "limit", 1)
     first_photo = _png((40, 150, 60))
     client.post("/api/analyze", files={"image": ("a.png", _png((90, 90, 90)), "image/png")})

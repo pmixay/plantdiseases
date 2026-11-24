@@ -77,6 +77,7 @@ try:
         deps,
         feedback_labels,
         plant_photos,
+        plantnet,
         popular_bundle,
         popular_plants,
         routes_assistant,
@@ -100,7 +101,7 @@ except ImportError:
     import account_auth
     import account_entitlements
     import account_roles
-    import ai_services
+    import ai_services  # noqa: F401 - the routes reach it as m.ai_services
     import app_version
     import beta_runtime
     import community
@@ -112,6 +113,7 @@ except ImportError:
     import feedback_labels
     import pipeline as pipeline_module
     import plant_photos
+    import plantnet
     import popular_bundle
     import popular_plants
     import routes_assistant
@@ -974,7 +976,7 @@ async def _authorize_optional_species_lookup(request: Request) -> dict | None:
     instead of failing the already-authorized diagnosis.
     """
 
-    if not ai_services.plantnet_configured():
+    if not plantnet.plantnet_configured():
         return None
     try:
         await _authorize_metered_feature(request, feature="plant_identification")

@@ -247,15 +247,14 @@ def test_identify_budget_denial_releases_exact_signed_in_allowance(
     monkeypatch,
 ):
     import account_entitlements
-    import ai_services
+    import plantnet
     fake = _ReleasingEntitlements()
     operation_id = str(uuid.uuid4())
     monkeypatch.setattr(account_entitlements, "account_entitlement_client", fake)
-    monkeypatch.setattr(ai_services, "plantnet_configured", lambda: True)
-    monkeypatch.setattr(ai_services, "plantnet_cache_lookup", lambda *_a, **_kw: None)
+    monkeypatch.setattr(plantnet, "plantnet_configured", lambda: True)
+    monkeypatch.setattr(plantnet, "plantnet_cache_lookup", lambda *_a, **_kw: None)
     monkeypatch.setattr(
-        ai_services,
-        "identify_species",
+        plantnet, "identify_species",
         lambda *_a, **_kw: {
             "available": False,
             "source": "budget_exhausted",
@@ -286,13 +285,12 @@ def test_guest_budget_denial_returns_unit_without_enabling_uuid_reuse(
     png_bytes,
     monkeypatch,
 ):
-    import ai_services
+    import plantnet
     operation_id = str(uuid.uuid4())
-    monkeypatch.setattr(ai_services, "plantnet_configured", lambda: True)
-    monkeypatch.setattr(ai_services, "plantnet_cache_lookup", lambda *_a, **_kw: None)
+    monkeypatch.setattr(plantnet, "plantnet_configured", lambda: True)
+    monkeypatch.setattr(plantnet, "plantnet_cache_lookup", lambda *_a, **_kw: None)
     monkeypatch.setattr(
-        ai_services,
-        "identify_species",
+        plantnet, "identify_species",
         lambda *_a, **_kw: {
             "available": False,
             "source": "budget_exhausted",
@@ -327,14 +325,13 @@ def test_identify_provider_attempt_retains_signed_in_allowance(
     monkeypatch,
 ):
     import account_entitlements
-    import ai_services
+    import plantnet
     fake = _ReleasingEntitlements()
     monkeypatch.setattr(account_entitlements, "account_entitlement_client", fake)
-    monkeypatch.setattr(ai_services, "plantnet_configured", lambda: True)
-    monkeypatch.setattr(ai_services, "plantnet_cache_lookup", lambda *_a, **_kw: None)
+    monkeypatch.setattr(plantnet, "plantnet_configured", lambda: True)
+    monkeypatch.setattr(plantnet, "plantnet_cache_lookup", lambda *_a, **_kw: None)
     monkeypatch.setattr(
-        ai_services,
-        "identify_species",
+        plantnet, "identify_species",
         lambda *_a, **_kw: {
             "available": False,
             "source": "plantnet_error",
@@ -363,15 +360,14 @@ def test_analyze_budget_denial_releases_only_optional_identification_allowance(
     monkeypatch,
 ):
     import account_entitlements
-    import ai_services
+    import plantnet
     fake = _ReleasingEntitlements()
     operation_id = str(uuid.uuid4())
     monkeypatch.setattr(account_entitlements, "account_entitlement_client", fake)
-    monkeypatch.setattr(ai_services, "plantnet_configured", lambda: True)
-    monkeypatch.setattr(ai_services, "plantnet_cache_lookup", lambda *_a, **_kw: None)
+    monkeypatch.setattr(plantnet, "plantnet_configured", lambda: True)
+    monkeypatch.setattr(plantnet, "plantnet_cache_lookup", lambda *_a, **_kw: None)
     monkeypatch.setattr(
-        ai_services,
-        "identify_species",
+        plantnet, "identify_species",
         lambda *_a, **_kw: {
             "available": False,
             "source": "budget_unavailable",
@@ -407,7 +403,7 @@ def test_identify_concurrent_inner_cache_fill_releases_allowance(
     monkeypatch,
 ):
     import account_entitlements
-    import ai_services as ai
+    import plantnet
 
     fake = _ReleasingEntitlements()
     operation_id = str(uuid.uuid4())
@@ -424,7 +420,7 @@ def test_identify_concurrent_inner_cache_fill_releases_allowance(
         "cached": True,
     }
     monkeypatch.setattr(account_entitlements, "account_entitlement_client", fake)
-    monkeypatch.setattr(ai, "plantnet_configured", lambda: True)
+    monkeypatch.setattr(plantnet, "plantnet_configured", lambda: True)
     # The endpoint misses, consumes an allowance, then another request fills
     # the shared AI-service cache before identify_species performs its probe:
     # one lookup, the endpoint's, misses; every later one hits.
@@ -434,8 +430,8 @@ def test_identify_concurrent_inner_cache_fill_releases_allowance(
         lookups.append(1)
         return None if len(lookups) == 1 else cached
 
-    monkeypatch.setattr(ai, "plantnet_cache_lookup", cache_lookup)
-    monkeypatch.setattr(ai, "PLANTNET_API_KEY", "test-only-key")
+    monkeypatch.setattr(plantnet, "plantnet_cache_lookup", cache_lookup)
+    monkeypatch.setattr(plantnet, "PLANTNET_API_KEY", "test-only-key")
 
     response = client.post(
         "/api/identify",
@@ -459,7 +455,7 @@ def test_analyze_concurrent_inner_cache_fill_releases_optional_allowance(
     monkeypatch,
 ):
     import account_entitlements
-    import ai_services as ai
+    import plantnet
 
     fake = _ReleasingEntitlements()
     operation_id = str(uuid.uuid4())
@@ -476,15 +472,15 @@ def test_analyze_concurrent_inner_cache_fill_releases_optional_allowance(
         "cached": True,
     }
     monkeypatch.setattr(account_entitlements, "account_entitlement_client", fake)
-    monkeypatch.setattr(ai, "plantnet_configured", lambda: True)
+    monkeypatch.setattr(plantnet, "plantnet_configured", lambda: True)
     lookups = []
 
     def cache_lookup(*_a, **_kw):
         lookups.append(1)
         return None if len(lookups) == 1 else cached
 
-    monkeypatch.setattr(ai, "plantnet_cache_lookup", cache_lookup)
-    monkeypatch.setattr(ai, "PLANTNET_API_KEY", "test-only-key")
+    monkeypatch.setattr(plantnet, "plantnet_cache_lookup", cache_lookup)
+    monkeypatch.setattr(plantnet, "PLANTNET_API_KEY", "test-only-key")
 
     response = _post_analyze(
         client,
@@ -681,13 +677,13 @@ async def test_replayed_operation_is_stopped_without_testclient_lifespan(png_byt
 
 @pytest.mark.anyio
 async def test_analyze_plantnet_fanout_reserves_shared_identification_unit(monkeypatch):
-    import ai_services
+    import plantnet
     calls = []
 
     async def allow(_request, *, feature):
         calls.append(feature)
 
-    monkeypatch.setattr(ai_services, "plantnet_configured", lambda: True)
+    monkeypatch.setattr(plantnet, "plantnet_configured", lambda: True)
     monkeypatch.setattr(server_main, "_authorize_metered_feature", allow)
 
     unavailable = await server_main._authorize_optional_species_lookup(object())
@@ -698,12 +694,12 @@ async def test_analyze_plantnet_fanout_reserves_shared_identification_unit(monke
 
 @pytest.mark.anyio
 async def test_analyze_survives_exhausted_optional_identification_quota(monkeypatch):
-    import ai_services
+    import plantnet
     async def deny(_request, *, feature):
         assert feature == "plant_identification"
         raise server_main.HTTPException(status_code=429, detail="quota_exhausted")
 
-    monkeypatch.setattr(ai_services, "plantnet_configured", lambda: True)
+    monkeypatch.setattr(plantnet, "plantnet_configured", lambda: True)
     monkeypatch.setattr(server_main, "_authorize_metered_feature", deny)
 
     unavailable = await server_main._authorize_optional_species_lookup(object())
