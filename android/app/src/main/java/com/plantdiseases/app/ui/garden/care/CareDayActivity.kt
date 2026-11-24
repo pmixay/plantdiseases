@@ -13,9 +13,13 @@ import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.updatePadding
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
 import com.google.android.material.snackbar.Snackbar
 import com.plantdiseases.app.R
+import com.plantdiseases.app.data.local.AppDatabase
+import com.plantdiseases.app.data.local.gardenChanges
 import com.plantdiseases.app.data.repository.CareRepository
 import com.plantdiseases.app.databinding.ActivityCareDayBinding
 import com.plantdiseases.app.databinding.ItemCareTaskBinding
@@ -25,15 +29,15 @@ import com.plantdiseases.app.util.LocaleHelper
 import com.plantdiseases.app.util.ReminderManager
 import com.plantdiseases.app.util.ReminderPresets
 import dagger.hilt.android.AndroidEntryPoint
-import kotlinx.coroutines.CoroutineStart
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.NonCancellable
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import javax.inject.Inject
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * Day view — reached from the calendar's "Today, N tasks" card or a
@@ -47,10 +51,12 @@ class CareDayActivity : AppCompatActivity() {
     private lateinit var binding: ActivityCareDayBinding
     private var dayStartMs: Long = 0L
     private var doneExpanded = false
-    private var loadJob: Job? = null
 
     @Inject
     lateinit var careRepository: CareRepository
+
+    @Inject
+    lateinit var database: AppDatabase
 
     override fun attachBaseContext(newBase: Context) {
         super.attachBaseContext(LocaleHelper.applyLocale(newBase))
@@ -77,11 +83,14 @@ class CareDayActivity : AppCompatActivity() {
             binding.careDayDoneContainer.visibility = if (doneExpanded) View.VISIBLE else View.GONE
             updateToggleLabel(lastDoneCount)
         }
-    }
-
-    override fun onResume() {
-        super.onResume()
-        loadDay()
+        // The day follows the database: a task done or undone here, from the
+        // garden or from a reminder notification re-renders it, and coming
+        // back re-reads it. collectLatest drops a read a newer change made stale.
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                database.gardenChanges().collectLatest { loadDay() }
+            }
+        }
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
@@ -95,53 +104,50 @@ class CareDayActivity : AppCompatActivity() {
 
     private var lastDoneCount = 0
 
-    private fun loadDay() {
-        loadJob?.cancel()
-        loadJob = lifecycleScope.launch {
-            val nowMs = System.currentTimeMillis()
-            val isToday = CareQueue.epochDayOf(dayStartMs) == CareQueue.epochDayOf(nowMs)
-            val dateLabel = SimpleDateFormat("d MMMM", Locale.getDefault()).format(dayStartMs)
-            binding.careDayTitle.text = if (isToday) {
-                getString(R.string.calendar_today_prefix, dateLabel)
-            } else {
-                dateLabel.replaceFirstChar { it.uppercase() }
-            }
-
-            // Overdue-from-earlier-days: pending tasks whose due day is
-            // strictly before today, surfaced here so they are never
-            // silently invisible just because "today" moved past them.
-            val overdue = if (isToday) {
-                careRepository.today(nowMs).filter { it.task.dueAt < dayStartMs }
-            } else {
-                emptyList()
-            }
-            val todayTasks = careRepository.day(dayStartMs)
-            val pending = todayTasks.filter { it.task.status == CareQueue.CareTask.Status.PENDING }
-            val done = todayTasks.filter { it.task.status == CareQueue.CareTask.Status.DONE }
-            lastDoneCount = done.size
-
-            binding.careDaySubtitle.text =
-                resources.getQuantityString(R.plurals.care_tasks_count, pending.size + overdue.size, pending.size + overdue.size)
-
-            binding.careDayOverdueContainer.removeAllViews()
-            binding.careDayOverdueContainer.visibility = if (overdue.isEmpty()) View.GONE else View.VISIBLE
-            if (overdue.isNotEmpty()) {
-                binding.careDayOverdueContainer.addView(sectionHeader(R.string.calendar_overdue_header))
-                overdue.sortedBy { it.task.dueAt }.forEach { binding.careDayOverdueContainer.addView(buildRow(it)) }
-            }
-
-            binding.careDayPendingContainer.removeAllViews()
-            pending.sortedWith(compareBy({ it.task.dueAt }, { it.plantName }))
-                .forEach { binding.careDayPendingContainer.addView(buildRow(it)) }
-
-            binding.careDayDoneContainer.removeAllViews()
-            done.sortedBy { it.task.dueAt }.forEach { binding.careDayDoneContainer.addView(buildRow(it)) }
-            updateToggleLabel(done.size)
-            binding.careDayDoneContainer.visibility = if (doneExpanded) View.VISIBLE else View.GONE
-
-            val nothingAtAll = overdue.isEmpty() && pending.isEmpty() && done.isEmpty()
-            binding.careDayEmptyState.visibility = if (nothingAtAll) View.VISIBLE else View.GONE
+    private suspend fun loadDay() {
+        val nowMs = System.currentTimeMillis()
+        val isToday = CareQueue.epochDayOf(dayStartMs) == CareQueue.epochDayOf(nowMs)
+        val dateLabel = SimpleDateFormat("d MMMM", Locale.getDefault()).format(dayStartMs)
+        binding.careDayTitle.text = if (isToday) {
+            getString(R.string.calendar_today_prefix, dateLabel)
+        } else {
+            dateLabel.replaceFirstChar { it.uppercase() }
         }
+
+        // Overdue-from-earlier-days: pending tasks whose due day is
+        // strictly before today, surfaced here so they are never
+        // silently invisible just because "today" moved past them.
+        val overdue = if (isToday) {
+            careRepository.today(nowMs).filter { it.task.dueAt < dayStartMs }
+        } else {
+            emptyList()
+        }
+        val todayTasks = careRepository.day(dayStartMs)
+        val pending = todayTasks.filter { it.task.status == CareQueue.CareTask.Status.PENDING }
+        val done = todayTasks.filter { it.task.status == CareQueue.CareTask.Status.DONE }
+        lastDoneCount = done.size
+
+        binding.careDaySubtitle.text =
+            resources.getQuantityString(R.plurals.care_tasks_count, pending.size + overdue.size, pending.size + overdue.size)
+
+        binding.careDayOverdueContainer.removeAllViews()
+        binding.careDayOverdueContainer.visibility = if (overdue.isEmpty()) View.GONE else View.VISIBLE
+        if (overdue.isNotEmpty()) {
+            binding.careDayOverdueContainer.addView(sectionHeader(R.string.calendar_overdue_header))
+            overdue.sortedBy { it.task.dueAt }.forEach { binding.careDayOverdueContainer.addView(buildRow(it)) }
+        }
+
+        binding.careDayPendingContainer.removeAllViews()
+        pending.sortedWith(compareBy({ it.task.dueAt }, { it.plantName }))
+            .forEach { binding.careDayPendingContainer.addView(buildRow(it)) }
+
+        binding.careDayDoneContainer.removeAllViews()
+        done.sortedBy { it.task.dueAt }.forEach { binding.careDayDoneContainer.addView(buildRow(it)) }
+        updateToggleLabel(done.size)
+        binding.careDayDoneContainer.visibility = if (doneExpanded) View.VISIBLE else View.GONE
+
+        val nothingAtAll = overdue.isEmpty() && pending.isEmpty() && done.isEmpty()
+        binding.careDayEmptyState.visibility = if (nothingAtAll) View.VISIBLE else View.GONE
     }
 
     private fun updateToggleLabel(doneCount: Int) {
@@ -218,7 +224,6 @@ class CareDayActivity : AppCompatActivity() {
                 }
                 completed
             }
-            loadDay()
             if (record == CareRepository.CompletionRecord.NoChange) return@launch
             Snackbar.make(binding.careDayRoot, R.string.task_mark_done, Snackbar.LENGTH_LONG)
                 .setAction(R.string.task_undo) {
@@ -229,7 +234,6 @@ class CareDayActivity : AppCompatActivity() {
                                 rescheduleRecurring(view, afterCare = false)
                             }
                         }
-                        loadDay()
                     }
                 }
                 .show()

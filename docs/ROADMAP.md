@@ -219,7 +219,9 @@ Each item is its own PR; don't fold one into another.
       of the 17 `launch(start = UNDISPATCHED)` sites. One screen per PR. Done:
       the unread-notification count (Home's bell and the Home tab's dot) and
       the garden tab (`AppDatabase.gardenChanges()`, Room's table-change
-      signal, since it reads eight tables). Next: plant detail, the care day.
+      signal, since it reads eight tables) and the care day. Plant detail stays
+      reload-on-resume: it rebuilds its whole tab hierarchy per load, so a live
+      re-render would reset scroll and expanded cards mid-use.
 - [ ] **Ratchet detekt down** as splits land (`android/config/detekt/detekt.yml`,
       re-measured 2026-11-23: LargeClass 1200 over `DetailExtraCardsController`'s
       1103, LongMethod 210 over `ResultActivity.displayResult`'s 197).
