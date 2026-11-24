@@ -30,10 +30,10 @@ try:
 except ImportError:
     import analysis_payload
 try:
-    from . import community, community_popular
+    from . import community_popular, community_scans
 except ImportError:
-    import community
     import community_popular
+    import community_scans
 try:
     from . import diseases_data
 except ImportError:
@@ -113,7 +113,7 @@ def persist_community_analysis_token(
 ) -> bool:
     """Persist a publication proof; report failure without leaking a phantom token."""
     try:
-        community.record_analysis_token(
+        community_scans.record_analysis_token(
             token,
             disease=disease,
             confidence=confidence,

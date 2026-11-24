@@ -18,6 +18,7 @@ from PIL import Image
 
 import community_deletion
 import community_safety
+import community_scans
 from tests.conftest import _test_access_token
 
 
@@ -284,7 +285,7 @@ def test_unattached_media_is_owner_only_and_cannot_be_borrowed(forum):
 
 
 def _issue_scan(community_store, token: str, image: bytes, disease="powdery_mildew"):
-    community_store.record_analysis_token(
+    community_scans.record_analysis_token(
         token,
         disease=disease,
         confidence=0.71,
@@ -339,7 +340,7 @@ def test_scan_token_claimed_by_someone_else_is_refused(forum, community_store):
     image = _png((5, 6, 7))
     token = "scan-" + uuid.uuid4().hex
     _issue_scan(community_store, token, image)
-    community_store.record_analysis_scan(
+    community_scans.record_analysis_scan(
         scan_id=token, account_actor_id=_actor("owner"), country="GB", image_bytes=image,
     )
     with pytest.raises(forum.ForumError) as error:

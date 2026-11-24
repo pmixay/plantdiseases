@@ -347,12 +347,12 @@ def community_http_store(community_strict_http_store, monkeypatch):
     every id counts as issued and the write goes through ``record_scan`` with
     the client's values. The rejection paths are tested explicitly elsewhere.
     """
-    import community
+    import community_scans
 
     comm = community_strict_http_store
 
     def legacy_analysis_write(**kwargs):
-        return comm.record_scan(
+        return community_scans.record_scan(
             scan_id=kwargs["scan_id"],
             account_actor_id=kwargs["account_actor_id"],
             country=kwargs["country"],
@@ -369,8 +369,8 @@ def community_http_store(community_strict_http_store, monkeypatch):
             nickname=kwargs.get("nickname"),
         )
 
-    monkeypatch.setattr(community, "record_analysis_scan", legacy_analysis_write)
-    monkeypatch.setattr(community, "is_analysis_token_issued", lambda *a, **k: True)
+    monkeypatch.setattr(community_scans, "record_analysis_scan", legacy_analysis_write)
+    monkeypatch.setattr(community_scans, "is_analysis_token_issued", lambda *a, **k: True)
     return comm
 
 

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import pytest
 
+import community_scans
 import community_views
 
 
@@ -17,7 +18,7 @@ def comm(community_store):
 
 
 def _scan(comm, scan_id="s1", owner="owner"):
-    comm.record_scan(scan_id=scan_id, user_pseudo_id=owner, country="GB",
+    community_scans.record_scan(scan_id=scan_id, user_pseudo_id=owner, country="GB",
                      region="London", disease="leaf_spot")
 
 

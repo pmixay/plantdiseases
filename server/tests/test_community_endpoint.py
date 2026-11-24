@@ -16,6 +16,7 @@ import pytest
 
 import community_deletion
 import community_feeds
+import community_scans
 import community_views
 from server.tests.conftest import _test_access_token
 
@@ -130,7 +131,7 @@ def test_legacy_rows_remain_readable_but_are_never_mutable(
 ):
     import community as comm
 
-    comm.record_scan(
+    community_scans.record_scan(
         scan_id="legacyreadonly1",
         user_pseudo_id="legacy-install",
         country="GB",
@@ -309,10 +310,9 @@ def test_community_scan_upload_rejects_unissued_scan_id(
     # Integrity gate: a scan_id the server never issued at /api/analyze is
     # refused (422) so a client can't post a fabricated diagnosis into the
     # public feed under a made-up or copied publication capability.
-    import community
     db_path, _ = isolated_community
     monkeypatch.setattr(
-        community, "is_analysis_token_issued", lambda *a, **k: False
+        community_scans, "is_analysis_token_issued", lambda *a, **k: False
     )
     r = client.post(
         "/api/community/scan",
@@ -338,10 +338,9 @@ def test_analysis_publication_uses_server_claims_and_is_actor_idempotent(
     client, strict_community, monkeypatch,
 ):
     db_path, _ = strict_community
-    import community as comm
 
     image_bytes = _png_bytes()
-    comm.record_analysis_token(
+    community_scans.record_analysis_token(
         "bound-analysis-1",
         disease="leaf_spot",
         confidence=0.73,
@@ -397,7 +396,6 @@ def test_analysis_publication_rejects_missing_or_substituted_image(
     client, strict_community, monkeypatch,
 ):
     db_path, thumb_dir = strict_community
-    import community as comm
 
     analyzed_bytes = _png_bytes()
     different = io.BytesIO()
@@ -405,7 +403,7 @@ def test_analysis_publication_rejects_missing_or_substituted_image(
 
     Image.new("RGB", (32, 32), color=(180, 35, 30)).save(different, format="PNG")
     substituted_bytes = different.getvalue()
-    comm.record_analysis_token(
+    community_scans.record_analysis_token(
         "image-bound-analysis-1",
         disease="leaf_spot",
         confidence=0.73,
@@ -463,10 +461,9 @@ def test_failed_analysis_insert_does_not_burn_publication_token(
     client, strict_community, monkeypatch,
 ):
     db_path, _ = strict_community
-    import community as comm
 
     image_bytes = _png_bytes()
-    comm.record_analysis_token(
+    community_scans.record_analysis_token(
         "retry-analysis-1",
         disease="healthy",
         confidence=0.9,
@@ -507,10 +504,9 @@ def test_failed_analysis_insert_does_not_burn_publication_token(
 def test_unclaimed_analysis_token_scan_id_collision_is_conflict(
     client, strict_community, monkeypatch,
 ):
-    import community as comm
 
     image_bytes = _png_bytes()
-    comm.record_analysis_token(
+    community_scans.record_analysis_token(
         "collision-analysis-1",
         disease="healthy",
         confidence=0.9,
@@ -518,7 +514,7 @@ def test_unclaimed_analysis_token_scan_id_collision_is_conflict(
         species_score=None,
         image_sha256=hashlib.sha256(image_bytes).hexdigest(),
     )
-    comm.record_scan(
+    community_scans.record_scan(
         scan_id="collision-analysis-1",
         user_pseudo_id="legacy-collision",
         country="GB",

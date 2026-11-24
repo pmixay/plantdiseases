@@ -13,6 +13,7 @@ from PIL import Image
 
 import community_deletion
 import community_feeds
+import community_scans
 import community_views
 
 
@@ -34,7 +35,7 @@ def test_tombstone_hides_immediately_then_retryable_cleanup_removes_actor_data(
     responder = str(uuid.uuid4())
     legacy = "legacy-install"
     thumbnail_bytes = _thumbnail_bytes()
-    community.record_analysis_token(
+    community_scans.record_analysis_token(
         "delete-account-scan",
         disease="leaf_spot",
         confidence=0.91,
@@ -42,7 +43,7 @@ def test_tombstone_hides_immediately_then_retryable_cleanup_removes_actor_data(
         species_score=0.88,
         image_sha256=hashlib.sha256(thumbnail_bytes).hexdigest(),
     )
-    community.record_analysis_token(
+    community_scans.record_analysis_token(
         "keep-unclaimed-token",
         disease="healthy",
         confidence=0.99,
@@ -50,7 +51,7 @@ def test_tombstone_hides_immediately_then_retryable_cleanup_removes_actor_data(
         species_score=None,
         image_sha256=hashlib.sha256(b"unclaimed image").hexdigest(),
     )
-    community.record_analysis_scan(
+    community_scans.record_analysis_scan(
         scan_id="delete-account-scan",
         account_actor_id=owner,
         nickname="Private Fern",
@@ -58,7 +59,7 @@ def test_tombstone_hides_immediately_then_retryable_cleanup_removes_actor_data(
         region="London",
         image_bytes=thumbnail_bytes,
     )
-    community.record_scan(
+    community_scans.record_scan(
         scan_id="keep-legacy-scan",
         user_pseudo_id=legacy,
         country="GB",
@@ -74,13 +75,13 @@ def test_tombstone_hides_immediately_then_retryable_cleanup_removes_actor_data(
         thumbnail = connection.execute(
             "SELECT thumb_path FROM community_scans WHERE scan_id = 'delete-account-scan'"
         ).fetchone()[0]
-    assert thumbnail and community.thumbnail_is_visible(thumbnail)
+    assert thumbnail and community_scans.thumbnail_is_visible(thumbnail)
 
     assert community_deletion.request_actor_deletion(owner)
 
     visible = community_feeds.nearby_scans(country="GB", scope="country")
     assert [row["scan_id"] for row in visible] == ["keep-legacy-scan"]
-    assert not community.thumbnail_is_visible(thumbnail)
+    assert not community_scans.thumbnail_is_visible(thumbnail)
     assert community_views.view_count_for("keep-legacy-scan") == 0
     with closing(sqlite3.connect(community.COMMUNITY_DB_PATH)) as connection, connection:
         # Logical hiding precedes the asynchronous physical pass.
@@ -111,7 +112,7 @@ def test_tombstone_hides_immediately_then_retryable_cleanup_removes_actor_data(
         ).fetchone()[0] == 1
 
     with pytest.raises(ValueError, match="deleted account actor"):
-        community.record_scan(
+        community_scans.record_scan(
             scan_id="replayed-after-delete",
             account_actor_id=owner,
             nickname="Private Fern",
@@ -125,7 +126,7 @@ def test_thumbnail_failure_keeps_rows_hidden_and_schedules_bounded_retry(
     community, monkeypatch,
 ):
     owner = str(uuid.uuid4())
-    community.record_scan(
+    community_scans.record_scan(
         scan_id="retry-delete-scan",
         account_actor_id=owner,
         nickname="Retry Fern",
@@ -206,7 +207,7 @@ def test_legacy_not_null_schema_migrates_without_linking_rows_to_accounts(
 
     module.init_db()
     actor = str(uuid.uuid4())
-    module.record_scan(
+    community_scans.record_scan(
         scan_id="new-account-row",
         account_actor_id=actor,
         nickname="Account Fern",
@@ -301,7 +302,7 @@ def test_replaying_the_deletion_repairs_a_community_store_restored_from_an_older
     community, tmp_path,
 ):
     owner = str(uuid.uuid4())
-    community.record_scan(
+    community_scans.record_scan(
         scan_id="restore-scan",
         account_actor_id=owner,
         nickname="Restore Fern",
@@ -344,7 +345,7 @@ def test_replaying_the_deletion_repairs_a_community_store_restored_from_an_older
             "SELECT COUNT(*) FROM community_scans WHERE account_actor_id = ?", (owner,)
         ).fetchone()[0] == 0
     with pytest.raises(ValueError, match="deleted account actor"):
-        community.record_scan(
+        community_scans.record_scan(
             scan_id="after-replay",
             account_actor_id=owner,
             nickname="Restore Fern",

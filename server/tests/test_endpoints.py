@@ -10,6 +10,8 @@ from contextlib import closing
 import pytest
 from PIL import Image
 
+import community_scans
+
 
 def test_health_contract(client):
     from classifier import DEFAULT_CLASS_NAMES
@@ -765,7 +767,6 @@ def test_analyze_response_issues_separate_community_and_feedback_tokens(
     client, png_bytes
 ):
     """Publication capabilities must never double as feedback receipts."""
-    import community
     import training_store
 
     r = client.post(
@@ -778,8 +779,8 @@ def test_analyze_response_issues_separate_community_and_feedback_tokens(
     assert isinstance(scan_id, str) and len(scan_id) >= 16
     assert isinstance(feedback_receipt, str) and len(feedback_receipt) == 43
     assert scan_id != feedback_receipt
-    assert community.is_analysis_token_issued(scan_id)
-    assert not community.is_analysis_token_issued(feedback_receipt)
+    assert community_scans.is_analysis_token_issued(scan_id)
+    assert not community_scans.is_analysis_token_issued(feedback_receipt)
     assert training_store.sample_by_receipt(feedback_receipt) is None
 
 
@@ -820,12 +821,11 @@ def test_analyze_capabilities_bind_exact_upload_on_fresh_and_cached_paths(
 def test_analyze_omits_unpersisted_publication_capability_on_cache_miss_and_hit(
     client, png_bytes, monkeypatch,
 ):
-    import community
 
     def fail_persistence(*_args, **_kwargs):
         raise sqlite3.OperationalError("synthetic persistence failure")
 
-    monkeypatch.setattr(community, "record_analysis_token", fail_persistence)
+    monkeypatch.setattr(community_scans, "record_analysis_token", fail_persistence)
     first = client.post(
         "/api/analyze",
         files={"image": ("leaf.png", png_bytes, "image/png")},

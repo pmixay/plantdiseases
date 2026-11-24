@@ -13,6 +13,7 @@ import time
 import pytest
 
 import community_feeds
+import community_scans
 
 
 @pytest.fixture
@@ -21,7 +22,7 @@ def mapenv(community_http_store):
 
 
 def _scan(comm, sid, lat, lon, disease="leaf_spot", user="u1"):
-    comm.record_scan(
+    community_scans.record_scan(
         scan_id=sid, user_pseudo_id=user, country="PL",
         lat=lat, lon=lon, disease=disease,
     )

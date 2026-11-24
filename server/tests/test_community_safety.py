@@ -15,6 +15,7 @@ import pytest
 import community_deletion
 import community_feeds
 import community_safety
+import community_scans
 from server.tests.conftest import _test_access_token
 
 
@@ -63,7 +64,7 @@ def _queue_legacy_report(community, reporter: str, owner: str, scan_id: str) -> 
 
 
 def _scan(community, scan_id: str, actor: str, nickname: str = "Fern") -> str:
-    community.record_scan(
+    community_scans.record_scan(
         scan_id=scan_id,
         account_actor_id=actor,
         country="RU",
@@ -175,7 +176,7 @@ def test_operator_removes_a_scan_and_drains_the_legacy_report_queue(safety_store
     flagged_report = _queue_legacy_report(community, reporter, owner, "flagged-scan")
     assert community_safety.remove_scan("flagged-scan") is False  # never the internal id
     assert community_safety.remove_scan(flagged) is True
-    assert community.scan_exists("flagged-scan") is False
+    assert community_scans.scan_exists("flagged-scan") is False
     assert community_safety.remove_scan(flagged) is False
     assert flagged_report not in {
         report["report_id"] for report in community_safety.pending_content_reports()
@@ -186,7 +187,7 @@ def test_operator_removes_a_scan_and_drains_the_legacy_report_queue(safety_store
     report_id = _queue_legacy_report(community, reporter, owner, "moderated-scan")
     assert [r["report_id"] for r in community_safety.pending_content_reports()] == [report_id]
     assert community_safety.moderate_content_report(report_id, "remove_content") is True
-    assert community.scan_exists("moderated-scan") is False
+    assert community_scans.scan_exists("moderated-scan") is False
     assert community_safety.pending_content_reports() == []
 
 
@@ -226,9 +227,9 @@ def test_moderation_tool_requires_confirmation_to_remove_a_scan(safety_store, ca
     token = _scan(community, "tool-scan", _actor("tool-owner"))
     with pytest.raises(SystemExit):
         community_moderation.main(["remove-scan", token])
-    assert community.scan_exists("tool-scan") is True
+    assert community_scans.scan_exists("tool-scan") is True
     assert community_moderation.main(["remove-scan", token, "--confirm-remove"]) == 0
-    assert community.scan_exists("tool-scan") is False
+    assert community_scans.scan_exists("tool-scan") is False
     assert community_moderation.main(["remove-scan", token, "--confirm-remove"]) == 2
     capsys.readouterr()
 
@@ -354,14 +355,13 @@ def test_scan_items_carry_no_author_or_like_fields(safety_store, client):
 
 
 def test_species_scans_come_nearest_first_with_distance(safety_store):
-    community = safety_store
     places = {
         "far-scan": ("DE", "Berlin", 52.52, 13.40),
         "country-scan": ("RU", "Kazan", 55.79, 49.12),
         "near-scan": ("RU", "Moscow", 55.76, 37.63),
     }
     for scan_id, (country, city, lat, lon) in places.items():
-        community.record_scan(
+        community_scans.record_scan(
             scan_id=scan_id,
             account_actor_id=_actor(scan_id),
             country=country,

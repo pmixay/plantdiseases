@@ -17,6 +17,7 @@ from contextlib import closing
 import pytest
 
 import community_popular
+import community_scans
 from countries import to_iso_alpha2
 
 
@@ -48,14 +49,12 @@ def test_to_iso_alpha2(raw, expected):
 def test_record_scan_canonicalizes_country(community_store):
     """Two uploads for the same country in different spellings land in one
     ISO bucket, so popular_snapshot(country="RU") sees both."""
-    comm = community_store
-
-    comm.record_scan(
+    community_scans.record_scan(
         scan_id="canonscan01", user_pseudo_id="pseudo-canon-a",
         country="Russia", region="Moscow", disease="leaf_spot",
         species="Spathiphyllum blandum",
     )
-    comm.record_scan(
+    community_scans.record_scan(
         scan_id="canonscan02", user_pseudo_id="pseudo-canon-b",
         country="Россия", region="Moscow", disease="leaf_spot",
         species="Monstera deliciosa",

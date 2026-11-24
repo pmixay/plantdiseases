@@ -190,7 +190,7 @@ def register(router: APIRouter, m) -> None:
         # us ingesting its payload.
         issued = await asyncio.get_running_loop().run_in_executor(
             None,
-            lambda: m.community.is_analysis_token_issued(payload.scan_id),
+            lambda: m.community_scans.is_analysis_token_issued(payload.scan_id),
         )
         if not issued:
             m.logger.warning("Community publication capability rejected")
@@ -234,7 +234,7 @@ def register(router: APIRouter, m) -> None:
         try:
             row_id = await asyncio.get_running_loop().run_in_executor(
                 None,
-                lambda: m.community.record_analysis_scan(
+                lambda: m.community_scans.record_analysis_scan(
                     scan_id=payload.scan_id,
                     account_actor_id=principal.actor_id,
                     country=geo["country"] or "",
@@ -251,17 +251,17 @@ def register(router: APIRouter, m) -> None:
                     locale=payload.locale,
                 ),
             )
-        except m.community.AnalysisTokenUnknownError as exc:
+        except m.community_scans.AnalysisTokenUnknownError as exc:
             raise HTTPException(
                 status_code=422,
                 detail="Unknown scan_id - re-scan before sharing to the community.",
             ) from exc
-        except m.community.AnalysisImageMismatchError as exc:
+        except m.community_scans.AnalysisImageMismatchError as exc:
             raise HTTPException(
                 status_code=422,
                 detail="Community image does not match the analyzed image.",
             ) from exc
-        except m.community.AnalysisTokenConflictError as exc:
+        except m.community_scans.AnalysisTokenConflictError as exc:
             raise HTTPException(
                 status_code=409,
                 detail="This scan_id has already been published.",
@@ -333,7 +333,7 @@ def register(router: APIRouter, m) -> None:
                 None, lambda: m.community.resolve_scan_token(payload.scan_id.strip()),
             )
             owner_actor = await loop.run_in_executor(
-                None, lambda: m.community.account_owner_of(sid)
+                None, lambda: m.community_scans.account_owner_of(sid)
             )
             if owner_actor is None:
                 raise HTTPException(status_code=409, detail="legacy_scan_read_only")
@@ -637,7 +637,7 @@ def register(router: APIRouter, m) -> None:
         if "/" in filename or "\\" in filename or ".." in filename:
             raise HTTPException(status_code=400, detail="Invalid thumbnail name")
         visible = await asyncio.get_running_loop().run_in_executor(
-            None, lambda: m.community.thumbnail_is_visible(filename)
+            None, lambda: m.community_scans.thumbnail_is_visible(filename)
         )
         if not visible:
             raise HTTPException(status_code=404, detail="Thumbnail not found")
@@ -645,7 +645,7 @@ def register(router: APIRouter, m) -> None:
         if not path.is_file():
             raise HTTPException(status_code=404, detail="Thumbnail not found")
         # Streams off the event loop; supports 304 revalidation. Thumbnails
-        # are always re-encoded to JPEG by community._save_thumbnail.
+        # are always re-encoded to JPEG by community_scans._save_thumbnail.
         return community_http.cached_image_response(
             request, path,
             media_type="image/jpeg",
