@@ -3921,7 +3921,8 @@
             "anyOf": [
               {
                 "type": "string",
-                "maxLength": 128
+                "maxLength": 128,
+                "minLength": 8
               },
               {
                 "type": "null"
@@ -3933,7 +3934,9 @@
             "anyOf": [
               {
                 "items": {
-                  "type": "string"
+                  "type": "string",
+                  "maxLength": 128,
+                  "minLength": 8
                 },
                 "type": "array",
                 "maxItems": 50

@@ -147,10 +147,6 @@ Each item is its own PR; don't fold one into another.
 
 **Server**
 
-- [ ] **Shared `Annotated` types for request models.** `scan_id` is `8..64` plus a
-      charset validator in `CommunityScanRequest` and `..128` with no charset in
-      `CommunityViewRequest`; `scan_ids` items are unbounded. Standardise on the
-      looser bound (the Android client mints these ids).
 - [ ] **Delete `routes_legacy_app.py`** (with `tests/test_legacy_app_routes.py` and
       `tests/fixtures/app_1_9_models.kt`) once few installs still run 1.9: it
       answers 1.9's retired-feature reads with empty shapes.
