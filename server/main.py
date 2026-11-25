@@ -90,6 +90,7 @@ try:
         popular_bundle,
         popular_plants,
         progression,
+        routes_admin_panel,
         routes_assistant,
         routes_community,
         routes_content,
@@ -136,6 +137,7 @@ except ImportError:
     import popular_bundle
     import popular_plants
     import progression  # noqa: F401 - the routes reach it as m.progression
+    import routes_admin_panel
     import routes_assistant
     import routes_community
     import routes_content
@@ -2399,6 +2401,8 @@ for _routes in (
 
 
 app.include_router(api_router)
+# The desktop moderation panel: static files outside /api (routes_admin_panel.py).
+routes_admin_panel.register(app)
 
 
 # Direct-run convenience only. The documented deployment paths (start.sh,

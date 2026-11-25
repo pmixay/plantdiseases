@@ -227,6 +227,7 @@ authoritative list.
 | `GET`  | `/api/community/avatars/{author_token}` | A member's public profile photo (404 when none); authors in the feed and threads carry `avatar_version`, sent back as `?v=` to cache-bust |
 | `GET`  | `/api/community/helpers/{author_token}` · `/api/community/me/achievements` | Level, achievements and helper stats (own view adds the achievement discount) |
 | `*`    | `/api/community/admin/…` · `/api/community/moderation/…` | Staff tools (queue, remove/restore, lock, sanctions, appeals, roles, audit) and members' notices and appeals |
+| `GET`  | `/admin/` | Desktop moderation panel over the staff routes; Yandex ID sign-in in the browser (`DEPLOYMENT.md` §5.1) |
 
 Response shapes and validation rules are documented inline in
 [`server/main.py`](server/main.py).

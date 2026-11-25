@@ -69,6 +69,8 @@
     "plantnet_cache_size": 256
   },
   "security": {
+    "admin_panel_yandex_client_id": "",
+    "_admin_panel_note": "The desktop moderation panel at /admin/ signs in with Yandex ID in the browser. Set this to the client id of the same Yandex OAuth app the Android client uses, and add a Web platform with the redirect URL https://<host>/admin/ to that app. Empty: the panel loads and says it is not set up. admin_panel_account_base_path (default /id) is where the browser reaches the account service on this host.",
     "feedback_ip_pepper": "",
     "community_author_key_pepper": "community-author-storage-v2",
     "_community_author_key_pepper_note": "Stable server-side transform for account-free Community author credentials at rest. Set the same value on every replica and do not rotate it without a key-migration plan; changing it makes existing device handles unreachable. It is intentionally independent from the rotatable IP privacy pepper.",

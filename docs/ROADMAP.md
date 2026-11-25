@@ -31,6 +31,10 @@ as last recorded. Line counts are approximate; re-measure before acting on one.
 - [ ] ★ **Create the first forum admin** on production:
       `python manage_roles.py grant --nickname … --role admin` in the account-api
       container (migration 0011 must run first).
+- [ ] ★ **Turn on the desktop moderation panel** (`/admin/`): add a Web services
+      platform with the redirect URL `https://<host>/admin/` to the Android app's
+      Yandex OAuth app, set `admin_panel_yandex_client_id`, restart the API, then
+      sign in once and work a real queue (`DEPLOYMENT.md` §5.1).
 
 ---
 
@@ -125,7 +129,6 @@ README status section and `docs/assets/per-class.svg` (its numbers are hand-copi
       less is noise; under a treatment plan, RECOVERING needs ≥ 70 % of due work done
       and a healthy reading or a rising trend. They were reasoned, not measured:
       compare them with a few real plants before trusting a red "Poor condition".
-- [ ] **Desktop web admin panel** for moderation.
 
 ---
 

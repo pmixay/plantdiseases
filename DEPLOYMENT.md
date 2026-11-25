@@ -390,6 +390,29 @@ Use `--action dismiss` when the content does not violate the published rules.
 The public criteria, response targets, retention, and Russian operator summary
 are in
 [docs/COMMUNITY_RULES_AND_MODERATION.md](docs/COMMUNITY_RULES_AND_MODERATION.md).
+
+**Forum moderation on a computer: `/admin/`.** The app API serves a desktop
+panel (`server/admin_panel/`, `server/routes_admin_panel.py`) for everything
+the `/api/community/admin/...` routes offer: the report, hidden, appeal,
+frozen-discount and label-review queues, post and answer actions, sanctions,
+profile-photo takedown, image bans, training exclusion, the audit log and
+roles. It is a client of the existing routes only, so the same role checks
+apply; a staff role is still granted with `manage_roles.py` (admin) or from
+the panel's Roles tab (expert, moderator).
+
+Staff sign in with Yandex ID in the browser. To turn it on, once:
+
+1. In the Yandex OAuth console, open the app the Android client already uses
+   and add a **Web services** platform with the redirect URL
+   `https://<your host>/admin/`. Same app: the account service accepts only
+   tokens issued to it.
+2. Set `admin_panel_yandex_client_id` (env `ADMIN_PANEL_YANDEX_CLIENT_ID`) to
+   that app's client id and restart the API. Until then `/admin/` loads and
+   says it is not set up.
+
+The browser reaches the account service at `/id/` on the same host (set
+`admin_panel_account_base_path` if it lives elsewhere). The session stays in
+that browser tab only; Sign out revokes it.
   (`Content-Type: text/plain; version=0.0.4`)
 - Liveness probe: `GET /api/health` — also used by the container `HEALTHCHECK`.
 
