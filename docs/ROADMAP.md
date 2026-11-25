@@ -154,9 +154,6 @@ Each item is its own PR; don't fold one into another.
 - [ ] **Delete `routes_legacy_app.py`** (with `tests/test_legacy_app_routes.py` and
       `tests/fixtures/app_1_9_models.kt`) once few installs still run 1.9: it
       answers 1.9's retired-feature reads with empty shapes.
-- [ ] **`community_authors.py` is dead code.** `touch_author` and `lookup_author`
-      have no callers; the split moved them rather than change behaviour. Remove
-      them, or wire them if the durable forum identity is still meant to use them.
 
 **Android**
 
