@@ -96,6 +96,7 @@ try:
         routes_diagnosis,
         routes_forum,
         routes_internal,
+        routes_legacy_app,
         routes_meta,
         routes_moderation,
         runtime_paths,
@@ -141,6 +142,7 @@ except ImportError:
     import routes_diagnosis
     import routes_forum
     import routes_internal
+    import routes_legacy_app
     import routes_meta
     import routes_moderation
     import runtime_paths
@@ -2388,6 +2390,7 @@ for _routes in (
     routes_forum,
     routes_moderation,
     routes_content,
+    routes_legacy_app,
 ):
     _registered = len(api_router.routes)
     _routes.register(api_router, sys.modules[__name__])

@@ -18,7 +18,7 @@ as last recorded. Line counts are approximate; re-measure before acting on one.
 | track | now |
 |---|---|
 | **App** | 1.9 / versionCode 19 on RuStore since 2026-11-22, and it stays the current version for now (no release planned). Later app work waits on the branch for the next release. PRO stays hidden (`ProUi.ENABLED = false`). |
-| **Server** | The branch's app API and account service have the second-opinion system retired and scan likes, author profiles and scan report/block removed (72 API operations); 1.9 still calls those routes, so a deploy of this branch drops those features for 1.9 users. |
+| **Server** | `main`'s app API and account service have the second-opinion system retired and scan likes, author profiles and scan report/block removed (72 API operations). For 1.9, which still calls those routes, the reads answer empty (`routes_legacy_app.py`, outside the schema) so its opinion poll stops retrying; the retired writes and profiles answer 404, which 1.9 shows as a failed action. |
 | **Model** | 2.7.5 deployed (dataset v8). Weak spot: scorch read as healthy. A statistical tie with 2.7.2 on the shared holdout. |
 | **Accounts backend** | Live on the production VDS under `/id/`; real Yandex flow and deletion verified; privacy policy served at `/privacy.html`; a Telegram alert watches for stuck deletions. No backup job (owner's decision). |
 | **Data** | v8 is the corpus. v9 collection, locked test set T and OOD benchmark v3 are specified; none started. |
@@ -151,6 +151,9 @@ Each item is its own PR; don't fold one into another.
       charset validator in `CommunityScanRequest` and `..128` with no charset in
       `CommunityViewRequest`; `scan_ids` items are unbounded. Standardise on the
       looser bound (the Android client mints these ids).
+- [ ] **Delete `routes_legacy_app.py`** (with `tests/test_legacy_app_routes.py` and
+      `tests/fixtures/app_1_9_models.kt`) once few installs still run 1.9: it
+      answers 1.9's retired-feature reads with empty shapes.
 - [ ] **`community_authors.py` is dead code.** `touch_author` and `lookup_author`
       have no callers; the split moved them rather than change behaviour. Remove
       them, or wire them if the durable forum identity is still meant to use them.
