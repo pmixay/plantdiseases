@@ -74,12 +74,12 @@ class AuthRepository(
     // silently re-enable notifications the user just turned off.
     private val pushMutationMutex = Mutex()
 
-    // Startup, recovery, and foreground retry triggers may overlap. One queue
-    // consumer avoids duplicate network attempts while preserving FIFO order.
-    private val logoutRetryMutex = Mutex()
 
-    private val primaryLogoutTarget = LogoutRevocationTarget(api, logoutRevocations)
-    private val logoutTargets = listOf(primaryLogoutTarget) + additionalLogoutTargets
+    private val logoutQueue = LogoutRevocationQueue(
+        primary = LogoutRevocationTarget(api, logoutRevocations),
+        additional = additionalLogoutTargets,
+        scheduler = logoutRetryScheduler,
+    )
 
     @Volatile
     private var accessToken: String? = null
@@ -223,7 +223,7 @@ class AuthRepository(
 
     private suspend fun retryLogoutsBeforeRestore() {
         try {
-            retryPendingLogouts()
+            logoutQueue.drain()
         } catch (failure: CancellationException) {
             // restore() is also called from a lifecycle-owned retry action. If
             // that scope is cancelled before the vault is examined, do not
@@ -241,7 +241,7 @@ class AuthRepository(
     }
 
     /** Retries revocation proofs without restoring an account credential. */
-    suspend fun retryPendingLogoutRevocations(): Boolean = retryPendingLogouts()
+    suspend fun retryPendingLogoutRevocations(): Boolean = logoutQueue.drain()
 
     /** WorkManager already owns retry/backoff; avoid enqueueing successors on each attempt. */
     internal suspend fun retryPendingLogoutRevocationsFromWorker(): Boolean {
@@ -252,7 +252,7 @@ class AuthRepository(
             // consume the active issuer's profile flow. In normal builds the
             // same worker must never silently cancel an interactive signup.
             sessionMutex.withLock {
-                terminateSignupTarget(
+                terminateSignup(
                     api = api,
                     store = signupCompletions,
                     refreshVault = vault,
@@ -265,7 +265,7 @@ class AuthRepository(
         } else {
             currentSignupTerminated
         }
-        val queuesDrained = retryPendingLogouts(scheduleOnFailure = false)
+        val queuesDrained = logoutQueue.drain(scheduleOnFailure = false)
         return currentSignupTerminated && providerSessionCleared && queuesDrained
     }
 
@@ -278,7 +278,7 @@ class AuthRepository(
         var firstFailure: Exception? = null
         withContext(NonCancellable) {
             val signupTerminated = sessionMutex.withLock {
-                terminateSignupTarget(
+                terminateSignup(
                     api = api,
                     store = signupCompletions,
                     refreshVault = vault,
@@ -289,7 +289,7 @@ class AuthRepository(
                 val notDurable = LogoutNotDurableException()
                 firstFailure = notDurable
                 try {
-                    scheduleLogoutRetry()
+                    logoutQueue.scheduleRetry()
                 } catch (failure: Exception) {
                     notDurable.addSuppressed(failure)
                 }
@@ -302,7 +302,7 @@ class AuthRepository(
                 }
             }
             try {
-                retryPendingLogouts()
+                logoutQueue.drain()
             } catch (failure: Exception) {
                 firstFailure?.addSuppressed(failure) ?: run { firstFailure = failure }
             } finally {
@@ -779,245 +779,6 @@ class AuthRepository(
         authenticated.accessToken
     }
 
-    private suspend fun retryPendingLogouts(
-        scheduleOnFailure: Boolean = true,
-    ): Boolean = logoutRetryMutex.withLock {
-        var allDrained = true
-        logoutTargets.forEach { target ->
-            val previousSignupStore = target.previousIssuerSignupStore
-            if (previousSignupStore != null) {
-                val previousVault = target.previousIssuerVault
-                val previousInstallationId = target.previousIssuerInstallationId
-                if (previousVault == null || previousInstallationId == null) {
-                    allDrained = false
-                } else {
-                    val previousSignupTerminated = terminateSignupTarget(
-                        api = target.api,
-                        store = previousSignupStore,
-                        refreshVault = previousVault,
-                        scopedInstallationId = previousInstallationId,
-                    )
-                    if (!previousSignupTerminated) allDrained = false
-                }
-            }
-            val previousIssuer = preparePreviousIssuerRevocation(target)
-            if (!previousIssuer.complete) {
-                allDrained = false
-            }
-            if (!previousIssuer.allowQueueDrain) {
-                return@forEach
-            }
-            val attempted = mutableSetOf<String>()
-            while (true) {
-                val next = runCatching { target.store.next() }
-                if (next.isFailure) {
-                    allDrained = false
-                    break
-                }
-                val pending = next.getOrNull() ?: break
-                // A broken persistence implementation must not trap startup in
-                // an endless loop after a nominal server success.
-                if (!attempted.add(pending.refreshToken)) {
-                    allDrained = false
-                    break
-                }
-                if (!attemptLogoutRevocation(target, pending.refreshToken)) {
-                    allDrained = false
-                    break
-                }
-            }
-        }
-        if (!allDrained && scheduleOnFailure) scheduleLogoutRetry()
-        allDrained
-    }
-
-    /**
-     * Cancel an unconfirmed operation or revoke its recovered confirmed
-     * session. Every credential is sent only to the API paired with its
-     * issuer-scoped store/vault by dependency injection.
-     */
-    @Suppress("ThrowsCount") // preserve cancellation at each issuer-scoped network boundary
-    private suspend fun terminateSignupTarget(
-        api: AccountApi,
-        store: SignupCompletionStore,
-        refreshVault: RefreshTokenVault,
-        scopedInstallationId: InstallationIdProvider,
-    ): Boolean {
-        val operation = try {
-            store.read()
-        } catch (_: Exception) {
-            return false
-        } ?: return true
-        val remoteTerminated = if (operation.remoteTerminationConfirmed) {
-            true
-        } else {
-            try {
-                api.cancelSignup(
-                    operation.pendingSignupToken,
-                    operation.completionId,
-                    operation.installationId,
-                )
-                true
-            } catch (failure: CancellationException) {
-                throw failure
-            } catch (failure: AccountApiException) {
-                when (failure.errorCode) {
-                    "signup_already_confirmed" -> {
-                        val durableRefresh = try {
-                            refreshVault.read()
-                        } catch (_: Exception) {
-                            return false
-                        }
-                        if (durableRefresh != null) {
-                            try {
-                                api.logout(durableRefresh)
-                                true
-                            } catch (failure: CancellationException) {
-                                throw failure
-                            } catch (_: Exception) {
-                                false
-                            }
-                        } else {
-                            val nickname = operation.nickname ?: return false
-                            val recovered = try {
-                                api.completeSignup(
-                                    operation.pendingSignupToken,
-                                    operation.completionId,
-                                    nickname,
-                                    operation.installationId,
-                                )
-                            } catch (failure: CancellationException) {
-                                throw failure
-                            } catch (_: Exception) {
-                                return false
-                            }
-                            try {
-                                api.logout(recovered.refreshToken)
-                                true
-                            } catch (failure: CancellationException) {
-                                throw failure
-                            } catch (_: Exception) {
-                                false
-                            }
-                        }
-                    }
-                    in DEFINITIVE_ABANDONED_SIGNUP_ERRORS ->
-                        revokeStoredSignupRefresh(
-                            api,
-                            refreshVault,
-                            missingIsSuccess = true,
-                        )
-                    in AMBIGUOUS_EXPIRED_SIGNUP_ERRORS,
-                    "signup_completion_conflict",
-                    -> revokeStoredSignupRefresh(
-                        api,
-                        refreshVault,
-                        missingIsSuccess = !operation.confirmationAttempted,
-                    )
-                    else -> false
-                }
-            } catch (_: Exception) {
-                false
-            }
-        }
-        if (!remoteTerminated) return false
-        if (
-            !operation.remoteTerminationConfirmed &&
-            runCatching {
-                store.write(operation.copy(remoteTerminationConfirmed = true))
-            }.isFailure
-        ) {
-            return false
-        }
-        // Keep the encrypted operation marker until last. If rotation or
-        // vault erasure fails, its exact proof remains available for another
-        // idempotent teardown attempt after process death.
-        if (runCatching { scopedInstallationId.rotate() }.isFailure) return false
-        if (runCatching { refreshVault.clear() }.isFailure) return false
-        return runCatching { store.clear() }.isSuccess
-    }
-
-    private suspend fun revokeStoredSignupRefresh(
-        api: AccountApi,
-        refreshVault: RefreshTokenVault,
-        missingIsSuccess: Boolean,
-    ): Boolean {
-        val refresh = try {
-            refreshVault.read()
-        } catch (_: Exception) {
-            return false
-        } ?: return missingIsSuccess
-        return try {
-            api.logout(refresh)
-            true
-        } catch (failure: CancellationException) {
-            throw failure
-        } catch (_: Exception) {
-            false
-        }
-    }
-
-    /**
-     * One-way update migration: a production build may destroy a dormant
-     * staging credential, but can never restore it or send it to production.
-     * The matching encrypted revocation proof is committed and read back
-     * before cryptographic vault erasure, so a crash cannot lose both copies.
-     */
-    private fun preparePreviousIssuerRevocation(
-        target: LogoutRevocationTarget,
-    ): PreviousIssuerPreparation {
-        val previousVault = target.previousIssuerVault ?: return PreviousIssuerPreparation.READY
-        val refreshToken = try {
-            previousVault.read()
-        } catch (_: Exception) {
-            // The vault implementation already attempts cryptographic erasure
-            // when bytes are unreadable. Existing durable proofs for the same
-            // issuer can still drain safely while the vault retry is scheduled.
-            runCatching { target.previousIssuerInstallationId?.rotate() }
-            return PreviousIssuerPreparation(allowQueueDrain = true, complete = false)
-        } ?: return PreviousIssuerPreparation.READY
-        val queued = runCatching {
-            target.store.enqueue(refreshToken)
-            target.store.isPending(refreshToken)
-        }.getOrDefault(false)
-        if (!queued) return PreviousIssuerPreparation.BLOCKED
-        if (runCatching { target.previousIssuerInstallationId?.rotate() }.isFailure) {
-            return PreviousIssuerPreparation.BLOCKED
-        }
-        return if (runCatching { previousVault.clear() }.isSuccess) {
-            PreviousIssuerPreparation.READY
-        } else {
-            PreviousIssuerPreparation.BLOCKED
-        }
-    }
-
-    private suspend fun attemptLogoutRevocation(
-        target: LogoutRevocationTarget,
-        refreshToken: String,
-    ): Boolean {
-        val succeeded = try {
-            withTimeoutOrNull(LOGOUT_REVOCATION_TIMEOUT_MILLIS) {
-                target.api.logout(refreshToken)
-                true
-            } ?: false
-        } catch (failure: CancellationException) {
-            throw failure
-        } catch (_: Exception) {
-            false
-        }
-        val queueUpdated = runCatching {
-            if (succeeded) {
-                target.store.complete(refreshToken)
-            } else {
-                target.store.recordFailure(refreshToken)
-            }
-        }.isSuccess
-        // A 204 is not enough to advance the queue if removing its proof did
-        // not persist: doing so would spin forever here and could allow an
-        // identical surviving vault credential through the restore path.
-        return succeeded && queueUpdated
-    }
-
     /** Must be called while [sessionMutex] is held. */
     private fun prepareLocalLogout(): LogoutPreparation {
         val activeAccessToken = accessToken
@@ -1028,7 +789,7 @@ class AuthRepository(
             stored != null || storedResult.exceptionOrNull() is CredentialUnreadableException
         val hadCredential =
             hadStoredCredential || accessToken != null || mutableState.value is AuthState.Authenticated
-        val queued = stored != null && enqueueLogoutProof(stored)
+        val queued = stored != null && logoutQueue.enqueue(stored)
         return LogoutPreparation(
             refreshToken = stored,
             credentialRead = storedResult.isSuccess,
@@ -1047,7 +808,7 @@ class AuthRepository(
         val revoked = try {
             when {
                 local.refreshToken != null ->
-                    attemptLogoutRevocation(primaryLogoutTarget, local.refreshToken)
+                    logoutQueue.attemptPrimary(local.refreshToken)
                 !local.credentialRead &&
                     local.activeAccessToken != null &&
                     local.activeSessionId != null ->
@@ -1066,7 +827,7 @@ class AuthRepository(
             // A first secure-storage write can fail transiently. Try once more
             // after the bounded network attempt before reporting that logout
             // could not be made durable.
-            enqueueLogoutProof(local.refreshToken)
+            logoutQueue.enqueue(local.refreshToken)
         } else {
             local.queued
         }
@@ -1085,24 +846,6 @@ class AuthRepository(
         throw failure
     } catch (_: Exception) {
         false
-    }
-
-    private fun enqueueLogoutProof(refreshToken: String): Boolean {
-        val queued = runCatching {
-            logoutRevocations.enqueue(refreshToken)
-            // A no-op or failed persistence implementation must not count as a
-            // durable fallback merely because its enqueue method returned.
-            logoutRevocations.isPending(refreshToken)
-        }.getOrDefault(false)
-        if (queued) scheduleLogoutRetry()
-        return queued
-    }
-
-    private fun scheduleLogoutRetry() {
-        // WorkManager scheduling is an additional eventual-delivery path. A
-        // transient scheduler failure must not invalidate the encrypted proof;
-        // startup and foreground drains remain available as a fallback.
-        runCatching { logoutRetryScheduler.schedule() }
     }
 
     private fun logoutIsDurable(
@@ -1267,7 +1010,7 @@ class AuthRepository(
             // credential cannot be made durable locally, queue any token from
             // the same family before discarding local state so the failed
             // authentication cannot leave an orphaned live session.
-            val queued = enqueueLogoutProof(revocationProof)
+            val queued = logoutQueue.enqueue(revocationProof)
             val revoked = if (queued) {
                 false
             } else {
@@ -1351,16 +1094,6 @@ class AuthRepository(
         val cancellation: CancellationException?,
     )
 
-    private data class PreviousIssuerPreparation(
-        val allowQueueDrain: Boolean,
-        val complete: Boolean,
-    ) {
-        companion object {
-            val READY = PreviousIssuerPreparation(allowQueueDrain = true, complete = true)
-            val BLOCKED = PreviousIssuerPreparation(allowQueueDrain = false, complete = false)
-        }
-    }
-
     private data class LogoutCompletion(
         val revocation: RevocationCompletion,
         val cancellation: CancellationException?,
@@ -1373,15 +1106,6 @@ class AuthRepository(
     }
 
     private companion object {
-        const val LOGOUT_REVOCATION_TIMEOUT_MILLIS = 3_000L
-        val AMBIGUOUS_EXPIRED_SIGNUP_ERRORS = setOf(
-            "pending_signup_expired",
-            "signup_completion_expired",
-        )
-        val DEFINITIVE_ABANDONED_SIGNUP_ERRORS = setOf(
-            "pending_signup_replayed",
-            "signup_completion_cancelled",
-        )
         val EDITABLE_NICKNAME_REJECTIONS = setOf(
             "nickname_invalid",
             "nickname_taken",
