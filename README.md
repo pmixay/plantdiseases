@@ -218,7 +218,8 @@ authoritative list.
 | `POST` | `/api/community/view` | Record a view of a shared scan |
 | `GET` · `DELETE` | `/api/community/safety/blocks[/{block_id}]` | List or remove caller-owned blocks by opaque ID (blocks are made on forum posts and answers) |
 | `GET`  | `/api/community/thumb/{filename}` | Community scan thumbnail |
-| `GET`  | `/api/community/feed` · `/api/community/search` · `/api/community/spaces` | Forum feed (`all` / `needs_help` / `solved` / `mine`, hot/new/top), RU+EN search with "search with my scan" filters, curated spaces |
+| `GET`  | `/api/community/feed` · `/api/community/search` · `/api/community/spaces` | Forum feed (`all` / `needs_help` / `solved` / `mine` / `following`, hot/new/top), RU+EN search with "search with my scan" filters, curated spaces |
+| `GET` · `POST` | `/api/community/spaces/following` · `/api/community/spaces/{slug}/follow` | The spaces I follow; follow or unfollow one (account required) |
 | `GET` · `POST` · `PATCH` · `DELETE` | `/api/community/posts[/{post_id}]` | Forum posts (question, scan with the server's verdict, recovery update, tip) with threaded answers |
 | `POST` | `/api/community/posts/{id}/like` · `/answers` · `/accept` · `/api/community/answers/{id}/reaction` | Like a post; answer with steps, diagnosis tag and photos; accept; like or mark an answer not helpful |
 | `POST` · `GET` | `/api/community/media[/{media_id}]` | Upload a re-encoded forum photo (optionally bound to an analysis token); serve it while its post is visible |

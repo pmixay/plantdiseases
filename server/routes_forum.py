@@ -72,6 +72,12 @@ class ForumAnswerEdit(BaseModel):
     diagnosis: str | None = Field(None, max_length=48)
 
 
+class ForumSpaceFollowRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    following: bool = True
+
+
 class ForumLikeRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -150,10 +156,35 @@ def register(router: APIRouter, m) -> None:
             headers={"Cache-Control": "public, max-age=300"},
         )
 
+    @router.get(
+        "/community/spaces/following", dependencies=[Depends(m.community_bearer)]
+    )
+    async def forum_followed_spaces(request: Request):
+        """The slugs of the spaces the signed-in member follows."""
+        principal = await m._require_account(request)
+        items = await run(m.community_forum.followed_spaces, principal.actor_id)
+        return JSONResponse(content={"items": items}, headers=_NO_STORE)
+
+    @router.post(
+        "/community/spaces/{slug}/follow", dependencies=[Depends(m.community_bearer)]
+    )
+    async def forum_space_follow(
+        slug: str, payload: ForumSpaceFollowRequest, request: Request
+    ):
+        """Follow or unfollow a space; the feed's ``following`` tab lists its posts."""
+        principal = await m._require_account(request)
+        result = await run(
+            m.community_forum.set_space_follow,
+            actor_id=principal.actor_id,
+            slug=slug,
+            following=payload.following,
+        )
+        return JSONResponse(content=result, headers=_NO_STORE)
+
     @router.get("/community/feed")
     async def forum_feed(
         request: Request,
-        tab: Literal["all", "needs_help", "solved", "mine"] = "all",
+        tab: Literal["all", "needs_help", "solved", "mine", "following"] = "all",
         sort: Literal["hot", "new", "top"] = "hot",
         space: str | None = Query(None, max_length=32),
         cursor: str | None = Query(None, max_length=64),

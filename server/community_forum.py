@@ -60,7 +60,7 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 POST_KINDS = ("question", "scan", "recovery", "tip")
-FEED_TABS = ("all", "needs_help", "solved", "mine")
+FEED_TABS = ("all", "needs_help", "solved", "mine", "following")
 FEED_SORTS = ("hot", "new", "top")
 ANSWER_REACTIONS = ("like", "not_helpful")
 REPORT_REASONS = frozenset(
@@ -224,6 +224,14 @@ CREATE TABLE IF NOT EXISTS forum_post_likes (
     PRIMARY KEY (post_id, actor_id)
 );
 CREATE INDEX IF NOT EXISTS ix_forum_post_likes_actor ON forum_post_likes(actor_id);
+
+-- Spaces a signed-in member follows; the feed's "following" tab reads it.
+CREATE TABLE IF NOT EXISTS forum_space_follows (
+    actor_id   TEXT    NOT NULL,
+    slug       TEXT    NOT NULL,
+    created_at INTEGER NOT NULL,
+    PRIMARY KEY (actor_id, slug)
+);
 
 CREATE TABLE IF NOT EXISTS forum_answer_reactions (
     answer_id  INTEGER NOT NULL,
@@ -1192,6 +1200,51 @@ def list_spaces() -> list[dict]:
     ]
 
 
+def followed_spaces(actor_id: str) -> list[str]:
+    """The live spaces this member follows, in the spaces list's order."""
+    init_db()
+    actor = _actor(actor_id)
+    with community._connect() as conn:
+        rows = conn.execute(
+            "SELECT s.slug FROM forum_space_follows f "
+            "JOIN forum_spaces s ON s.slug = f.slug AND s.archived = 0 "
+            "WHERE f.actor_id = ? ORDER BY s.sort_order, s.slug",
+            (actor,),
+        ).fetchall()
+    return [str(r[0]) for r in rows]
+
+
+def set_space_follow(
+    *, actor_id: str, slug: str, following: bool, now: int | None = None
+) -> dict:
+    """Follow or unfollow one live space. Idempotent either way."""
+    init_db()
+    actor = _actor(actor_id)
+    timestamp = _now(now)
+    with community._write_lock, community._connect() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            _require_live_actor(conn, actor)
+            space = _require_space(conn, slug)
+            if following:
+                conn.execute(
+                    "INSERT OR IGNORE INTO forum_space_follows (actor_id, slug, created_at) "
+                    "VALUES (?, ?, ?)",
+                    (actor, space, timestamp),
+                )
+            else:
+                conn.execute(
+                    "DELETE FROM forum_space_follows WHERE actor_id = ? AND slug = ?",
+                    (actor, space),
+                )
+            conn.execute("COMMIT")
+        except Exception:
+            with contextlib.suppress(sqlite3.Error):
+                conn.execute("ROLLBACK")
+            raise
+    return {"slug": space, "following": bool(following)}
+
+
 def _require_space(conn: sqlite3.Connection, space: str | None) -> str:
     slug = (space or "general").strip().lower()
     if not _SLUG.fullmatch(slug):
@@ -1920,7 +1973,7 @@ def feed(
         raise ForumError("invalid_tab")
     if sort_value not in FEED_SORTS:
         raise ForumError("invalid_sort")
-    if tab_value == "mine" and viewer is None:
+    if tab_value in ("mine", "following") and viewer is None:
         raise ForumError("auth_required", 401)
     page = _page_limit(limit)
     offset = _decode_cursor(cursor)
@@ -1934,6 +1987,9 @@ def feed(
         clause, clause_params = _visible_author_clause("p.author_actor_id", viewer)
         where.append(clause)
         params.extend(clause_params)
+    if tab_value == "following":
+        where.append("p.space IN (SELECT slug FROM forum_space_follows WHERE actor_id = ?)")
+        params.append(viewer)
     if space:
         slug = space.strip().lower()
         if not _SLUG.fullmatch(slug):
@@ -2343,6 +2399,7 @@ def _purge_actor(conn: sqlite3.Connection, actor: str) -> None:
     conn.execute("DELETE FROM forum_media WHERE owner_actor_id = ?", (actor,))
     conn.execute("DELETE FROM forum_avatars WHERE actor_id = ?", (actor,))
     conn.execute("DELETE FROM forum_post_likes WHERE actor_id = ?", (actor,))
+    conn.execute("DELETE FROM forum_space_follows WHERE actor_id = ?", (actor,))
     conn.execute("DELETE FROM forum_answer_reactions WHERE actor_id = ?", (actor,))
     conn.execute(
         "DELETE FROM forum_reports WHERE reporter_actor_id = ? OR target_actor_id = ?",

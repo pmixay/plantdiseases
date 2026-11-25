@@ -20,6 +20,7 @@
     <string name="forum_tab_needs_help">Нужна помощь</string>
     <string name="forum_tab_solved">Решённые</string>
     <string name="forum_tab_mine">Мои</string>
+    <string name="forum_tab_following">Подписки</string>
     <string name="forum_all_spaces">Все разделы</string>
     <string name="forum_spaces">Разделы</string>
     <string name="forum_sort_hot">Популярные</string>
@@ -30,6 +31,7 @@
     <string name="forum_empty_needs_help">На все свежие вопросы уже ответили. Спасибо всем, кто помогает.</string>
     <string name="forum_empty_solved">Решённых вопросов здесь пока нет.</string>
     <string name="forum_empty_mine">Вы ещё ничего не публиковали.</string>
+    <string name="forum_empty_following">Подпишитесь на раздел, чтобы видеть его посты здесь: откройте фильтры, выберите раздел и нажмите Подписаться.</string>
     <string name="forum_notif_answer_title">Новый ответ</string>
     <string name="forum_notif_reply_title">Новый ответ вам</string>
     <string name="forum_notif_accepted_title">Ваш ответ помог</string>
@@ -319,6 +321,10 @@
     <string name="forum_filters_apply">Показать посты</string>
     <string name="forum_filters_reset">Сбросить</string>
     <string name="forum_filter_remove">Убрать фильтр: %1$s</string>
+    <string name="forum_follow_space">Подписаться</string>
+    <string name="forum_following_space">Вы подписаны</string>
+    <string name="forum_follow_space_description">Подписаться на раздел %1$s</string>
+    <string name="forum_unfollow_space_description">Отписаться от раздела %1$s</string>
     <string name="forum_post_edit">Редактировать</string>
     <string name="forum_compose_edit_title">Редактирование</string>
     <string name="forum_edit_saved">Изменения сохранены</string>

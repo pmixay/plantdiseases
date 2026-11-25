@@ -50,6 +50,8 @@ ROUTES: dict[tuple[str, str], str] = {
     ("GET", "/api/community/safety/blocks"): "CommunityBlocksResponse",
     ("POST", "/api/community/scan"): "CommunityScanUploadResponse",
     ("GET", "/api/community/spaces"): "ForumSpacesResponse",
+    ("GET", "/api/community/spaces/following"): "ForumFollowedSpacesResponse",
+    ("POST", "/api/community/spaces/{slug}/follow"): "ForumSpaceFollowResponse",
     ("GET", "/api/community/feed"): "ForumPage",
     ("GET", "/api/community/search"): "ForumPage",
     ("GET", "/api/community/posts/{post_id}"): "ForumPost",

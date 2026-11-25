@@ -18,7 +18,7 @@ as last recorded. Line counts are approximate; re-measure before acting on one.
 | track | now |
 |---|---|
 | **App** | 1.9 / versionCode 19 on RuStore since 2026-11-22, and it stays the current version for now (no release planned). Later app work waits on the branch for the next release. PRO stays hidden (`ProUi.ENABLED = false`). |
-| **Server** | `main`'s app API and account service have the second-opinion system retired and scan likes, author profiles and scan report/block removed (72 API operations). For 1.9, which still calls those routes, the reads answer empty (`routes_legacy_app.py`, outside the schema) so its opinion poll stops retrying; the retired writes and profiles answer 404, which 1.9 shows as a failed action. |
+| **Server** | `main`'s app API and account service have the second-opinion system retired and scan likes, author profiles and scan report/block removed, and following spaces added (74 API operations). For 1.9, which still calls those routes, the reads answer empty (`routes_legacy_app.py`, outside the schema) so its opinion poll stops retrying; the retired writes and profiles answer 404, which 1.9 shows as a failed action. |
 | **Model** | 2.7.5 deployed (dataset v8). Weak spot: scorch read as healthy. A statistical tie with 2.7.2 on the shared holdout. |
 | **Accounts backend** | Live on the production VDS under `/id/`; real Yandex flow and deletion verified; privacy policy served at `/privacy.html`; a Telegram alert watches for stuck deletions. No backup job (owner's decision). |
 | **Data** | v8 is the corpus. v9 collection, locked test set T and OOD benchmark v3 are specified; none started. |
@@ -125,7 +125,6 @@ README status section and `docs/assets/per-class.svg` (its numbers are hand-copi
       less is noise; under a treatment plan, RECOVERING needs ≥ 70 % of due work done
       and a healthy reading or a rising trend. They were reasoned, not measured:
       compare them with a few real plants before trusting a red "Poor condition".
-- [ ] **Following spaces** in the forum.
 - [ ] **Desktop web admin panel** for moderation.
 
 ---

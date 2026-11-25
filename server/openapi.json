@@ -1369,6 +1369,81 @@
         }
       }
     },
+    "/api/community/spaces/following": {
+      "get": {
+        "summary": "Forum Followed Spaces",
+        "description": "The slugs of the spaces the signed-in member follows.",
+        "operationId": "forum_followed_spaces_api_community_spaces_following_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/community/spaces/{slug}/follow": {
+      "post": {
+        "summary": "Forum Space Follow",
+        "description": "Follow or unfollow a space; the feed's ``following`` tab lists its posts.",
+        "operationId": "forum_space_follow_api_community_spaces__slug__follow_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Slug"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ForumSpaceFollowRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/community/feed": {
       "get": {
         "summary": "Forum Feed",
@@ -1384,7 +1459,8 @@
                 "all",
                 "needs_help",
                 "solved",
-                "mine"
+                "mine",
+                "following"
               ],
               "type": "string",
               "default": "all",
@@ -4421,6 +4497,18 @@
           "reason"
         ],
         "title": "ForumReportRequest"
+      },
+      "ForumSpaceFollowRequest": {
+        "properties": {
+          "following": {
+            "type": "boolean",
+            "title": "Following",
+            "default": true
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "ForumSpaceFollowRequest"
       },
       "HTTPValidationError": {
         "properties": {

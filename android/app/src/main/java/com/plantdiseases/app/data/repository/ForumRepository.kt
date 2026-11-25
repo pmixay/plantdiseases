@@ -10,6 +10,7 @@ import com.plantdiseases.app.data.model.ForumAnswer
 import com.plantdiseases.app.data.model.ForumAnswerCreateRequest
 import com.plantdiseases.app.data.model.ForumAvatarUpload
 import com.plantdiseases.app.data.model.ForumBlockRequest
+import com.plantdiseases.app.data.model.ForumFollowedSpacesResponse
 import com.plantdiseases.app.data.model.ForumLikeRequest
 import com.plantdiseases.app.data.model.ForumLikeResponse
 import com.plantdiseases.app.data.model.ForumMediaUpload
@@ -21,6 +22,8 @@ import com.plantdiseases.app.data.model.ForumReactionRequest
 import com.plantdiseases.app.data.model.ForumReactionResponse
 import com.plantdiseases.app.data.model.ForumReportRequest
 import com.plantdiseases.app.data.model.ForumSpace
+import com.plantdiseases.app.data.model.ForumSpaceFollowRequest
+import com.plantdiseases.app.data.model.ForumSpaceFollowResponse
 import com.plantdiseases.app.data.model.ForumSpacesResponse
 import com.plantdiseases.app.data.model.HelperProfile
 import com.plantdiseases.app.data.model.ModActionResult
@@ -127,6 +130,17 @@ class ForumRepository(
 
     suspend fun helperProfile(authorToken: String): Result<HelperProfile> = read { token ->
         apiClient.httpClient.get("api/community/helpers/$authorToken") { token?.let { bearer(it) } }
+    }
+
+    /** Slugs of the spaces the signed-in member follows. */
+    suspend fun followedSpaces(): Result<Set<String>> = write<ForumFollowedSpacesResponse> { token ->
+        apiClient.httpClient.get("api/community/spaces/following") { bearer(token) }
+    }.map { it.items.toSet() }
+
+    suspend fun followSpace(slug: String, following: Boolean): Result<ForumSpaceFollowResponse> = write { token ->
+        apiClient.httpClient.post("api/community/spaces/$slug/follow") {
+            json(token, ForumSpaceFollowRequest(following))
+        }
     }
 
     suspend fun myAchievements(): Result<HelperProfile> = write { token ->
