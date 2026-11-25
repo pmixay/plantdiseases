@@ -74,7 +74,6 @@ class AuthRepository(
     // silently re-enable notifications the user just turned off.
     private val pushMutationMutex = Mutex()
 
-
     private val logoutQueue = LogoutRevocationQueue(
         primary = LogoutRevocationTarget(api, logoutRevocations),
         additional = additionalLogoutTargets,
