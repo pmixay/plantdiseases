@@ -131,7 +131,9 @@ README status section and `docs/assets/per-class.svg` (its numbers are hand-copi
       verdict 50 + 50 × confidence, a disease verdict 50 − 50 × confidence. The
       tunables: only scans from the last 60 days count; no score before 2 of them;
       HEALTHY needs the latest score ≥ 75 (healthy at ≥ 0.5 confidence) and no
-      decline; POOR needs the last 2 scores < 25 (disease at > 0.5 confidence each);
+      decline; POOR needs the last 2 or more scores < 25 (disease at > 0.5 confidence
+      each), the first of them at least a day before the latest, so retakes in one
+      sitting confirm nothing;
       a change of 10 points or more against a scan at least 7 days older is a trend,
       less is noise; under a treatment plan, RECOVERING needs ≥ 70 % of due work done
       and a healthy reading or a rising trend. They were reasoned, not measured:

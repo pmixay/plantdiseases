@@ -250,6 +250,64 @@ class PlantHealthTest {
     }
 
     @Test
+    fun evaluate_retakesInOneSitting_neverConfirmPoor() {
+        val sameMinute = evaluate(
+            scan(NOW - MINUTE, healthy = false, confidence = 0.9f),
+            scan(NOW, healthy = false, confidence = 0.9f),
+        )
+        val threeInAnHour = evaluate(
+            scan(NOW - HOUR, healthy = false, confidence = 0.9f),
+            scan(NOW - MINUTE, healthy = false, confidence = 0.9f),
+            scan(NOW, healthy = false, confidence = 0.9f),
+        )
+
+        assertThat(sameMinute.score).isEqualTo(5)
+        assertThat(sameMinute.status).isEqualTo(PlantHealth.Status.WATCH)
+        assertThat(threeInAnHour.status).isEqualTo(PlantHealth.Status.WATCH)
+    }
+
+    @Test
+    fun evaluate_poorNeedsTheRunToSpanTheConfirmWindow() {
+        val justShort = evaluate(
+            scan(NOW - PlantHealth.POOR_CONFIRM_SPAN_MS + 1, healthy = false, confidence = 0.9f),
+            scan(NOW, healthy = false, confidence = 0.9f),
+        )
+        val exactly = evaluate(
+            scan(NOW - PlantHealth.POOR_CONFIRM_SPAN_MS, healthy = false, confidence = 0.9f),
+            scan(NOW, healthy = false, confidence = 0.9f),
+        )
+
+        assertThat(justShort.status).isEqualTo(PlantHealth.Status.WATCH)
+        assertThat(exactly.status).isEqualTo(PlantHealth.Status.POOR)
+    }
+
+    @Test
+    fun evaluate_retakesCountOnceTheRunReachesBackADay() {
+        // Yesterday's reading plus today's two retakes: the run spans a day.
+        val verdict = evaluate(
+            scan(NOW - DAY, healthy = false, confidence = 0.8f),
+            scan(NOW - MINUTE, healthy = false, confidence = 0.9f),
+            scan(NOW, healthy = false, confidence = 0.9f),
+        )
+
+        assertThat(verdict.status).isEqualTo(PlantHealth.Status.POOR)
+    }
+
+    @Test
+    fun evaluate_aReadingAtOrAboveWatchMinBreaksTheRun() {
+        // The poor reading a day back does not join today's two: an unsure
+        // reading sits between them, so the run is only today's retakes.
+        val verdict = evaluate(
+            scan(NOW - 2 * DAY, healthy = false, confidence = 0.9f),
+            scan(NOW - DAY, healthy = false, confidence = 0.3f),
+            scan(NOW - MINUTE, healthy = false, confidence = 0.9f),
+            scan(NOW, healthy = false, confidence = 0.9f),
+        )
+
+        assertThat(verdict.status).isEqualTo(PlantHealth.Status.WATCH)
+    }
+
+    @Test
     fun evaluate_activeTreatmentPlan_takesPrecedenceOverPoor() {
         val verdict = evaluate(
             scan(NOW - DAY, healthy = false, confidence = 0.8f),
@@ -538,5 +596,7 @@ class PlantHealthTest {
     private companion object {
         const val NOW = 1_700_000_000_000L
         const val DAY = 24L * 60 * 60 * 1000
+        const val HOUR = 60L * 60 * 1000
+        const val MINUTE = 60L * 1000
     }
 }
