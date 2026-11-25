@@ -145,12 +145,8 @@ Each item is its own PR; don't fold one into another.
       and the care-plan card were rebuilt from XML layouts without a device. Look
       for: 12sp captions now bold (they were regular), the "Not now" borderless
       button's padding, icon tints, the climate-chip gaps and the health-card heart.
-- [ ] **Ratchet detekt down** (`android/config/detekt/detekt.yml`). The XML
-      conversions shrank `DetailExtraCardsController` to ~760 body lines, so the
-      worst LargeClass is now `auth/AuthRepository` (1098 by the config's own
-      comment) under a threshold of 1200; LongMethod is 210 over
-      `ResultActivity.displayResult`'s 197. Re-measure with detekt in CI before
-      lowering either.
+      Also open a disease, a healthy, a not-a-plant and an offline result:
+      `ResultActivity.displayResult` was split without a test that renders it.
 
 ---
 
