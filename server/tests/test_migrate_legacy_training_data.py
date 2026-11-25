@@ -13,7 +13,7 @@ import pytest
 from PIL import Image
 
 import training_store
-from tools import export_training_data
+from tools import export_training_bundle
 from tools import migrate_legacy_training_data as migration
 
 
@@ -265,10 +265,10 @@ def test_apply_removes_legacy_linkage_and_exports_cleanly(legacy_material, tmp_p
     )
     assert all(sentinel not in destination_bytes for sentinel in forbidden_sentinels)
 
-    archive = export_training_data.export_training_data(
-        paths.destination_database,
-        paths.destination_images,
+    archive = export_training_bundle.export_bundle(
         tmp_path / "exports",
+        training=(paths.destination_database, paths.destination_images),
+        community=None,
         now=datetime(2026, 8, 7, 13, 0, tzinfo=UTC),
     )
     with tarfile.open(archive, "r:gz") as exported:

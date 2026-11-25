@@ -81,7 +81,7 @@
         "quota_daily": 500
       }
     },
-    "_training_note": "De-identified model-improvement capture requires both this operator switch and the current per-request consent disclosure version. Only detector-backed leaf crops are retained; no full-frame fallback, user/account/install/scan identifier, IP/hash, filename, URL, or free text enters training.db. Export/review is offline only through tools/export_training_data.py.",
+    "_training_note": "De-identified model-improvement capture requires both this operator switch and the current per-request consent disclosure version. Only detector-backed leaf crops are retained; no full-frame fallback, user/account/install/scan identifier, IP/hash, filename, URL, or free text enters training.db. Export/review is offline only through tools/export_training_bundle.py.",
     "training_capture_enabled": false,
     "training_consent_version": "model-improvement-v1",
     "training_trust_conformal": true,

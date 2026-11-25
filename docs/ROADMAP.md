@@ -75,19 +75,6 @@ without data. Specified in `DATASET_LABELING_PLAN.md`.
 
 ## P2 — Code that unblocks the data loop (no data needed)
 
-- [ ] **One server CLI that exports all training material as one bundle.** This is
-      the only path from production data to training: the owner runs the export,
-      processes the bundle offline and adds the labelled photos to the dataset.
-      No notebook cell reads a server export directly. Today there are two
-      tools with two formats: `tools/export_training_data.py` (the training store's
-      consented scans and feedback, a privacy-checked tar) and
-      `tools/export_community_labels.py` (consented forum photos that already have a
-      consensus label, a folder, whose docstring still points at notebook §2). One
-      command, run in the API container against the read-only databases, should
-      write one archive with every consented photo from both stores, one manifest,
-      the labels that exist (model verdict, user feedback, community consensus) as
-      hints rather than ground truth, capture-family ids so related photos stay in
-      one split, and today's de-identification and metadata stripping.
 - [ ] **Check that capture-family detection catches rotated copies.** In a
       synthetic run of `build_ood_benchmark.py` a 90-degree rotated copy of an image
       stayed its own family under SIFT/RANSAC. The matcher is unchanged and the
