@@ -20,7 +20,10 @@ Order used: `compose.sh build-images`, write the env file, `compose.sh run --rm 
 `compose.sh up -d --no-build`, verify, `nginx/switch.sh`.
 
 Decisions baked in: Yandex only; email/password, VK, RuStore and PlantNet budget off; `/id/` is public behind its rate
-limit; legacy feedback/labeling/telemetry data is not migrated (the new code has no such stores).
+limit; legacy feedback/labeling/telemetry data is not migrated (the new code has no feedback or labeling store, and its
+telemetry store is the new minimized one). Consented error reports are recorded (`TELEMETRY_ENABLED: "true"`, since
+2026-11-26; the stack was cut from the staging file with it off, so the app's opted-in reports were dropped until then).
+`/run/app-config/config.json` wins over the compose environment, so it must not set `telemetry_enabled` to false.
 
 There is no backup job (owner's decision, 2026-11-14): the daily encrypted dump, its restore check and its systemd timer
 were removed. The read-only `account_backup` database role and `PROD_POSTGRES_BACKUP_PASSWORD` are still provisioned by

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 import yaml
@@ -253,6 +254,24 @@ def test_german_staging_uses_real_providers_and_model_with_isolated_state():
     assert "labeling.db" not in text
     for volume in compose["volumes"].values():
         assert str(volume["name"]).startswith("${BETA_VOLUME_PREFIX:?")
+
+
+def test_production_records_consented_error_reports():
+    # Production was cut from the staging file, which keeps telemetry off, and
+    # silently dropped every opted-in app error report until this was pinned.
+    app_service = _yaml(PRODUCTION_COMPOSE)["services"]["prod-app-api"]
+    app = app_service["environment"]
+    assert app["TELEMETRY_ENABLED"] == "true"
+    consent_prefs = (
+        REPOSITORY_ROOT / "android" / "app" / "src" / "main" / "java" / "com"
+        / "plantdiseases" / "app" / "util" / "PrivacyConsentPrefs.kt"
+    ).read_text(encoding="utf-8")
+    app_version = re.search(r'TELEMETRY_CONSENT_VERSION = "([^"]+)"', consent_prefs)
+    assert app_version, "PrivacyConsentPrefs.TELEMETRY_CONSENT_VERSION not found"
+    # A mismatch answers every report with 422 telemetry_consent_version_invalid.
+    assert app["TELEMETRY_CONSENT_VERSION"] == app_version.group(1)
+    assert app["TELEMETRY_DB_PATH"] == "/data/telemetry/telemetry.db"
+    assert "prod_telemetry:/data/telemetry" in app_service["volumes"]
 
 
 def test_german_runtime_images_are_digest_pinned_and_only_apis_bind_loopback():

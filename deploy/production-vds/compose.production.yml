@@ -234,7 +234,9 @@ services:
       FRONTIER_ENABLED: "false"
       TRAINING_CAPTURE_ENABLED: "false"
       TRAINING_CONSENT_VERSION: model-improvement-v1
-      TELEMETRY_ENABLED: "false"
+      # Consented, minimized error reports (server/telemetry.py: enums, app version
+      # and day only, no IP or IP hash). Staging keeps this off; production records.
+      TELEMETRY_ENABLED: "true"
       TELEMETRY_CONSENT_VERSION: telemetry-errors-v1
       ACCOUNT_API_BASE_URL: http://prod-account-api:8000/
       ACCOUNT_ISSUER: https://${PROD_PUBLIC_HOST:?Set the public host}/id

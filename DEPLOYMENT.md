@@ -142,7 +142,7 @@ Defaults below are the **code** defaults.
 | `care_plan_daily_quota` | `200` | LLM-polished care plans per IP per UTC day; past it the rules-based plan is served. |
 | `species_ai_daily_quota` | `400` | `/api/species-diseases` + `/api/species-profile` together, per IP per UTC day; past it `available:false`, `reason: "daily_quota"`. |
 | `community_author_daily_quota` | `10` | New Community identities (`/api/community/authors/adopt` with an unseen key) per IP per UTC day. Re-adopting a known key is free. |
-| `telemetry_enabled` / `telemetry_daily_cap_per_ip` | `true` / `200` | Anonymous client error reports (stores a hashed IP). |
+| `telemetry_enabled` / `telemetry_daily_cap_per_ip` | `true` / `200` | Consented, minimized client error reports (`server/telemetry.py`: enums, app version and day; no IP or IP hash is stored, the per-IP cap is counted in memory). Off, the route answers `recorded: false` and drops the report. The production compose sets it on; the staging composes keep it off. |
 | `scan_recording_enabled` | `true` | **On by default** — persists downscaled user scan images for the labeling loop. Disclosed by the app's consent screen and bundled privacy policy; turn it off if your deployment does not make that disclosure. |
 | `scan_retention_days` / `scan_max_images` / `scan_common_keep_rate` / `scan_daily_cap_per_class` | `90` / `20000` / `0.1` / `50` | Bounds on that corpus. |
 | `labeling_trust_conformal` / `labeling_conf_high` | `true` / `0.85` | Auto-accept thresholds for collected scans. |

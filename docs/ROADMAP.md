@@ -35,6 +35,13 @@ as last recorded. Line counts are approximate; re-measure before acting on one.
       platform with the redirect URL `https://<host>/admin/` to the Android app's
       Yandex OAuth app, set `admin_panel_yandex_client_id`, restart the API, then
       sign in once and work a real queue (`DEPLOYMENT.md` §5.1).
+- [ ] ★ **Redeploy `prod-app-api` to start recording error reports.** The compose
+      file now sets `TELEMETRY_ENABLED: "true"`; the running container still has
+      `false` and drops every report 1.9 users opted into. Check that
+      `/run/app-config/config.json` has no `telemetry_enabled` (the file wins over the
+      environment), run `compose.sh up -d --no-build prod-app-api`, confirm
+      `printenv TELEMETRY_ENABLED` in the container, and see rows appear in
+      `/data/telemetry/telemetry.db` within a day.
 
 ---
 
