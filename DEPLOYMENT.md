@@ -120,7 +120,7 @@ Defaults below are the **code** defaults.
 | `analyze_cache_ttl_seconds` / `analyze_cache_max_entries` | `86400` / `512` | In-memory exact-bytes response dedup. |
 | `infer_workers` | `1` | Inference thread pool. With `onnx_intra_op_threads=0` one scan already uses every core; raise only if you also pin intra-op low. |
 | `infer_max_inflight` / `infer_max_inflight_per_ip` | `4 × infer_workers` / `2` | Admission control on `/api/analyze` + `/api/identify`: a request claims a slot before its upload is copied into memory or decoded (FastAPI has already spooled the multipart body to disk by then), holds it through inference only — never while waiting on PlantNet — and one that finds the server (or its own IP, an IPv6 /64) full gets 503 + `Retry-After: infer_busy_retry_after_seconds` (`3`). Bounds RAM to roughly that many in-memory uploads + decoded images. `0` disables a cap. If you set it in `config.json`, scale it with `infer_workers` yourself. |
-| `net_workers` | `16` | Separate pool for OpenRouter / PlantNet / Wikipedia waits, so 20 s LLM calls don't queue DB writes behind them. |
+| `net_workers` | `16` | Separate pool for LLM backend / PlantNet / Wikipedia waits, so 20 s LLM calls don't queue DB writes behind them. |
 | `onnx_intra_op_threads` | `0` | `0` = all physical cores — the biggest CPU-latency lever. Pin lower on a shared host. |
 | `plant_photo_max_side` / `plant_photo_quality` / `popular_bundle_ttl_seconds` / `popular_placeholder_ttl_seconds` | `1000` / `80` / `1800` / `300` | Photo proxy re-encode and popular-plants bundle cache. |
 
@@ -179,14 +179,15 @@ the hardened unit in §5. Point every one of these at the state directory.
 | `plantnet_api_key_file` | *(empty)* | Absolute, owner-only file holding the production key. |
 | `plantnet_timeout` / `plantnet_attempts` | `10.0` / `2` | One bounded retry on a transient network fault; 401/429 are terminal. |
 | `plantnet_cache_size` / `plantnet_cache_ttl_seconds` | `256` / `604800` (7 d) | |
-| `openrouter_api_key` | *(empty)* | Direct key is local/test only. |
-| `openrouter_api_key_file` | *(empty)* | Absolute, owner-only file holding the production key. |
-| `openrouter_model` | `openai/gpt-6-luna` | Content surfaces expect structured outputs + reasoning-effort support; a model without them still works (schema dropped after one rejected request). |
-| `openrouter_base_url` / `openrouter_total_timeout` | `https://openrouter.ai/api/v1` / `30.0` | Override the URL only for compatible gateways. The timeout is a per-call ceiling, retries included. |
-| `openrouter_provider_only` | `openai` | Comma-separated provider slugs; blank = OpenRouter's own routing. |
-| `openrouter_reasoning_effort` + the per-caller `species_profile_` / `species_diseases_` / `care_plan_polish_reasoning_effort` | `medium` + `high` / `medium` / `medium` | `max`/`xhigh`/`high`/`medium`/`low`/`none`, or `omit` to send no field. A stale `minimal` maps to `low`. |
+| `llm_base_url` | *(empty)* | OpenAI-compatible Chat Completions base, e.g. a codex-lb gateway `http://<host>:2455/v1` or `https://api.openai.com/v1`. Blank turns every AI feature off. |
+| `llm_api_key` | *(empty)* | Optional Bearer key. Direct value is local/test only. |
+| `llm_api_key_file` | *(empty)* | Absolute, owner-only file holding the production key (codex-lb: an `sk-clb-...` key). |
+| `llm_model` | `gpt-5.6-luna` | A model id the backend serves (codex-lb: `GET /v1/models`). Content surfaces expect structured outputs + reasoning-effort support; a model without them still works (schema dropped after one rejected request). |
+| `llm_total_timeout` | `30.0` | Per-call ceiling, retries included. |
+| `llm_token_limit_field` | `max_completion_tokens` | Field that carries the output cap: `max_completion_tokens`, `max_tokens` (older compatible servers) or `omit`. |
+| `llm_reasoning_effort` + the per-caller `species_profile_` / `species_diseases_` / `care_plan_polish_reasoning_effort` | `medium` + `high` / `medium` / `medium` | `max`/`xhigh`/`high`/`medium`/`low`/`none`, or `omit` to send no field. A stale `minimal` maps to `low`. |
 | `chat_max_tokens` / `species_profile_max_tokens` / `species_diseases_max_tokens` / `care_plan_polish_max_tokens` | `2048` / `4096` / `4096` / `3072` | Raising an effort means raising the matching cap: the hidden reasoning trace bills against it, and a truncated answer is rejected outright and degrades to the deterministic path. |
-| `openrouter_prompt_caching` / `openrouter_prompt_cache_key` / `prompt_cache_min_prefix_tokens` | `true` / `plantvision-v1` / `1024` | See §4. |
+| `llm_prompt_caching` / `llm_prompt_cache_key` / `prompt_cache_min_prefix_tokens` | `true` / `plantvision-v1` / `1024` | See §4. |
 | `chat_session_turn_cap` / `chat_session_token_cap` / `chat_session_ttl_sec` | `20` / `32000` / `3600` | Reasoning tokens draw down the token cap, which is why it is 32000 — lower values end a conversation before the turn cap does. |
 | `chat_session_max_messages` / `chat_history_keep_last` / `chat_session_max_sessions` | `60` / `12` / `10000` | |
 | `species_profile_cache_size` / `_ttl_seconds` | `256` / `2592000` (30 d) | `species_diseases_*` and `care_plan_*` take the same size with a `604800` (7 d) TTL. |
@@ -201,11 +202,11 @@ the hardened unit in §5. Point every one of these at the state directory.
 None of these block boot. Missing credentials produce an `available:false`
 payload and a specific "not configured" UX in the app.
 
-**Secrets: direct value vs file.** `openrouter_api_key` and
+**Secrets: direct value vs file.** `llm_api_key` and
 `plantnet_api_key` are accepted directly only when `ENVIRONMENT` is `test` or
 `development`. Anywhere else the direct value is refused and the integration
 fails closed; provision an absolute, owner-only file and point
-`OPENROUTER_API_KEY_FILE` / `PLANTNET_API_KEY_FILE` at it. Setting both the
+`LLM_API_KEY_FILE` / `PLANTNET_API_KEY_FILE` at it. Setting both the
 direct and file forms, a symlink, a group/world-readable file, or an
 empty/oversized one disables the integration without logging the value or the
 path.
@@ -228,23 +229,36 @@ real request, retries included, needs a fresh atomic reservation, and an
 unavailable or disabled authority fails closed before any vendor call —
 surfacing as a `budget_unavailable` / `budget_exhausted` source.
 
-**OpenRouter — plant doctor, species content, care-plan polish.** Key from
-<https://openrouter.ai> → `openrouter_api_key` (or its `_FILE` form) →
-restart. Without it
-`/api/care-plan` still returns a complete deterministic plan; only the
-`summary_md` polish is skipped.
+**LLM backend — plant doctor, species content, care-plan polish.** Any server
+that speaks the OpenAI Chat Completions API: in production a
+[codex-lb](https://github.com/Soju06/codex-lb) gateway, which pools ChatGPT
+accounts behind `http://<host>:2455/v1`. Set `llm_base_url` and, for codex-lb,
+an API key: codex-lb's key auth is off by default, and with it off it refuses
+every non-local client, so a containerised app needs one. Turn on API-key auth
+in the codex-lb dashboard, create a key (`sk-clb-...`), put it in an owner-only
+file → `llm_api_key_file` → restart. Without a base URL `/api/care-plan` still
+returns a complete deterministic plan; only the `summary_md` polish is skipped,
+and the chat and species AI sections answer `available:false`.
 
-- *Provider pinning.* `openrouter_provider_only` defaults to `openai` because
-  unpinned routing is price-weighted load **balancing**, not cheapest-first.
-  Unpinned is still safe — every request carries
-  `provider.require_parameters=true`, so a provider that would silently ignore
-  `response_format` is filtered out. The pin is a request, not a receipt:
-  confirm what actually served a call in OpenRouter's activity log.
+- *Before enabling it.* The privacy policy says OpenAI processes these requests
+  under the operator's account with model training on that data switched off.
+  Turn that data control off on every account codex-lb pools.
+- *What goes on the wire.* Standard fields only: `model`, `messages`, the token
+  cap (`llm_token_limit_field`), `reasoning_effort`, `response_format`
+  (`json_schema`, strict) and `prompt_cache_key`. codex-lb refuses a field it
+  cannot honour rather than dropping it; if it rejects one, set
+  `llm_token_limit_field: omit`, `llm_reasoning_effort: omit` or
+  `llm_prompt_caching: false`. A rejected schema is retried without it
+  automatically. A codex-lb key can restrict reasoning levels (403
+  `reasoning_effort_not_allowed`): allow `medium` and `high`, which the
+  defaults use.
 - *Prompt caching.* On by default, and worth leaving on: the shared
   `_HOUSE_PREAMBLE` every request leads with is what clears the provider's
-  1024-token cacheable-prefix minimum. Keep `openrouter_prompt_cache_key`
+  1024-token cacheable-prefix minimum. Keep `llm_prompt_cache_key`
   **identical across replicas that share the preamble**; disable with
-  `openrouter_prompt_caching: false`. Verify via `prompt_cache.hit_ratio` (§7).
+  `llm_prompt_caching: false`. Verify via `prompt_cache.hit_ratio` (§7).
+- *Retired keys.* `openrouter_*` settings are no longer read; the server logs a
+  warning at startup while any of them is still set.
 - *Answer caching.* AI answers are cached in `ai_cache_dir` (7 days; 30 for
   species profiles) and again on the device (7 days), so a prompt or model
   change can appear to do nothing until the TTL expires. Bump the cache
@@ -311,7 +325,7 @@ Two things this unit is doing that are easy to get wrong:
   `server/`. `StateDirectory=plantdiseases` auto-creates `/var/lib/plantdiseases`
   writable for the service user; point every SQLite store, image dir, `LOG_DIR`
   **and** `AI_CACHE_DIR` there. Miss `AI_CACHE_DIR` and the LLM cache silently
-  never persists, re-paying a 10–20 s OpenRouter call on every cold worker.
+  never persists, re-paying a 10–20 s LLM call on every cold worker.
 - **Size `MemoryMax` with headroom**, not tightly: a kill plus
   `Restart=on-failure` is a restart loop paying the cold model load every cycle.
   Raise it for `frontier_enabled=true` (ViT-B/14 weights plus its own arena) or

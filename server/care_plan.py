@@ -1,10 +1,10 @@
 """Care plan: the deterministic, rules-based plan and its optional LLM polish.
 
 ``generate_care_plan`` always returns a usable plan from the rule tables in
-``care_plan_content`` (no key needed); when OpenRouter is configured it can have
-the summary rewritten, guarded by the canonical-dosage check and cached in memory
-and on disk. The transport (``_call_openrouter``), the shared prompt prefix, the
-cache classes and the key check stay in ``ai_services`` and are reached as
+``care_plan_content`` (no backend needed); when the chat backend is configured it can
+have the summary rewritten, guarded by the canonical-dosage check and cached in memory
+and on disk. The transport (``_call_llm``), the shared prompt prefix, the
+cache classes and the configured check stay in ``ai_services`` and are reached as
 ``ai_services.name`` at call time, so a test that patches one there is seen here.
 """
 from __future__ import annotations
@@ -149,7 +149,7 @@ def _apply_season(plan: dict, season: str, locale: str = "en") -> dict:
 def _build_markdown_summary(plan: dict, locale: str) -> str:
     """Compose a deterministic Markdown summary from the rule output.
 
-    Used as a graceful fallback when no OpenRouter key is configured —
+    Used as a graceful fallback when no chat backend is configured —
     the client always gets a renderable plan, never a barebones JSON.
     The LLM polish, if it runs, replaces this string.
     """
@@ -267,7 +267,7 @@ def _enforce_canonical_dosages(text: str, plan: dict) -> bool:
 
 
 # Care-plan LLM polish is deterministic in its input (the rule-engine plan +
-# locale), so the ~10-20s OpenRouter rewrite is cached with the same long TTL
+# locale), so the ~10-20s LLM rewrite is cached with the same long TTL
 # and disk-persistence as species_common_diseases — otherwise every care-plan
 # request re-paid for an identical prose summary.
 CARE_PLAN_CACHE_SIZE = get_int("CARE_PLAN_CACHE_SIZE", 256)
@@ -348,9 +348,9 @@ def _polish_plan_with_llm(plan: dict, locale: str, *, cached_only: bool = False)
 
     The polished summary is cached (in-memory + disk) keyed on the
     deterministic plan content, so an identical (disease, species, light,
-    locale, season) tuple never re-pays for the OpenRouter rewrite.
+    locale, season) tuple never re-pays for the LLM rewrite.
     """
-    if not ai_services._chat_api_key_present():
+    if not ai_services.llm_configured():
         return plan
     # Key on the plan content itself: it's deterministic in the care-plan
     # inputs and already carries the resolved ``season`` and ``summary_md``,
@@ -410,7 +410,7 @@ def _polish_plan_with_llm(plan: dict, locale: str, *, cached_only: bool = False)
     try:
         # Also uncached upstream: short prompt, and identical plans are already
         # served from _CARE_PLAN_CACHE / _CARE_PLAN_DISK before we get here.
-        polish, _, _, _ = ai_services._call_openrouter(
+        polish, _, _, _ = ai_services._call_llm(
             system, user_blocks,
             max_tokens=CARE_PLAN_POLISH_MAX_TOKENS, require_complete=True,
             reasoning_effort=CARE_PLAN_POLISH_REASONING_EFFORT,

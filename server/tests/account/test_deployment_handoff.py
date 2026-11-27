@@ -193,7 +193,7 @@ def test_german_staging_uses_real_providers_and_model_with_isolated_state():
     assert app["TRAINING_CAPTURE_ENABLED"] == "false"
     assert app["TELEMETRY_ENABLED"] == "false"
     assert app["PLANTNET_API_KEY"] == ""
-    assert app["OPENROUTER_API_KEY"] == ""
+    assert app["LLM_BASE_URL"] == ""
     assert app["INTERNAL_SERVICE_TOKEN_FILE"] == (
         "/run/internal-token/internal.token"
     )
@@ -272,6 +272,20 @@ def test_production_records_consented_error_reports():
     assert app["TELEMETRY_CONSENT_VERSION"] == app_version.group(1)
     assert app["TELEMETRY_DB_PATH"] == "/data/telemetry/telemetry.db"
     assert "prod_telemetry:/data/telemetry" in app_service["volumes"]
+
+
+def test_composes_configure_the_llm_backend_not_openrouter():
+    # The server reads LLM_BASE_URL / LLM_API_KEY_FILE now; a leftover
+    # OPENROUTER_* key would do nothing, and would read as if it did.
+    local_compose = REPOSITORY_ROOT / "deploy" / "account-beta-test" / "compose.local.yml"
+    for path in (PRODUCTION_COMPOSE, GERMAN_COMPOSE, local_compose):
+        for name, service in _yaml(path)["services"].items():
+            stale = [key for key in service.get("environment") or {} if key.startswith("OPENROUTER_")]
+            assert not stale, f"{path.name} {name} still sets {stale}"
+    app = _yaml(PRODUCTION_COMPOSE)["services"]["prod-app-api"]["environment"]
+    assert app["LLM_BASE_URL"] == "${PROD_LLM_BASE_URL:-}"
+    assert app["LLM_API_KEY_FILE"] == "${PROD_LLM_KEY_FILE:-}"
+    assert "LLM_API_KEY" not in app  # production takes the key from a file only
 
 
 def test_german_runtime_images_are_digest_pinned_and_only_apis_bind_loopback():

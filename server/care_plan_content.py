@@ -10,7 +10,7 @@ from __future__ import annotations
 # ── Care plan ───────────────────────────────────────────────────────
 #
 # The care-plan generator is the only deterministic surface in this
-# module — it must produce a usable plan even when the OpenRouter key
+# module — it must produce a usable plan even when the chat backend
 # is missing. The rule engine below is built around four primitives:
 #
 #   * **Light tier** — translates the user-supplied light bucket (low /

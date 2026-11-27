@@ -1,6 +1,6 @@
 """PlantNet species identification: the upstream call, its result cache and counters.
 
-Kept apart from ``ai_services`` (which holds what the OpenRouter-backed features
+Kept apart from ``ai_services`` (which holds what the LLM-backed features
 share) because PlantNet is a different vendor with its own budget authority
 (``plantnet_budget``), key and metrics. Callers reach it as ``plantnet.name`` at
 call time, so a test patches the name on this module.

@@ -30,11 +30,11 @@ a care plan you can follow.
 | 🩺 **No photo? Describe it** | Symptom triage diagnoses from a checklist when the camera or the ML pipeline can't be used. |
 | 🌍 **Bilingual care plans** | Every diagnosis ships in English and Russian: description, treatment checklist, prevention, watering / feeding / humidity schedule, red flags. |
 | 🪴 **Personal garden** | Plants grouped into rooms, scan history per plant, a month-grid care calendar, treatment plans, watering and feeding reminders, a lunar calendar, side-by-side photo comparison and a health trend. |
-| 🤖 **AI plant doctor** | Opt-in chat scoped to your scan's diagnosis (OpenRouter). |
+| 🤖 **AI plant doctor** | Opt-in chat scoped to your scan's diagnosis (any OpenAI-compatible backend; codex-lb in production). |
 | 🔎 **Species ID** | PlantNet identification fills in what the plant *is*, because that changes what you'd call the problem. |
 | 👥 **Community** | Opt-in shared scans on a map and nearby feed, plus a forum where growers answer each other. Anonymous: no account, no login. |
 
-Every optional integration (PlantNet, OpenRouter) degrades to a clear
+Every optional integration (PlantNet, the LLM backend) degrades to a clear
 "not configured" state instead of failing.
 
 ---
@@ -159,8 +159,9 @@ arguments are required. Local mock development explicitly sets `ACCOUNT_REAL_OAU
 
 Release signing, FCM push, and TLS are covered in
 [`DEPLOYMENT.md`](DEPLOYMENT.md).
-Production loads the optional species-ID and AI Doctor integrations from
-`PLANTNET_API_KEY_FILE` and `OPENROUTER_API_KEY_FILE`; without them, the server
+Production loads the optional species-ID integration from
+`PLANTNET_API_KEY_FILE`, and points the AI features at an OpenAI-compatible
+backend with `LLM_BASE_URL` (plus `LLM_API_KEY_FILE`); without them, the server
 runs normally and reports the corresponding feature as unavailable.
 Direct keys require an explicit `ENVIRONMENT=test` or
 `ENVIRONMENT=development`; an unset, staging, or production environment fails
@@ -247,10 +248,10 @@ plantdiseases/
 │   ├── pipeline.py         Two-stage pipeline + blur/OOD gates
 │   ├── detector.py         Stage 1 — YOLOv8n
 │   ├── classifier.py       Stage 2 — frozen DINOv2 ViT-S/14 + head
-│   ├── ai_services.py      OpenRouter transport, caches, shared prompt prefix
+│   ├── ai_services.py      OpenAI-compatible chat transport, caches, shared prompt prefix
 │   ├── plantnet.py         PlantNet species identification
 │   ├── plant_doctor.py     AI Plant Doctor chat sessions
-│   ├── species_ai.py       Species common diseases + species profile (OpenRouter)
+│   ├── species_ai.py       Species common diseases + species profile (LLM)
 │   ├── care_plan.py        Rules-based care plan + optional LLM polish
 │   ├── training_store.py   Consent-gated, de-identified training samples + feedback receipts
 │   ├── account_auth.py     Verifies account tokens; account_entitlements.py consumes daily quotas

@@ -42,6 +42,15 @@ as last recorded. Line counts are approximate; re-measure before acting on one.
       environment), run `compose.sh up -d --no-build prod-app-api`, confirm
       `printenv TELEMETRY_ENABLED` in the container, and see rows appear in
       `/data/telemetry/telemetry.db` within a day.
+- [ ] ★ **Point the AI features at codex-lb.** OpenRouter is gone from the server;
+      until this is done the doctor chat, species AI sections and care-plan polish
+      answer "not configured" after the next deploy. Turn on codex-lb's API-key auth
+      and create a key; switch off model training on every pooled account (the
+      privacy policy now says so); set `PROD_LLM_BASE_URL` and `PROD_LLM_KEY_FILE`
+      (`deploy/production-vds/README.md`); check `GET /v1/models` serves
+      `gpt-5.6-luna` or set `llm_model`; redeploy `prod-app-api`; re-copy
+      `privacy.html` to the web root; then confirm one doctor reply and
+      `/api/metrics` → `prompt_cache`.
 
 ---
 
@@ -247,8 +256,9 @@ Run-to-run noise is ~2 pp at `SEED=0`; read any single-knob delta inside it as n
   planned; later app work waits on the branch for the next one.
 - **No backups of production data** (owner's decision, 2026-11-14). A lost VDS
   loses the accounts and the community store; there is nothing to restore from.
-- **Cost cap is the OpenRouter key's own spend limit**; no in-server price
-  ceiling and no dependency lockfile are planned.
+- **Cost cap is the LLM gateway's own limit** (codex-lb's per-key token/cost
+  limits and the pooled accounts' usage limits; OpenRouter is gone since
+  2026-11-27); no in-server price ceiling and no dependency lockfile are planned.
 - **Release signing runs in CI** (owner's decision, 2026-11-14): the android job
   signs with the permanent key from repository secrets.
 - **VK ID stays switched off** until VK registration.

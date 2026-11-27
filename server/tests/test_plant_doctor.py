@@ -7,7 +7,7 @@ from tests import module_state
 
 # Make sure env-driven config doesn't accidentally enable the live API
 # during unit tests (CI machines may have leaked secrets).
-os.environ.pop("OPENROUTER_API_KEY", None)
+os.environ.pop("LLM_BASE_URL", None)
 
 
 @pytest.fixture(autouse=True)

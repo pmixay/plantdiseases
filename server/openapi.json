@@ -426,7 +426,7 @@
     "/api/chat": {
       "post": {
         "summary": "Chat Endpoint",
-        "description": "AI Plant Doctor — OpenRouter chat completion (default model\n``openai/gpt-5.6-luna``).\n\nPer-session turn + token caps prevent budget overrun within a session;\n``CHAT_DAILY_QUOTA`` bounds turns per IP across sessions, since the\nclient mints ``session_id`` and a new one resets the session caps.",
+        "description": "AI Plant Doctor — a chat completion from the configured OpenAI-compatible\nbackend (``LLM_BASE_URL``, model ``LLM_MODEL``).\n\nPer-session turn + token caps prevent budget overrun within a session;\n``CHAT_DAILY_QUOTA`` bounds turns per IP across sessions, since the\nclient mints ``session_id`` and a new one resets the session caps.",
         "operationId": "chat_endpoint_api_chat_post",
         "requestBody": {
           "content": {
@@ -463,7 +463,7 @@
     "/api/care-plan": {
       "post": {
         "summary": "Care Plan Endpoint",
-        "description": "Build a watering / fertilising / humidity schedule for a plant.\n\nAlways returns a usable rules-based plan; when an OpenRouter key\nis configured the response also includes a Markdown ``summary_md``\npolished by the LLM. Disease must be one of the known classifier\nclasses (``unknown`` is normalised to a generic monitoring plan).\nPast ``CARE_PLAN_DAILY_QUOTA`` for the caller's IP the plan is served\nwithout the LLM polish.\n\nOnly a plan adapted to a scan (``purpose=\"scan\"``, the default) spends\nthe caller's daily care-plan allowance, and only for a fresh LLM\npolish: a cached polished summary and the rules-based plan cost\nnothing. A species page's general plan (``purpose=\"species\"``) is\nalways the healthy-plant plan and never metered; its polish is still\nbounded by the per-IP allowance and shared through the cache. A garden\nchecklist (``purpose=\"checklist\"``) needs only the structured plan, so\nit is never polished or metered.",
+        "description": "Build a watering / fertilising / humidity schedule for a plant.\n\nAlways returns a usable rules-based plan; when the chat backend\nis configured the response also includes a Markdown ``summary_md``\npolished by the LLM. Disease must be one of the known classifier\nclasses (``unknown`` is normalised to a generic monitoring plan).\nPast ``CARE_PLAN_DAILY_QUOTA`` for the caller's IP the plan is served\nwithout the LLM polish.\n\nOnly a plan adapted to a scan (``purpose=\"scan\"``, the default) spends\nthe caller's daily care-plan allowance, and only for a fresh LLM\npolish: a cached polished summary and the rules-based plan cost\nnothing. A species page's general plan (``purpose=\"species\"``) is\nalways the healthy-plant plan and never metered; its polish is still\nbounded by the per-IP allowance and shared through the cache. A garden\nchecklist (``purpose=\"checklist\"``) needs only the structured plan, so\nit is never polished or metered.",
         "operationId": "care_plan_endpoint_api_care_plan_post",
         "requestBody": {
           "content": {
@@ -548,7 +548,7 @@
     "/api/species-diseases": {
       "get": {
         "summary": "Species Diseases Endpoint",
-        "description": "Common conditions a species is affected by indoors (AI, best-effort).\n\nGraceful ``{\"available\": False, \"diseases\": []}`` when no OpenRouter key\nis configured or on any failure — the client then renders its bundled\ndisease guide, so the species screen's \"common problems\" section is never\nempty. A real (``available``) result is cached server-side (in-memory +\non disk, surviving restarts) per (species, language) and carries a long\n``Cache-Control`` so the client/CDN reuses it too; a transient failure is\nsent uncached so the next open retries. Past ``SPECIES_AI_DAILY_QUOTA``\nfor the caller's IP the answer is ``available: false`` with\n``reason: \"daily_quota\"``.",
+        "description": "Common conditions a species is affected by indoors (AI, best-effort).\n\nGraceful ``{\"available\": False, \"diseases\": []}`` when the chat backend\nis not configured or on any failure — the client then renders its bundled\ndisease guide, so the species screen's \"common problems\" section is never\nempty. A real (``available``) result is cached server-side (in-memory +\non disk, surviving restarts) per (species, language) and carries a long\n``Cache-Control`` so the client/CDN reuses it too; a transient failure is\nsent uncached so the next open retries. Past ``SPECIES_AI_DAILY_QUOTA``\nfor the caller's IP the answer is ``available: false`` with\n``reason: \"daily_quota\"``.",
         "operationId": "species_diseases_endpoint_api_species_diseases_get",
         "parameters": [
           {
@@ -606,7 +606,7 @@
     "/api/species-profile": {
       "get": {
         "summary": "Species Profile Endpoint",
-        "description": "Flowering pattern + native range for a species (AI, best-effort).\n\nGraceful ``{\"available\": False}`` when no OpenRouter key is configured or\non any failure — the client then hides the section, so the species screen\ndegrades gracefully instead of showing bogus data. A real (``available``)\nresult is cached server-side (in-memory + on disk, surviving restarts) per\nspecies and carries both EN/RU text copies, so a locale switch cannot\nchange the map. ``profile_version`` is a cache-busting query parameter for\nclients/CDNs; the current endpoint always serves the canonical bilingual shape.\nShares ``SPECIES_AI_DAILY_QUOTA`` with ``/api/species-diseases``.",
+        "description": "Flowering pattern + native range for a species (AI, best-effort).\n\nGraceful ``{\"available\": False}`` when the chat backend is not configured or\non any failure — the client then hides the section, so the species screen\ndegrades gracefully instead of showing bogus data. A real (``available``)\nresult is cached server-side (in-memory + on disk, surviving restarts) per\nspecies and carries both EN/RU text copies, so a locale switch cannot\nchange the map. ``profile_version`` is a cache-busting query parameter for\nclients/CDNs; the current endpoint always serves the canonical bilingual shape.\nShares ``SPECIES_AI_DAILY_QUOTA`` with ``/api/species-diseases``.",
         "operationId": "species_profile_endpoint_api_species_profile_get",
         "parameters": [
           {

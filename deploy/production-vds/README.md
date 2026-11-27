@@ -25,6 +25,15 @@ telemetry store is the new minimized one). Consented error reports are recorded 
 2026-11-26; the stack was cut from the staging file with it off, so the app's opted-in reports were dropped until then).
 `/run/app-config/config.json` wins over the compose environment, so it must not set `telemetry_enabled` to false.
 
+AI features (doctor chat, species AI sections, care-plan polish) call an OpenAI-compatible backend, a codex-lb gateway
+(since 2026-11-27; OpenRouter is gone). The env file sets `PROD_LLM_BASE_URL` (blank keeps them off) and
+`PROD_LLM_KEY_FILE`, the absolute path of an owner-only file in `PROD_APP_SECRETS_DIR` (mounted at `/run/app-secrets`)
+holding a codex-lb API key. codex-lb refuses non-local clients until its API-key auth is on, so turn that on in its
+dashboard first. The app sits on `prod-edge`: attach the codex-lb container to that network and use
+`http://<codex-lb service>:2455/v1`, or have codex-lb listen on the edge gateway address and use that. Remove any
+`openrouter_*` keys from `config.json` (they are ignored, with a startup warning), and switch off model training in the
+data controls of every account codex-lb pools: the privacy policy promises that before the feature is enabled.
+
 There is no backup job (owner's decision, 2026-11-14): the daily encrypted dump, its restore check and its systemd timer
 were removed. The read-only `account_backup` database role and `PROD_POSTGRES_BACKUP_PASSWORD` are still provisioned by
 `postgres-init/` and the compose file; nothing uses them.

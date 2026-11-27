@@ -66,8 +66,8 @@ class CarePlanRequest(BaseModel):
 def register(router: APIRouter, m) -> None:
     @router.post("/chat")
     async def chat_endpoint(request: Request, payload: ChatRequest):
-        """AI Plant Doctor — OpenRouter chat completion (default model
-        ``openai/gpt-5.6-luna``).
+        """AI Plant Doctor — a chat completion from the configured OpenAI-compatible
+        backend (``LLM_BASE_URL``, model ``LLM_MODEL``).
 
         Per-session turn + token caps prevent budget overrun within a session;
         ``CHAT_DAILY_QUOTA`` bounds turns per IP across sessions, since the
@@ -89,7 +89,7 @@ def register(router: APIRouter, m) -> None:
         diagnosis = payload.diagnosis
         if diagnosis is not None and len(json.dumps(diagnosis, default=str)) > 8 * 1024:
             raise HTTPException(status_code=400, detail="diagnosis context too large")
-        metered = m.ai_services.openrouter_configured()
+        metered = m.ai_services.llm_configured()
         if metered:
             await m._authorize_metered_feature(request, feature="ai_doctor")
         result = await asyncio.get_running_loop().run_in_executor(
@@ -121,7 +121,7 @@ def register(router: APIRouter, m) -> None:
     async def care_plan_endpoint(request: Request, payload: CarePlanRequest):
         """Build a watering / fertilising / humidity schedule for a plant.
 
-        Always returns a usable rules-based plan; when an OpenRouter key
+        Always returns a usable rules-based plan; when the chat backend
         is configured the response also includes a Markdown ``summary_md``
         polished by the LLM. Disease must be one of the known classifier
         classes (``unknown`` is normalised to a generic monitoring plan).
@@ -171,7 +171,7 @@ def register(router: APIRouter, m) -> None:
         if (
             polish
             and not plan.get("cached")
-            and m.ai_services.openrouter_configured()
+            and m.ai_services.llm_configured()
             and m._care_plan_quota.try_consume(m._client_key(m._client_ip(request)))
         ):
             if metered:
@@ -267,8 +267,8 @@ def register(router: APIRouter, m) -> None:
     ):
         """Common conditions a species is affected by indoors (AI, best-effort).
 
-        Graceful ``{"available": False, "diseases": []}`` when no OpenRouter key
-        is configured or on any failure — the client then renders its bundled
+        Graceful ``{"available": False, "diseases": []}`` when the chat backend
+        is not configured or on any failure — the client then renders its bundled
         disease guide, so the species screen's "common problems" section is never
         empty. A real (``available``) result is cached server-side (in-memory +
         on disk, surviving restarts) per (species, language) and carries a long
@@ -310,7 +310,7 @@ def register(router: APIRouter, m) -> None:
     ):
         """Flowering pattern + native range for a species (AI, best-effort).
 
-        Graceful ``{"available": False}`` when no OpenRouter key is configured or
+        Graceful ``{"available": False}`` when the chat backend is not configured or
         on any failure — the client then hides the section, so the species screen
         degrades gracefully instead of showing bogus data. A real (``available``)
         result is cached server-side (in-memory + on disk, surviving restarts) per

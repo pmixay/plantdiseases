@@ -1,7 +1,7 @@
-"""AI Plant Doctor: the chat sheet's per-session conversation over OpenRouter.
+"""AI Plant Doctor: the chat sheet's per-session conversation over the chat backend.
 
 Owns the session map, its turn/token/message caps and the doctor's counters; the
-transport (``_call_openrouter``), the shared prompt prefix and the key check stay
+transport (``_call_llm``), the shared prompt prefix and the key check stay
 in ``ai_services`` and are reached as ``ai_services.name`` at call time, so a
 test that patches one there is seen here.
 """
@@ -195,7 +195,7 @@ def _sanitize_diagnosis_context(ctx: dict) -> dict:
 def _build_system_text(locale: str, diagnosis_context: dict | None) -> str:
     """Compose the doctor's system prompt: house preamble + doctor task +
     locale hint + optional structured diagnosis context. Plain string so
-    OpenRouter receives one clean system message.
+    the backend receives one clean system message.
 
     The two volatile parts trail the two stable ones deliberately — the
     diagnosis blob changes the moment the owner scans a different plant, and
@@ -236,13 +236,15 @@ def chat_reply(
     if len(user_message) > 2000:
         return {"available": False, "reply": "", "reason": "message_too_long"}
 
-    if not ai_services._chat_api_key_present():
+    if not ai_services.llm_configured():
+        # "no_api_key" is the wire reason the app maps to its "not configured"
+        # message; it now means "no chat backend set", the same thing to a user.
         return {
             "available": False,
             "reply": "",
             "reason": "no_api_key",
             "fallback": (
-                "AI Plant Doctor is offline (no API key). "
+                "AI Plant Doctor is offline (not configured). "
                 "Use the diagnosis treatment list for now."
             ),
         }
@@ -278,22 +280,20 @@ def chat_reply(
     try:
         # The surface where prompt caching pays MOST: the system prompt plus a
         # growing history is re-sent verbatim every turn, so each turn reads
-        # back what the last one wrote. `session_id` keeps the conversation
-        # pinned to the provider holding that cache, and `cache_prefix` asks
-        # OpenRouter to advance the breakpoint as the history grows.
-        reply_text, tin, tout, cache_stats = ai_services._call_openrouter(
+        # back what the last one wrote; `prompt_cache_key` (set in `_call_llm`)
+        # routes every turn to the machine holding that prefix.
+        reply_text, tin, tout, cache_stats = ai_services._call_llm(
             system_text, user_blocks,
-            session_id=session_id, cache_prefix=True,
         )
     except Exception:  # noqa: BLE001 - prompt/provider details stay out of logs
-        logger.warning("OpenRouter chat failed")
+        logger.warning("AI Plant Doctor chat failed")
         return {"available": False, "reply": "", "reason": "api_error"}
 
     if not reply_text:
         # Empty completion (provider stutter, content filter, etc.).
         # Don't burn the user's turn or token budget on it — the client
         # will resurface the prompt and retry.
-        logger.warning("OpenRouter returned empty reply")
+        logger.warning("AI Plant Doctor got an empty reply")
         return {"available": False, "reply": "", "reason": "empty_reply"}
 
     with _chat_lock:
@@ -322,8 +322,8 @@ def chat_reply(
     return {
         "available": True,
         "reply": reply_text,
-        "model": ai_services.OPENROUTER_MODEL,
-        "provider": "openrouter",
+        "model": ai_services.LLM_MODEL,
+        "provider": "llm",
         # cached_input_tokens is a SUBSET of input_tokens (the part the
         # provider served from its prompt cache), not an addition to it.
         "usage": {
@@ -348,7 +348,7 @@ def chat_metrics_snapshot() -> dict:
     ``tokens_in``; ``cache_hit_ratio`` is the share of input tokens served from
     the provider's prompt cache. These count the DOCTOR only — see
     ``prompt_cache_metrics_snapshot`` for the same figures across every
-    OpenRouter caller, which is the number to read when asking whether caching
+    chat-backend caller, which is the number to read when asking whether caching
     is engaging at all.
     """
     with _chat_lock:
@@ -360,7 +360,7 @@ def chat_metrics_snapshot() -> dict:
             "rejected": _chat_totals["rejected"],
             "tokens_in": tokens_in,
             "tokens_out": _chat_totals["tokens_out"],
-            "prompt_caching": ai_services.OPENROUTER_PROMPT_CACHING,
+            "prompt_caching": ai_services.LLM_PROMPT_CACHING,
             "cached_tokens_in": cached_in,
             "cache_write_tokens_in": _chat_totals["cache_write_tokens_in"],
             "cache_hit_ratio": round(cached_in / tokens_in, 4) if tokens_in else 0.0,

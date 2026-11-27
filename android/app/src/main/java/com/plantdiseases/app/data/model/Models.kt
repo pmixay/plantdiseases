@@ -765,8 +765,8 @@ data class PopularItem(
 
 /**
  * /api/species-diseases response — the conditions a species is commonly
- * affected by indoors (AI, best-effort). `available=false` (no OpenRouter
- * key or any failure) is a graceful state: the species screen then renders
+ * affected by indoors (AI, best-effort). `available=false` (no AI backend
+ * configured, or any failure) is a graceful state: the species screen then renders
  * the bundled offline disease guide instead, so the section is never empty.
  */
 @Serializable

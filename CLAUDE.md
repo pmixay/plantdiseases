@@ -226,8 +226,9 @@ detail screen only.
   unrecognised values as unset and warns. Nested JSON sections flatten to UPPERCASE keys
   without the section name (`api_keys` stays a dict). Read once at import: restart to apply.
 - **Optional integrations degrade gracefully, never crash.** Missing `PLANTNET_API_KEY` /
-  `OPENROUTER_API_KEY` / FCM creds → endpoints return `available:false` and the app shows a
-  specific "not configured" UX. Preserve this.
+  `LLM_BASE_URL` (the OpenAI-compatible chat backend, `ai_services._call_llm`) / FCM creds →
+  endpoints return `available:false` and the app shows a specific "not configured" UX.
+  Preserve this.
 - **Typography: no grey text, plain punctuation.** Text uses `@color/on_surface`; the muted
   ink `on_surface_secondary` (also `colorOnSurfaceVariant`) is for icon tints only, never
   text; don't fade text with alpha to make it secondary. The one gray is `guest_locked`,

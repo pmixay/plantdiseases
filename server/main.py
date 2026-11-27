@@ -1066,7 +1066,7 @@ def _consume_daily_write(operation: str, address: str, limit: int) -> bool:
 
 # Daily per-IP allowances on the endpoints that cost money or a shared
 # upstream quota. The write quotas above stop spam; these stop one client
-# from running up the OpenRouter bill or draining PlantNet's 500-a-day pool
+# from running up the LLM bill or draining PlantNet's 500-a-day pool
 # for everyone, which a 2 req/s bucket alone allows (~170k requests a day).
 # Sized far above any real user's day; ``0`` disables one.
 ANALYZE_DAILY_QUOTA = config.get_int("ANALYZE_DAILY_QUOTA", 300)
@@ -1209,7 +1209,7 @@ COMMUNITY_ANALYSIS_TOKEN_TTL_DAYS = config.get_int(
 # many-core host can raise this and lower ONNX_INTRA_OP_THREADS to match.
 #
 # ONLY ``pipeline.analyze`` runs on this executor. Slow external HTTP
-# (PlantNet / OpenRouter / Wikipedia) runs on the network executor below;
+# (PlantNet / the chat backend / Wikipedia) runs on the network executor below;
 # everything else that needs a thread (SQLite reads/writes, image decode /
 # hashing, FCM pushes) runs on the event loop's default thread pool —
 # putting it here would queue millisecond DB ops behind a 30-second
@@ -1219,7 +1219,7 @@ INFER_WORKERS = config.get_int("INFER_WORKERS", 1)
 _inference_executor: ThreadPoolExecutor | None = None
 _executor_lock = threading.Lock()
 
-# Dedicated pool for calls that WAIT on an external service (OpenRouter,
+# Dedicated pool for calls that WAIT on an external service (the chat backend,
 # PlantNet, Wikipedia — each can legitimately hold a thread for 10–20 s).
 # The event loop's default executor is sized from CPU count
 # (min(32, cores + 4) = 5 threads on a 1-vCPU host) and is shared by every
@@ -1980,7 +1980,7 @@ async def lifespan(app: FastAPI):
                 _inference_executor = None
             if _net_executor is not None:
                 # In-flight external calls drain within their own budgets
-                # (OPENROUTER_TOTAL_TIMEOUT / PLANTNET_TIMEOUT).
+                # (LLM_TOTAL_TIMEOUT / PLANTNET_TIMEOUT).
                 _net_executor.shutdown(wait=True, cancel_futures=True)
                 _net_executor = None
 

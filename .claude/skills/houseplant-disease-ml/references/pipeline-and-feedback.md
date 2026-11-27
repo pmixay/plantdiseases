@@ -63,7 +63,7 @@ class is **degenerative** — `viral_disease` always escalates one level
   schedule, red-flag escalation. A new class needs a card here.
 - `conformal.py` / `ood.py` — the calibration/OOD runtime (see
   `eval-and-calibration.md`).
-- `ai_services.py` — optional PlantNet species ID + OpenRouter "plant doctor" +
+- `ai_services.py` — optional PlantNet species ID + LLM-backed "plant doctor" +
   care-plan/progression. All **graceful when unconfigured** (`available:false`),
   never a hard dependency.
 

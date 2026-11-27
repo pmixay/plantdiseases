@@ -5,7 +5,7 @@
 (per-country grows-more/grows-less zones + a summary), returning a small
 sanitised object. It must degrade gracefully (``available=False``) with no
 API key or on any failure so the client just hides the section. The
-OpenRouter call is fully mocked — no network.
+The chat-backend call is fully mocked — no network.
 """
 from __future__ import annotations
 
@@ -260,7 +260,7 @@ def test_parser_returns_none_on_junk(text):
 # ── helper: graceful + structured paths ─────────────────────────────
 
 def test_no_api_key_is_graceful(monkeypatch):
-    monkeypatch.setattr(ai_services, "OPENROUTER_API_KEY", "")
+    monkeypatch.setattr(ai_services, "LLM_BASE_URL", "")
     out = species_ai.species_profile("Ficus elastica", lang="en")
     assert out["available"] is False
     assert out["source"] == "no_api_key"
@@ -272,7 +272,7 @@ def test_blank_name_is_graceful():
 
 
 def test_structured_success_and_cache(monkeypatch):
-    monkeypatch.setattr(ai_services, "OPENROUTER_API_KEY", "test-key")
+    monkeypatch.setattr(ai_services, "LLM_BASE_URL", "http://llm.test/v1")
     calls = {"n": 0}
 
     def fake_call(system_text, history, *, max_tokens=None, require_complete=False,
@@ -287,7 +287,7 @@ def test_structured_success_and_cache(monkeypatch):
         assert reasoning_effort == "high"
         return (_valid_profile_json(), 10, 20, {})
 
-    monkeypatch.setattr(ai_services, "_call_openrouter", fake_call)
+    monkeypatch.setattr(ai_services, "_call_llm", fake_call)
 
     out = species_ai.species_profile("Ficus elastica", lang="en")
     assert out["available"] is True
@@ -302,14 +302,14 @@ def test_structured_success_and_cache(monkeypatch):
 
 
 def test_v2_profile_is_shared_between_locales(monkeypatch):
-    monkeypatch.setattr(ai_services, "OPENROUTER_API_KEY", "test-key")
+    monkeypatch.setattr(ai_services, "LLM_BASE_URL", "http://llm.test/v1")
     calls = {"n": 0}
 
     def fake_call(*args, **kwargs):
         calls["n"] += 1
         return (_valid_profile_v2_json(), 10, 20, {})
 
-    monkeypatch.setattr(ai_services, "_call_openrouter", fake_call)
+    monkeypatch.setattr(ai_services, "_call_llm", fake_call)
     en = species_ai.species_profile("Potato", lang="en")
     ru = species_ai.species_profile("Potato", lang="ru")
 
@@ -324,7 +324,7 @@ def test_v2_profile_is_shared_between_locales(monkeypatch):
 def test_disk_cache_survives_inmemory_wipe(monkeypatch):
     """A real result persists on disk, so after a server restart / fresh worker
     (in-memory LRU empty) it's reused without paying for the LLM again."""
-    monkeypatch.setattr(ai_services, "OPENROUTER_API_KEY", "test-key")
+    monkeypatch.setattr(ai_services, "LLM_BASE_URL", "http://llm.test/v1")
     calls = {"n": 0}
 
     def fake_call(system_text, history, *, max_tokens=None, require_complete=False,
@@ -332,7 +332,7 @@ def test_disk_cache_survives_inmemory_wipe(monkeypatch):
         calls["n"] += 1
         return (_valid_profile_json(), 5, 5, {})
 
-    monkeypatch.setattr(ai_services, "_call_openrouter", fake_call)
+    monkeypatch.setattr(ai_services, "_call_llm", fake_call)
 
     first = species_ai.species_profile("Calathea orbifolia", lang="en")
     assert first["available"] is True and calls["n"] == 1
@@ -346,20 +346,20 @@ def test_disk_cache_survives_inmemory_wipe(monkeypatch):
 
 
 def test_api_error_is_graceful(monkeypatch):
-    monkeypatch.setattr(ai_services, "OPENROUTER_API_KEY", "test-key")
+    monkeypatch.setattr(ai_services, "LLM_BASE_URL", "http://llm.test/v1")
 
     def boom(*a, **k):
         raise RuntimeError("upstream down")
 
-    monkeypatch.setattr(ai_services, "_call_openrouter", boom)
+    monkeypatch.setattr(ai_services, "_call_llm", boom)
     out = species_ai.species_profile("Monstera deliciosa", lang="en")
     assert out["available"] is False and out["source"] == "api_error"
 
 
 def test_malformed_reply_is_graceful(monkeypatch):
-    monkeypatch.setattr(ai_services, "OPENROUTER_API_KEY", "test-key")
+    monkeypatch.setattr(ai_services, "LLM_BASE_URL", "http://llm.test/v1")
     monkeypatch.setattr(
-        ai_services, "_call_openrouter",
+        ai_services, "_call_llm",
         lambda *a, **k: ("not valid json", 5, 5, {}),
     )
     out = species_ai.species_profile("Monstera deliciosa", lang="en")
@@ -369,7 +369,7 @@ def test_malformed_reply_is_graceful(monkeypatch):
 # ── endpoint ────────────────────────────────────────────────────────
 
 def test_endpoint_graceful_without_key(client):
-    """With no OpenRouter key configured in the test env, the endpoint still
+    """With no chat backend configured in the test env, the endpoint still
     returns 200 with a graceful unavailable payload (never an error)."""
     r = client.get("/api/species-profile", params={"name": "Ficus elastica"})
     assert r.status_code == 200
@@ -406,9 +406,9 @@ def test_v2_shape_with_bad_zone_codes_is_not_laundered_through_the_v1_parser(mon
             "summary": {"en": "Andean slopes.", "ru": "Склоны Анд."},
         },
     })
-    monkeypatch.setattr(ai_services, "_chat_api_key_present", lambda: True)
+    monkeypatch.setattr(ai_services, "llm_configured", lambda: True)
     monkeypatch.setattr(
-        ai_services, "_call_openrouter", lambda *a, **k: (v2_with_alpha2, None, None, None),
+        ai_services, "_call_llm", lambda *a, **k: (v2_with_alpha2, None, None, None),
     )
 
     out = species_ai.species_profile("Ficus elastica", lang="en")
@@ -432,9 +432,9 @@ def test_legacy_reply_is_not_served_to_the_other_locale(monkeypatch):
             "summary": "Родом из Анд.",
         },
     })
-    monkeypatch.setattr(ai_services, "_chat_api_key_present", lambda: True)
+    monkeypatch.setattr(ai_services, "llm_configured", lambda: True)
     monkeypatch.setattr(
-        ai_services, "_call_openrouter", lambda *a, **k: (ru_legacy, None, None, None),
+        ai_services, "_call_llm", lambda *a, **k: (ru_legacy, None, None, None),
     )
 
     ru = species_ai.species_profile("Testus plantus", lang="ru")

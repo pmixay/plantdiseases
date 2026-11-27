@@ -259,7 +259,10 @@ services:
       AI_CACHE_DIR: /data/app-cache/ai
       # Credentials are mode-0400 files owned by the app uid; never environment values.
       PLANTNET_API_KEY_FILE: ""
-      OPENROUTER_API_KEY_FILE: ${PROD_OPENROUTER_KEY_FILE:-}
+      # OpenAI-compatible chat backend for the AI features (a codex-lb gateway).
+      # Blank base URL leaves them off; the key file sits in /run/app-secrets.
+      LLM_BASE_URL: ${PROD_LLM_BASE_URL:-}
+      LLM_API_KEY_FILE: ${PROD_LLM_KEY_FILE:-}
       CORS_ORIGINS: ""
       TRUSTED_PROXIES: ${PROD_TRUSTED_PROXIES:?Set the exact trusted Docker proxy peer IPs}
       RATE_LIMIT_RPS: "25"
