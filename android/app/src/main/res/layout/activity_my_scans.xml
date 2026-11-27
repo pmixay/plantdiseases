@@ -20,7 +20,10 @@
             android:background="@android:color/transparent"
             app:navigationContentDescription="@string/forum_back"
             app:navigationIcon="@drawable/ic_back"
-            app:navigationIconTint="@color/on_surface" />
+            app:navigationIconTint="@color/toolbar_title"
+            app:title="@string/profile_my_scans"
+            app:titleTextAppearance="@style/TextAppearance.App.Toolbar"
+            app:titleTextColor="@color/toolbar_title" />
 
     </com.google.android.material.appbar.AppBarLayout>
 

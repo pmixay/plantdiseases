@@ -11,31 +11,55 @@
     android:orientation="vertical"
     android:background="@color/background">
 
-    <!-- Page title + clear-history action. Used to live in the shared
-         MainActivity toolbar, pinned above the pager; that title only
-         updated once a swipe settled, so it read as floating disconnected
-         from the page sliding underneath it mid-drag. Living here instead,
-         it's part of this page's own content and slides with it. The
-         clear-history basket moves here too — it used to be a toolbar menu
-         item scoped to this fragment's lifecycle, which only worked while
-         the shared toolbar was visible on this tab. -->
+    <!-- Filters with the clear-history action at the end of the same row.
+         The screen title lives in the host's toolbar (MyScansActivity), so
+         the filters sit right under the back arrow. -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="horizontal"
         android:gravity="center_vertical"
-        android:paddingHorizontal="@dimen/content_gutter"
-        android:paddingTop="@dimen/space_sm">
+        android:orientation="horizontal"
+        android:paddingStart="@dimen/content_gutter"
+        android:paddingEnd="@dimen/space_sm">
 
-        <TextView
+        <com.google.android.material.chip.ChipGroup
+            android:id="@+id/chip_group_filter"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:text="@string/tab_gallery"
-            android:textColor="@color/on_surface"
-            android:textSize="@dimen/text_title"
-            android:fontFamily="sans-serif-black"
-            android:letterSpacing="-0.01" />
+            app:singleSelection="true"
+            app:selectionRequired="true"
+            app:chipSpacingHorizontal="@dimen/space_sm">
+
+            <com.google.android.material.chip.Chip
+                android:id="@+id/chip_all"
+                style="@style/Widget.Material3.Chip.Filter"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/filter_all"
+                android:checked="true"
+                app:chipBackgroundColor="@color/chip_bg_color"
+                app:checkedIconEnabled="false" />
+
+            <com.google.android.material.chip.Chip
+                android:id="@+id/chip_healthy"
+                style="@style/Widget.Material3.Chip.Filter"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/filter_healthy"
+                app:chipBackgroundColor="@color/chip_bg_color"
+                app:checkedIconEnabled="false" />
+
+            <com.google.android.material.chip.Chip
+                android:id="@+id/chip_diseased"
+                style="@style/Widget.Material3.Chip.Filter"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/filter_diseased"
+                app:chipBackgroundColor="@color/chip_bg_color"
+                app:checkedIconEnabled="false" />
+
+        </com.google.android.material.chip.ChipGroup>
 
         <ImageButton
             android:id="@+id/btn_clear_history"
@@ -49,45 +73,6 @@
             tools:visibility="visible" />
 
     </LinearLayout>
-
-    <com.google.android.material.chip.ChipGroup
-        android:id="@+id/chip_group_filter"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:padding="@dimen/space_md"
-        app:singleSelection="true"
-        app:selectionRequired="true"
-        app:chipSpacingHorizontal="@dimen/space_sm">
-
-        <com.google.android.material.chip.Chip
-            android:id="@+id/chip_all"
-            style="@style/Widget.Material3.Chip.Filter"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="@string/filter_all"
-            android:checked="true"
-            app:chipBackgroundColor="@color/chip_bg_color"
-            app:checkedIconEnabled="false" />
-
-        <com.google.android.material.chip.Chip
-            android:id="@+id/chip_healthy"
-            style="@style/Widget.Material3.Chip.Filter"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="@string/filter_healthy"
-            app:chipBackgroundColor="@color/chip_bg_color"
-            app:checkedIconEnabled="false" />
-
-        <com.google.android.material.chip.Chip
-            android:id="@+id/chip_diseased"
-            style="@style/Widget.Material3.Chip.Filter"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="@string/filter_diseased"
-            app:chipBackgroundColor="@color/chip_bg_color"
-            app:checkedIconEnabled="false" />
-
-    </com.google.android.material.chip.ChipGroup>
 
     <FrameLayout
         android:layout_width="match_parent"
