@@ -21,23 +21,28 @@
         android:layout_marginBottom="@dimen/space_xs"
         android:background="@drawable/bg_handle" />
 
-    <!-- Header -->
+    <!-- Header: one pill, icon at the round start, clear action at the end. -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
+        android:layout_marginHorizontal="@dimen/space_lg"
+        android:layout_marginTop="@dimen/space_sm"
+        android:layout_marginBottom="@dimen/space_xs"
+        android:background="@drawable/bg_doctor_pill"
         android:orientation="horizontal"
         android:gravity="center_vertical"
-        android:paddingHorizontal="@dimen/space_xl"
-        android:paddingVertical="@dimen/space_lg">
+        android:paddingStart="@dimen/space_sm"
+        android:paddingEnd="@dimen/space_xs"
+        android:paddingVertical="@dimen/space_sm">
 
         <FrameLayout
-            android:layout_width="48dp"
-            android:layout_height="48dp"
+            android:layout_width="44dp"
+            android:layout_height="44dp"
             android:background="@drawable/bg_icon_circle">
 
             <ImageView
-                android:layout_width="26dp"
-                android:layout_height="26dp"
+                android:layout_width="24dp"
+                android:layout_height="24dp"
                 android:layout_gravity="center"
                 android:src="@drawable/ic_care"
                 android:contentDescription="@null"
@@ -148,34 +153,55 @@
 
     </LinearLayout>
 
-    <!-- Input row — bottom inset is applied in code. -->
+    <!-- Input row (bottom inset is applied in code): one pill holding the
+         message field and a round send arrow at its end, as in chat apps. -->
     <LinearLayout
         android:id="@+id/chat_input_row"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        android:gravity="center_vertical"
-        android:background="@color/surface"
-        android:paddingHorizontal="@dimen/space_xl"
-        android:paddingTop="@dimen/space_sm"
+        android:orientation="vertical"
+        android:paddingHorizontal="@dimen/space_lg"
+        android:paddingTop="@dimen/space_xs"
         android:paddingBottom="@dimen/space_md">
 
-        <com.google.android.material.textfield.TextInputEditText
-            android:id="@+id/chat_input"
-            android:layout_width="0dp"
+        <LinearLayout
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:hint="@string/doctor_hint"
-            android:inputType="textMultiLine|textCapSentences"
-            android:maxLines="3"
-            android:imeOptions="actionSend" />
+            android:background="@drawable/bg_doctor_pill"
+            android:gravity="bottom"
+            android:minHeight="52dp"
+            android:orientation="horizontal"
+            android:paddingStart="@dimen/space_lg"
+            android:paddingEnd="6dp"
+            android:paddingVertical="6dp">
 
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/chat_send_btn"
-            android:layout_width="wrap_content"
-            android:layout_height="48dp"
-            android:layout_marginStart="@dimen/space_sm"
-            android:text="@string/doctor_send" />
+            <com.google.android.material.textfield.TextInputEditText
+                android:id="@+id/chat_input"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_gravity="center_vertical"
+                android:background="@null"
+                android:paddingVertical="@dimen/space_sm"
+                android:hint="@string/doctor_hint"
+                android:textColor="@color/on_surface"
+                android:textSize="@dimen/text_body"
+                android:inputType="textMultiLine|textCapSentences"
+                android:maxLines="5"
+                android:imeOptions="actionSend" />
+
+            <ImageButton
+                android:id="@+id/chat_send_btn"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:layout_marginStart="@dimen/space_sm"
+                android:background="@drawable/bg_doctor_send"
+                android:contentDescription="@string/doctor_send"
+                android:enabled="false"
+                android:src="@drawable/ic_arrow_up"
+                app:tint="@color/on_primary" />
+
+        </LinearLayout>
 
     </LinearLayout>
 

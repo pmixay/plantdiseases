@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Plant Doctor's round send button: green with a ripple, light grey
+     while there is nothing to send or a reply is in flight. -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:state_enabled="false">
+        <shape android:shape="oval">
+            <solid android:color="@color/card_stroke" />
+        </shape>
+    </item>
+    <item>
+        <ripple android:color="@color/primary_dark">
+            <item>
+                <shape android:shape="oval">
+                    <solid android:color="@color/primary" />
+                </shape>
+            </item>
+        </ripple>
+    </item>
+</selector>
