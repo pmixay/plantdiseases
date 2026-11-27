@@ -61,7 +61,11 @@ without data. Specified in `DATASET_LABELING_PLAN.md`.
 - [ ] ★ **Carve T_v1.** Adjudicate the 80 export rows; carve T before any export row
       enters a supplement. It is the only slice fair to the deployed model and a
       candidate alike.
-- [ ] ★ **Scorch data.** Real v9 collection: early-stage marginal necrosis, 400
+- [ ] ★ **Scorch data: the v9 minimum round** (`docs/V9_MINIMUM_ROUND.md`, the
+      collection task). 187 early-scorch and 100 houseplant `leaf_spot` families
+      left, agent review, at most 5 % AI-generated photos (training-only), the v8
+      brown-tip negatives reviewed for relabelling, pre-screened with
+      `server/tools/screen_candidates.py`. The full plan target stays 400 early
       families with boxes (`brown_frac < 0.05`, edge-confined, blade mostly green),
       judged against `leaf_spot` exemplars; worth a run at ≥ 200 scorch and ≥ 100
       houseplant `leaf_spot` families. Boxes matter: Stage 1 returns no box on 21 % of
@@ -77,10 +81,13 @@ without data. Specified in `DATASET_LABELING_PLAN.md`.
       arms, rights), and §6 scores the negative arms. Put the benchmark's slug in
       §2's `KAGGLE_BENCHMARK_SLUGS`, not `KAGGLE_DENY_SLUGS` (§6 downloads it).
       `REQUIRE_OOD_BENCHMARK` stays `False` until it exists.
-- [ ] ★ **Augmentation ablation on Colab at `SEED=0`** (ready to run now). One `'off'`
-      run (§4 `TRAIN_AUGMENTATION`; geometry only, profile
-      `serve_parity_v2_geometry_only`) vs a default run on the same corpus; score with
-      `tools/eval_bootstrap.py` on capture families.
+- [ ] ★ **Augmentation ablation on Colab at `SEED=0`** (waits for supplement v9, owner's
+      decision 2026-11-27, so the runs are spent on the data that ships). Two fresh
+      runs on v9, `MODEL_VERSION='2.7.6'`, `TRAIN_MODE='gamma'`: a default run and an
+      `'off'` run (§4 `TRAIN_AUGMENTATION`; geometry only, profile
+      `serve_parity_v2_geometry_only`). 2.7.5 cannot be the control: §1/§4 now
+      enforce determinism before head training and the live sources drift. Score both
+      on the v9 holdout with `tools/paired_eval.py` + `tools/eval_bootstrap.py`.
 - [ ] ★ **Ship Aqua's OOD floor** from the next notebook run: §5 writes it into the
       Aqua sidecar (`ood`); copy that `classes.json` with the model into
       `server/static/aqua/`. Until then Aqua serves without the gate, and only apps
