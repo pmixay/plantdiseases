@@ -45,8 +45,7 @@ as last recorded. Line counts are approximate; re-measure before acting on one.
 - [ ] ★ **Point the AI features at codex-lb.** OpenRouter is gone from the server;
       until this is done the doctor chat, species AI sections and care-plan polish
       answer "not configured" after the next deploy. Turn on codex-lb's API-key auth
-      and create a key; switch off model training on every pooled account (the
-      privacy policy now says so); set `PROD_LLM_BASE_URL` and `PROD_LLM_KEY_FILE`
+      and create a key; set `PROD_LLM_BASE_URL` and `PROD_LLM_KEY_FILE`
       (`deploy/production-vds/README.md`); check `GET /v1/models` serves
       `gpt-5.6-luna` or set `llm_model`; redeploy `prod-app-api`; re-copy
       `privacy.html` to the web root; then confirm one doctor reply and

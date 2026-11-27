@@ -31,8 +31,7 @@ AI features (doctor chat, species AI sections, care-plan polish) call an OpenAI-
 holding a codex-lb API key. codex-lb refuses non-local clients until its API-key auth is on, so turn that on in its
 dashboard first. The app sits on `prod-edge`: attach the codex-lb container to that network and use
 `http://<codex-lb service>:2455/v1`, or have codex-lb listen on the edge gateway address and use that. Remove any
-`openrouter_*` keys from `config.json` (they are ignored, with a startup warning), and switch off model training in the
-data controls of every account codex-lb pools: the privacy policy promises that before the feature is enabled.
+`openrouter_*` keys from `config.json` (they are ignored, with a startup warning).
 
 There is no backup job (owner's decision, 2026-11-14): the daily encrypted dump, its restore check and its systemd timer
 were removed. The read-only `account_backup` database role and `PROD_POSTGRES_BACKUP_PASSWORD` are still provisioned by

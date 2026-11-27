@@ -240,9 +240,6 @@ file → `llm_api_key_file` → restart. Without a base URL `/api/care-plan` sti
 returns a complete deterministic plan; only the `summary_md` polish is skipped,
 and the chat and species AI sections answer `available:false`.
 
-- *Before enabling it.* The privacy policy says OpenAI processes these requests
-  under the operator's account with model training on that data switched off.
-  Turn that data control off on every account codex-lb pools.
 - *What goes on the wire.* Standard fields only: `model`, `messages`, the token
   cap (`llm_token_limit_field`), `reasoning_effort`, `response_format`
   (`json_schema`, strict) and `prompt_cache_key`. codex-lb refuses a field it
