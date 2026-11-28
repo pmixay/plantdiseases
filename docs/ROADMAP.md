@@ -28,13 +28,6 @@ as last recorded. Line counts are approximate; re-measure before acting on one.
 
 ## P0 — Production
 
-- [ ] ★ **Re-copy `privacy.html` to the web root** (`/var/www/pdis`). The AI features
-      are live, but the published page is still the `53da7a3` version: it says the
-      operator must switch off model training before they are enabled. `35da1c5`
-      replaced that sentence (checked 2026-11-28).
-- [ ] ★ **Create the first forum admin** on production:
-      `python manage_roles.py grant --nickname … --role admin` in the account-api
-      container. Migration 0011 is applied; no role was active on 2026-11-28.
 - [ ] ★ **Turn on the desktop moderation panel** (`/admin/`): add a Web services
       platform with the redirect URL `https://<host>/admin/` to the Android app's
       Yandex OAuth app, set `admin_panel_yandex_client_id` in

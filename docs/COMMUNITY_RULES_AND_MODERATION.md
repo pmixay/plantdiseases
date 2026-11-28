@@ -58,8 +58,9 @@ Report records are retained for at most 180 days. Blocks remain until unblocked 
 
 The forum (Community tab) is moderated in the app by people with a role, not only from the server shell.
 
-- **Roles** live in the account service: *expert* (verifies diagnoses, reviews AI disagreements), *moderator* (all spaces, or one space) and *admin*. The first admin can only be created on the server:
-  `docker compose exec account-api python manage_roles.py grant --nickname NICK --role admin`.
+- **Roles** live in the account service: *expert* (verifies diagnoses, reviews AI disagreements), *moderator* (all spaces, or one space) and *admin*. The first admin can only be created on the server (the account image does not contain the script, so it is piped in from the checkout):
+  `docker compose exec -T account-api python -B - grant --nickname NICK --role admin < account-server/manage_roles.py`.
+  The production VDS form is in `deploy/production-vds/README.md`.
   Admins then grant and revoke expert and moderator roles from the app; the app API checks roles with the account service on every staff action and refuses with 503 when it cannot.
 - **Actions** need a fixed reason code (spam, harassment, dangerous advice, off topic, inappropriate photo, privacy, duplicate, other) that the member sees. Removal is reversible for 30 days, then the forum purge job erases text and photos. Moderators can also close answers, pin, and move posts between spaces; admins can exclude a post from training and ban a photo so look-alike uploads are refused.
 - **Profile photos** are opt-in (the app asks before publishing one) and follow the same content rules as forum photos; banned photos cannot be uploaded as one. A global moderator can take one down with `POST /api/community/admin/actors/{author_token}/avatar/remove` (no in-app control yet), which by default also bans the picture.
@@ -116,8 +117,9 @@ PlantDiseases вправе удалить нарушающий правила м
 
 Форум (вкладка «Сообщество») модерируют прямо в приложении люди с ролью, а не только с сервера.
 
-- **Роли** хранятся в сервисе аккаунтов: *эксперт* (подтверждает диагнозы, разбирает расхождения с ИИ), *модератор* (все разделы или один раздел) и *администратор*. Первого администратора можно назначить только на сервере:
-  `docker compose exec account-api python manage_roles.py grant --nickname NICK --role admin`.
+- **Роли** хранятся в сервисе аккаунтов: *эксперт* (подтверждает диагнозы, разбирает расхождения с ИИ), *модератор* (все разделы или один раздел) и *администратор*. Первого администратора можно назначить только на сервере (скрипта нет в образе сервиса аккаунтов, поэтому он передаётся из копии репозитория):
+  `docker compose exec -T account-api python -B - grant --nickname NICK --role admin < account-server/manage_roles.py`.
+  Команда для боевого VDS — в `deploy/production-vds/README.md`.
   Дальше администраторы назначают и снимают экспертов и модераторов в приложении; API приложения проверяет роль в сервисе аккаунтов при каждом действии и отвечает 503, если проверить не может.
 - **Действия** требуют фиксированной причины (спам, травля, опасный совет, не по теме, неподходящее фото, личные данные, повтор, другое), которую видит участник. Удаление можно отменить в течение 30 дней, затем текст и фото стираются. Модераторы также закрывают ответы, закрепляют и переносят публикации; администраторы исключают публикацию из обучения и запрещают фото, чтобы похожие загрузки отклонялись.
 - **Автоскрытие:** публикация или ответ, на которые пожаловались три разных участника 2-го уровня и выше, скрываются до решения модератора.
