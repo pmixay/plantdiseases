@@ -14,6 +14,7 @@ from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from app.config import Settings, SettingsError
 
 _AAD = b"plantdiseases-account-push-v1"
+_EMAIL_AAD = b"plantdiseases-account-email-v1"
 
 
 def _decode_key(value: str) -> bytes:
@@ -46,6 +47,10 @@ class PushTokenProtector:
         self._email_lookup_key = hmac.digest(
             key, b"email-login-lookup-v1", "sha256"
         )
+        self._email_cipher = AESGCM(
+            hmac.digest(key, b"email-address-encryption-v1", "sha256")
+        )
+        self._email_code_key = hmac.digest(key, b"email-code-v1", "sha256")
 
     @classmethod
     def from_settings(cls, settings: Settings) -> PushTokenProtector:
@@ -71,6 +76,33 @@ class PushTokenProtector:
             self._email_lookup_key,
             normalized_email.encode("ascii"),
             hashlib.sha256,
+        )
+
+    def encrypt_email(self, normalized_email: str) -> bytes:
+        """Encrypt an address for storage, bound to its own lookup fingerprint."""
+
+        nonce = secrets.token_bytes(12)
+        aad = _EMAIL_AAD + self.email_fingerprint(normalized_email)
+        return nonce + self._email_cipher.encrypt(
+            nonce, normalized_email.encode("ascii"), aad
+        )
+
+    def decrypt_email(self, ciphertext: bytes, *, fingerprint: bytes) -> str:
+        """Open an address; fails if the ciphertext was moved to another row."""
+
+        if len(ciphertext) < 29:
+            raise ValueError("Invalid email ciphertext")
+        nonce, encrypted = ciphertext[:12], ciphertext[12:]
+        return self._email_cipher.decrypt(
+            nonce, encrypted, _EMAIL_AAD + fingerprint
+        ).decode("ascii")
+
+    def email_code_mac(self, code: str, *, code_id: uuid.UUID, purpose: str) -> bytes:
+        """Keyed digest of one mailed code, bound to its row and purpose."""
+
+        context = b"\x01" + code_id.bytes + purpose.encode("ascii") + b"\0"
+        return hmac.digest(
+            self._email_code_key, context + code.encode("utf-8"), "sha256"
         )
 
     def encrypt(self, token: str) -> bytes:

@@ -263,6 +263,27 @@ and the chat and species AI sections answer `available:false`.
   `care_plan.py`) to reach users sooner; orphaned generation
   dirs under the cache dir are safe to `rm -rf`.
 
+**Email sign-in — account service.** Email and password is the second sign-in
+method next to Yandex ID (flows: `account-server/README.md`). These are
+**environment variables of the account service**, not `config.json` keys. Email
+sign-in is on only with the switch and all five mail settings; anything missing
+or invalid leaves the routes at `503 email_auth_unavailable`, with a startup
+warning that names the setting, never its value.
+
+| Variable | Notes |
+|---|---|
+| `EMAIL_PASSWORD_AUTH_ENABLED` | `true` to offer email sign-in. Default `false`. |
+| `SMTP_HOST` | Mail server name; its TLS certificate must be valid for it. |
+| `SMTP_PORT` | `465` uses TLS from the start. Any other port (usually `587`) must offer STARTTLS, or nothing is sent. |
+| `SMTP_USER` | Login name. |
+| `SMTP_FROM` | Sender, such as `PlantDiseases <no-reply@example.com>`. |
+| `SMTP_PASSWORD_FILE` | Absolute path of an owner-only file (no group or other bits) readable by the service user. There is no direct-value form. |
+
+Before turning it on, name the mail provider in both privacy policies if your
+disclosure duties require it, and set up SPF, DKIM and DMARC for the sender
+domain so codes are not filed as spam. The VDS steps are in
+`deploy/production-vds/README.md`.
+
 ## 5. Running in production
 
 `server/start.sh` is a **first-run convenience only**: it always binds

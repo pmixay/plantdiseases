@@ -176,6 +176,7 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE
     billing_customers,
     billing_purchase_fetches,
     billing_notification_receipts,
+    email_codes,
     feature_usage,
     feature_usage_receipts,
     password_credentials,
@@ -228,9 +229,10 @@ UNION ALL SELECT 'vendor_budget_daily=' || count(*) FROM vendor_budget_daily
 UNION ALL SELECT 'vendor_budget_receipts=' || count(*) FROM vendor_budget_receipts
 UNION ALL SELECT 'community_roles=' || count(*) FROM community_roles
 UNION ALL SELECT 'community_rewards=' || count(*) FROM community_rewards
+UNION ALL SELECT 'email_codes=' || count(*) FROM email_codes
 ORDER BY 1;"
 
-expected_schema_revision=0011_community_roles_rewards
+expected_schema_revision=0012_email_verification
 source_revision=$(compose exec -T beta-postgres psql \
     -X -A -t -v ON_ERROR_STOP=1 -U beta_account_backup -d plantdisease_beta \
     -c "SELECT version_num FROM alembic_version;")
@@ -256,6 +258,7 @@ billing_notification_receipts
 billing_purchase_fetches
 community_rewards
 community_roles
+email_codes
 feature_usage
 feature_usage_receipts
 password_credentials

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import uuid
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
@@ -18,6 +19,7 @@ from app.db.models import (
     AccountNicknameClaim,
     AccountNicknameJob,
     AccountSecurityEvent,
+    EmailCode,
     PasswordCredential,
     PendingPasswordCredential,
     PendingSignup,
@@ -28,6 +30,7 @@ from app.db.models import (
     SignupCompletion,
 )
 from app.db.repository import AccountRepository
+from app.mail import MockMailer
 from app.main import create_app
 from app.providers.registry import build_provider_registry
 from app.rate_limit import InMemoryRateLimiter
@@ -72,6 +75,7 @@ class ApiHarness:
     service: AccountService
     engine: Engine
     clock: MutableClock
+    mailer: MockMailer
 
     def headers(self, access_token: str) -> dict[str, str]:
         return {"Authorization": f"Bearer {access_token}"}
@@ -102,6 +106,7 @@ def api(db_engine: Engine) -> Iterator[ApiHarness]:
     )
     providers = build_provider_registry(settings)
     clock = MutableClock()
+    mailer = MockMailer()
     token_service = TokenService(
         issuer=settings.issuer,
         audience=settings.audience,
@@ -116,6 +121,7 @@ def api(db_engine: Engine) -> Iterator[ApiHarness]:
         blocked_nicknames=settings.blocked_nicknames,
         clock=clock,
         notification_sink=lambda targets, _payload: len(targets),
+        mail_sender=mailer.send,
     )
     database = TestDatabase(factory)
     application = create_app(
@@ -125,7 +131,9 @@ def api(db_engine: Engine) -> Iterator[ApiHarness]:
         account_service=service,
     )
     with TestClient(application) as client:
-        yield ApiHarness(client=client, service=service, engine=db_engine, clock=clock)
+        yield ApiHarness(
+            client=client, service=service, engine=db_engine, clock=clock, mailer=mailer
+        )
     assert database.closed is True
 
 
@@ -205,7 +213,9 @@ def _email_signup(
         },
     )
     assert registration.status_code == 200, registration.text
+    assert registration.json()["status"] == "verification_required"
     pending_token = registration.json()["pending_signup_token"]
+    _verify_email(api, pending_token, email=email, installation_id=installation)
     completion_id = uuid.uuid4()
     complete = api.client.post(
         "/v1/auth/signup/complete",
@@ -231,6 +241,26 @@ def _email_signup(
 
 def _error(response) -> str:
     return response.json()["error"]["code"]
+
+
+def _mailed_code(api: ApiHarness, email: str) -> str:
+    message = next(m for m in reversed(api.mailer.outbox) if m.to == email.lower())
+    return re.search(r"\b[0-9]{6}\b", message.body).group()
+
+
+def _verify_email(
+    api: ApiHarness, pending_token: str, *, email: str, installation_id: uuid.UUID
+) -> None:
+    verified = api.client.post(
+        "/v1/auth/email/verify",
+        json={
+            "pending_signup_token": pending_token,
+            "code": _mailed_code(api, email),
+            "installation_id": str(installation_id),
+        },
+    )
+    assert verified.status_code == 200, verified.text
+    assert verified.json()["status"] == "profile_required"
 
 
 def _set_email_password_auth(api: ApiHarness, *, enabled: bool) -> None:
@@ -268,7 +298,10 @@ def test_email_registration_login_and_storage_are_private(api: ApiHarness):
         assert staged.password_hash.startswith("$argon2id$")
         assert email.encode() not in staged.email_fingerprint
         assert password not in staged.password_hash
+        assert staged.email_verified_at is None
+        assert b"garden.fern" not in staged.email_ciphertext
 
+    _verify_email(api, pending_token, email=email, installation_id=installation_id)
     completion_id = uuid.uuid4()
     completed = api.client.post(
         "/v1/auth/signup/complete",
@@ -311,6 +344,15 @@ def test_email_registration_login_and_storage_are_private(api: ApiHarness):
         assert credential is not None and account is not None
         assert credential.account_id == account.id
         assert identities == []
+        assert credential.email_verified_at is not None
+        assert b"garden.fern" not in credential.email_ciphertext
+        assert (
+            api.service.push_protector.decrypt_email(
+                credential.email_ciphertext, fingerprint=credential.email_fingerprint
+            )
+            == "garden.fern@example.com"
+        )
+        assert transaction.scalar(select(PendingPasswordCredential)) is None
 
     login = api.client.post(
         "/v1/auth/email/login",
@@ -395,6 +437,12 @@ def test_disabling_email_auth_rolls_back_unconfirmed_completion(api: ApiHarness)
         },
     )
     pending_token = registration.json()["pending_signup_token"]
+    _verify_email(
+        api,
+        pending_token,
+        email="disabled-before-confirm@example.com",
+        installation_id=installation_id,
+    )
     completion_id = uuid.uuid4()
     completed = api.client.post(
         "/v1/auth/signup/complete",
@@ -497,9 +545,21 @@ def test_email_registration_validation_and_duplicate_errors_do_not_name_address_
             "installation_id": str(uuid.uuid4()),
         },
     )
-    assert duplicate.status_code == 409
-    assert _error(duplicate) == "registration_unavailable"
+    free = api.client.post(
+        "/v1/auth/email/register",
+        json={
+            "email": "free@example.com",
+            "password": "another correct garden passphrase",
+            "installation_id": str(uuid.uuid4()),
+        },
+    )
+    assert duplicate.status_code == free.status_code == 200
+    assert set(duplicate.json()) == set(free.json())
+    for key in ("status", "provider", "expires_in"):
+        assert duplicate.json()[key] == free.json()[key]
     assert "taken@example.com" not in duplicate.text.lower()
+    notice = next(m for m in reversed(api.mailer.outbox) if m.to == "taken@example.com")
+    assert re.search(r"\b[0-9]{6}\b", notice.body) is None
 
 
 def test_email_login_recovers_an_unconfirmed_signup_on_a_new_installation(api: ApiHarness):
@@ -514,6 +574,12 @@ def test_email_login_recovers_an_unconfirmed_signup_on_a_new_installation(api: A
             "installation_id": str(first_installation),
         },
     ).json()
+    _verify_email(
+        api,
+        registration["pending_signup_token"],
+        email=email,
+        installation_id=first_installation,
+    )
     completion_id = uuid.uuid4()
     completed = api.client.post(
         "/v1/auth/signup/complete",
@@ -2267,6 +2333,13 @@ def test_private_state_pruning_respects_expiry_and_refresh_family_lifetime(api: 
                     created_at=api.clock.now - timedelta(days=31),
                     expires_at=api.clock.now - timedelta(days=1),
                 ),
+                EmailCode(
+                    purpose="reset",
+                    email_fingerprint=b"f" * 32,
+                    code_mac=b"m" * 32,
+                    created_at=api.clock.now - timedelta(minutes=16),
+                    expires_at=api.clock.now - timedelta(minutes=1),
+                ),
                 AccountDeletionJob(
                     account_id=None,
                     community_actor_id=None,
@@ -2286,6 +2359,7 @@ def test_private_state_pruning_respects_expiry_and_refresh_family_lifetime(api: 
         # deliberately expired session can no longer be replayed safely.
         "pending_signups": 2,
         "reauth_challenges": 1,
+        "email_codes": 1,
         "security_events": 1,
         "completed_deletion_jobs": 1,
         "sessions": 1,

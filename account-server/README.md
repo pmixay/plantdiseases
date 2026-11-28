@@ -27,15 +27,41 @@ request for a provider not enabled on that deployment returns
 Provider contracts: [Yandex ID user information](https://yandex.com/dev/id/doc/en/user-information)
 and [VK ID's official SDK user-info request](https://github.com/VKCOM/vkid-web-sdk/blob/master/src/auth/auth.ts).
 
-The repository also contains a private email/password beta slice. It is off by
-default and requires `EMAIL_PASSWORD_AUTH_ENABLED=true` in a non-production
-environment; production settings reject that value. Verified email ownership,
-password recovery, and shared multi-replica abuse controls remain mandatory
-production blockers. Completion and confirmation re-check the current flag; an
-email continuation presented while it is off is durably cancelled, including
-removal of any unconfirmed provisional account/session. OAuth continuation uses
-the same endpoints and remains available. Do not deploy or expose its endpoints
-in production.
+## Email and password sign-in
+
+The second sign-in method next to Yandex ID. It is on only when
+`EMAIL_PASSWORD_AUTH_ENABLED=true` **and** the mail settings are complete.
+Otherwise every email route answers `503 email_auth_unavailable`; the service
+still starts and Yandex is unaffected. Production settings: `DEPLOYMENT.md` §4.
+
+| Flow | Routes |
+|---|---|
+| Sign up | `/v1/auth/email/register` mails a 6-digit code and returns `verification_required`; `/v1/auth/email/verify` accepts it; then the shared `signup/complete` and `signup/confirm`. No account row exists before the code is entered. |
+| Sign in | `/v1/auth/email/login` |
+| Forgotten password | `/v1/auth/email/password-reset/request`, then `.../confirm` with the code and the new password. Every session is revoked. |
+| Add email to a Yandex account | `/v1/auth/reauth` with scope `link_email`, then `/v1/auth/email/add` and `/v1/auth/email/add/confirm` from the same session. |
+| Add Yandex to an email account | `/v1/auth/email/reauth` with scope `link_yandex`, then `/v1/auth/yandex/link`. |
+
+- **Storage.** Accounts are found by a keyed fingerprint of the normalized
+  address. The address is also stored encrypted (AES-256-GCM, bound to that
+  fingerprint) with a key derived from `ACCOUNT_ENCRYPTION_KEY_FILE`. A deletion
+  request erases it at once, before community cleanup finishes.
+- **Codes** work once, expire after 15 minutes and die after five wrong
+  guesses. Only a keyed digest is stored; asking again retires the previous one.
+- **Limits** per address: 3 messages per 15 minutes and 10 per day, 10 guesses
+  per 15 minutes. Per IP: 20 messages per hour, 30 guesses per 15 minutes. Like
+  the other limits here they live in memory, so they assume one replica and reset
+  on restart. The five-guess limit per code is in the database.
+- **No account enumeration.** Registering, adding or resetting an address answers
+  the same whether or not it is in use. An address that is in use gets a notice
+  instead of a sign-up or add code, and the stored code matches nothing. Mail is
+  sent from a background queue so that response time does not depend on it. A
+  failed send is logged by error type only; the member asks again.
+- Switching the flag off, or removing the mail settings, also stops email
+  members from signing in or reauthenticating, including to delete the account
+  in the app. A pending email sign-up presented meanwhile is cancelled for good.
+- Credentials stored before revision `0012` have no address and sign in again
+  only after a password reset.
 
 ## Contract
 

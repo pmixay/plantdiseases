@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import re
 import uuid
 from datetime import UTC, datetime
 
@@ -8,6 +9,7 @@ import pytest
 from app.api.errors import AccountAPIError
 from app.db.models import Account, AccountIdentity, PasswordCredential
 from app.db.repository import AccountRepository
+from app.mail import MockMailer
 from app.providers.mock import MockProviderAdapter
 from app.rate_limit import InMemoryRateLimiter
 from app.security.passwords import PasswordHashService
@@ -23,7 +25,12 @@ from sqlalchemy.orm import sessionmaker
 
 
 @pytest.fixture
-def email_service(db_engine: Engine) -> AccountService:
+def mailer() -> MockMailer:
+    return MockMailer()
+
+
+@pytest.fixture
+def email_service(db_engine: Engine, mailer: MockMailer) -> AccountService:
     factory = sessionmaker(
         bind=db_engine,
         class_=OrmSession,
@@ -54,7 +61,25 @@ def email_service(db_engine: Engine) -> AccountService:
         password_hash_service=PasswordHashService(password_hasher),
         clock=lambda: datetime(2030, 1, 2, 3, 4, 5, tzinfo=UTC),
         deletion_dispatcher=lambda _actor_id: True,
+        mail_sender=mailer.send,
     )
+
+
+def _register_and_verify(
+    service: AccountService, *, email: str, password: str, installation_id: uuid.UUID
+) -> dict:
+    pending = service.register_with_email(
+        email=email,
+        password=password,
+        installation_id=installation_id,
+    )
+    message = service.mail_sender.__self__.outbox[-1]
+    service.verify_email_signup(
+        pending_token=pending["pending_signup_token"],
+        code=re.search(r"\b[0-9]{6}\b", message.body).group(),
+        installation_id=installation_id,
+    )
+    return pending
 
 
 def _complete_email_account(
@@ -64,10 +89,8 @@ def _complete_email_account(
     password: str,
 ) -> dict:
     installation_id = uuid.uuid4()
-    pending = service.register_with_email(
-        email=email,
-        password=password,
-        installation_id=installation_id,
+    pending = _register_and_verify(
+        service, email=email, password=password, installation_id=installation_id
     )
     completion_id = uuid.uuid4()
     completed = service.complete_signup(
@@ -172,7 +195,8 @@ def test_email_login_restarts_unconfirmed_signup_on_new_installation(
 ):
     password = "correct horse garden staple"
     first_installation = uuid.uuid4()
-    pending = email_service.register_with_email(
+    pending = _register_and_verify(
+        email_service,
         email="recover@example.com",
         password=password,
         installation_id=first_installation,

@@ -186,7 +186,7 @@ def test_malformed_boolean_and_rate_limit_are_rejected():
         Settings.from_env(_base_env() | {"PROVIDER_HTTP_TIMEOUT_SECONDS": "30"})
 
 
-def test_email_password_auth_is_fail_closed_and_beta_only(tmp_path: Path):
+def test_email_password_auth_needs_the_switch_and_a_mailer(tmp_path: Path):
     disabled = Settings.from_env(_base_env())
     enabled = Settings.from_env(
         _base_env() | {"EMAIL_PASSWORD_AUTH_ENABLED": "true"}
@@ -194,20 +194,28 @@ def test_email_password_auth_is_fail_closed_and_beta_only(tmp_path: Path):
     assert disabled.email_password_auth_enabled is False
     assert enabled.email_password_auth_enabled is True
 
-    disabled_request = SimpleNamespace(
-        app=SimpleNamespace(state=SimpleNamespace(settings=disabled))
-    )
-    enabled_request = SimpleNamespace(
-        app=SimpleNamespace(state=SimpleNamespace(settings=enabled))
-    )
-    with pytest.raises(AccountAPIError, match="email_auth_unavailable"):
-        _require_email_password_auth(disabled_request)
-    _require_email_password_auth(enabled_request)
+    def request(settings: Settings, *, mail: bool) -> SimpleNamespace:
+        service = SimpleNamespace(mail_available=mail)
+        return SimpleNamespace(
+            app=SimpleNamespace(
+                state=SimpleNamespace(settings=settings, account_service=service)
+            )
+        )
 
+    for unavailable in (
+        request(disabled, mail=True),
+        request(disabled, mail=False),
+        request(enabled, mail=False),
+    ):
+        with pytest.raises(AccountAPIError, match="email_auth_unavailable"):
+            _require_email_password_auth(unavailable)
+    _require_email_password_auth(request(enabled, mail=True))
+
+    # Production accepts the switch with or without mail settings: without
+    # them the routes answer 503 and the service still starts.
     production = _production_env(tmp_path)
     production["EMAIL_PASSWORD_AUTH_ENABLED"] = "true"
-    with pytest.raises(SettingsError, match="blocked in production"):
-        Settings.from_env(production)
+    assert Settings.from_env(production).email_password_auth_enabled is True
 
 
 def test_remote_provider_mode_accepts_each_public_application_id_independently():

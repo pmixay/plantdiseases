@@ -160,6 +160,13 @@ class Settings:
     yandex_client_id: str | None = None
     vk_client_id: str | None = None
     email_password_auth_enabled: bool = False
+    # Raw values: ``app.mail.build_mailer`` validates them, so that a mistake
+    # turns email sign-in off instead of stopping the service.
+    smtp_host: str | None = None
+    smtp_port: str | None = None
+    smtp_user: str | None = None
+    smtp_from: str | None = None
+    smtp_password_file: str | None = None
     provider_http_timeout_seconds: int = 5
     # ``rustore_billing_enabled`` is a deprecated read-only compatibility
     # mirror of checkout availability.  New deployments must use the two
@@ -265,6 +272,11 @@ class Settings:
                 source,
                 "EMAIL_PASSWORD_AUTH_ENABLED",
             ),
+            smtp_host=source.get("SMTP_HOST", "").strip() or None,
+            smtp_port=source.get("SMTP_PORT", "").strip() or None,
+            smtp_user=source.get("SMTP_USER", "").strip() or None,
+            smtp_from=source.get("SMTP_FROM", "").strip() or None,
+            smtp_password_file=source.get("SMTP_PASSWORD_FILE", "").strip() or None,
             provider_http_timeout_seconds=_bounded_int(
                 source,
                 "PROVIDER_HTTP_TIMEOUT_SECONDS",
@@ -408,11 +420,6 @@ class Settings:
                 raise SettingsError(
                     "PLANTNET_ATTEMPT_COST_MICROS must not exceed the daily cost limit"
                 )
-        if self.email_password_auth_enabled and self.is_production:
-            raise SettingsError(
-                "EMAIL_PASSWORD_AUTH_ENABLED is blocked in production until "
-                "verification and recovery gates are closed"
-            )
         if self.rustore_checkout_enabled and not self.rustore_lifecycle_enabled:
             raise SettingsError(
                 "RUSTORE_CHECKOUT_ENABLED requires RUSTORE_LIFECYCLE_ENABLED"

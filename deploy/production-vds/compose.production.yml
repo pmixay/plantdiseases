@@ -20,7 +20,14 @@ x-account-environment: &account-environment
   AUTH_PROVIDER_MODE: remote
   YANDEX_CLIENT_ID: ${YANDEX_CLIENT_ID:?Set the Yandex client id}
   VKID_CLIENT_ID: ""
-  EMAIL_PASSWORD_AUTH_ENABLED: "false"
+  # Email sign-in needs both the switch and complete mail settings. Without
+  # usable mail settings its routes answer 503 and everything else works.
+  EMAIL_PASSWORD_AUTH_ENABLED: ${EMAIL_PASSWORD_AUTH_ENABLED:-false}
+  SMTP_HOST: ${SMTP_HOST:-}
+  SMTP_PORT: ${SMTP_PORT:-}
+  SMTP_USER: ${SMTP_USER:-}
+  SMTP_FROM: ${SMTP_FROM:-}
+  SMTP_PASSWORD_FILE: ${SMTP_PASSWORD_FILE:-}
   PROVIDER_HTTP_TIMEOUT_SECONDS: "5"
   ACCOUNT_ROOT_PATH: /id
   ACCOUNT_ISSUER: https://${PROD_PUBLIC_HOST:?Set the public host}/id
@@ -189,6 +196,7 @@ services:
         source: ${PROD_RUSTORE_SECRETS_DIR:?Set the account-owned RuStore secret directory}
         target: /run/rustore-secrets
         read_only: true
+      - ${PROD_MAIL_SECRETS_DIR:-/etc/pd-account-prod/mail-secrets}:/run/mail-secrets:ro
     ports:
       - name: account-api
         target: 8000

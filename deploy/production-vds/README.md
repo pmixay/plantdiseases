@@ -41,7 +41,7 @@ Android release gates. It does not replace `deploy/account-beta-test/`.
 Order used: `compose.sh build-images`, write the env file, `compose.sh run --rm --no-deps prod-keys-provision`,
 `compose.sh up -d --no-build`, verify, `nginx/switch.sh`.
 
-Decisions baked in: Yandex only; email/password, VK, RuStore and PlantNet budget off; `/id/` is public behind its rate
+Decisions baked in: Yandex is the only external sign-in; email/password is off until it is deployed (below); VK, RuStore and PlantNet budget off; `/id/` is public behind its rate
 limit; legacy feedback/labeling/telemetry data is not migrated (the new code has no feedback or labeling store, and its
 telemetry store is the new minimized one). Consented error reports are enabled: on this host the app API's
 `config.json` sets `telemetry_enabled` to true. The file wins over the environment, so it must not set it to false.
@@ -54,6 +54,38 @@ file holding a codex-lb API key. codex-lb refuses non-local clients until its AP
 its dashboard first. Remove any `openrouter_*` keys from `config.json` (they are ignored, with a startup warning).
 (For its `prod-app-api` service, `compose.production.yml` takes `PROD_LLM_BASE_URL` and `PROD_LLM_KEY_FILE`, a file
 in `PROD_APP_SECRETS_DIR`; that container would reach codex-lb over `prod-edge`, not loopback.)
+
+## Email sign-in (SMTP): not deployed yet
+
+The code is ready; nothing below has been done on the host. The variables go in the account env file
+(`/etc/pd-account-prod/account-prod.env`); their meaning is in `DEPLOYMENT.md` §4.
+
+1. Create the secret file, then fill it in an editor. The account container runs as uid `10002`:
+
+   ```bash
+   install -d -m 755 /etc/pd-account-prod/mail-secrets
+   install -m 600 /dev/null /etc/pd-account-prod/mail-secrets/smtp-password
+   # fill the file, then:
+   chown 10002:10002 /etc/pd-account-prod/mail-secrets/smtp-password
+   chmod 400 /etc/pd-account-prod/mail-secrets/smtp-password
+   ```
+
+2. Add to the env file: `EMAIL_PASSWORD_AUTH_ENABLED=true`, `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_FROM` and
+   `SMTP_PASSWORD_FILE=/run/mail-secrets/smtp-password`. `PROD_MAIL_SECRETS_DIR` is needed only for another directory.
+   Check that the host can reach the SMTP port; some providers block outgoing mail ports.
+3. **Update the installed copies** under `/opt/pd-account-prod/deploy/`: `compose.production.yml` (new `SMTP_*` lines
+   and the `/run/mail-secrets` mount) and `postgres-init/10-account-roles.sh` (grants on `email_codes`). Diff first:
+   the installed files differ from this directory, so merge the changes rather than overwriting.
+4. Build the account image from the new release, update `RELEASE_SHA`, then run role provisioning, the migrate service
+   (revision `0012_email_verification`, then grant convergence from the release checkout) and the account API.
+5. Verify: the account API log has no `Email sign-in is off` line, and a sign-up with your own address delivers a code.
+   A `202` from the password-reset request alone does not prove delivery.
+6. Re-copy `privacy.html` to the web root.
+
+**Rollback.** An older release cannot run its migrate service against revision `0012`. Going back means running
+`python -m alembic downgrade 0011_community_roles_rewards` with the **new** image first. That drops the code table and
+the stored encrypted addresses, and there is no backup. To switch email off without a rollback, set
+`EMAIL_PASSWORD_AUTH_ENABLED=false`; email-only members then cannot sign in.
 
 There is no backup job (owner's decision, 2026-11-14): the daily encrypted dump, its restore check and its systemd timer
 were removed. The read-only `account_backup` database role and `PROD_POSTGRES_BACKUP_PASSWORD` are still provisioned by

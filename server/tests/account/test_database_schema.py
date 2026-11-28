@@ -10,6 +10,7 @@ EXPECTED_TABLES = {
     "refresh_tokens",
     "pending_signups",
     "pending_password_credentials",
+    "email_codes",
     "signup_completions",
     "reauth_challenges",
     "account_deletion_jobs",

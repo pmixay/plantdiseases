@@ -66,19 +66,43 @@ class PendingSignupResponse(StrictResponse):
     expires_in: int
 
 
+class EmailVerificationResponse(StrictResponse):
+    """A code was mailed; send it to ``/v1/auth/email/verify``."""
+
+    status: Literal["verification_required"]
+    provider: Literal["email"]
+    pending_signup_token: str
+    expires_in: int
+
+
+class EmailCodeSentResponse(StrictResponse):
+    """A code was mailed; send it to ``/v1/auth/email/add/confirm``."""
+
+    status: Literal["verification_required"]
+    provider: Literal["email"]
+    expires_in: int
+
+
+class PasswordResetRequestedResponse(StrictResponse):
+    """The same answer whether or not the address signs in."""
+
+    status: Literal["code_sent_if_registered"]
+    expires_in: int
+
+
 class SessionListResponse(StrictResponse):
     sessions: list[SessionView]
 
 
 class ReauthResponse(StrictResponse):
     reauth_token: str
-    scope: Literal["deletion", "link_yandex", "link_vk"]
+    scope: Literal["deletion", "link_yandex", "link_vk", "link_email"]
     expires_in: int
 
 
 class LinkResponse(StrictResponse):
     status: Literal["linked"]
-    provider: Literal["yandex", "vk"]
+    provider: Literal["yandex", "vk", "email"]
 
 
 class PrimaryProviderProfile(StrictResponse):

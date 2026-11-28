@@ -8,7 +8,7 @@ import logging
 import uuid
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 
 from sqlalchemy import delete, func, select, update
 from sqlalchemy.exc import IntegrityError
@@ -21,6 +21,7 @@ from app.db.models import (
     AccountNicknameClaim,
     AccountNicknameJob,
     AccountSecurityEvent,
+    EmailCode,
     PasswordCredential,
     PendingPasswordCredential,
     PendingSignup,
@@ -33,6 +34,7 @@ from app.db.models import (
     Session as AccountSession,
 )
 from app.db.repository import AccountRepository
+from app.mail import MailMessage
 from app.nicknames import normalize_nickname, validate_nickname
 from app.providers.base import (
     ProviderAdapter,
@@ -41,7 +43,11 @@ from app.providers.base import (
     VerifiedProviderIdentity,
 )
 from app.rate_limit import InMemoryRateLimiter
-from app.security.passwords import PasswordHashService, normalize_email
+from app.security.passwords import (
+    PasswordHashService,
+    normalize_email,
+    validate_new_password,
+)
 from app.security.push_crypto import PushTokenProtector
 from app.security.tokens import (
     AccessPrincipal,
@@ -50,9 +56,15 @@ from app.security.tokens import (
     new_opaque_token,
     utc_now,
 )
+from app.services.email_codes import (
+    EMAIL_CODE_TTL,
+    PENDING_SIGNUP_TTL,
+    EmailAbuseLimits,
+    EmailCodeFlows,
+    _as_utc,
+)
 
 ACCESS_IDLE_WRITE_INTERVAL = timedelta(minutes=5)
-PENDING_SIGNUP_TTL = timedelta(minutes=10)
 REAUTH_TTL = timedelta(minutes=5)
 REFRESH_IDLE_TTL = timedelta(days=30)
 SESSION_ABSOLUTE_TTL = timedelta(days=180)
@@ -66,12 +78,6 @@ IDEMPOTENT_REFRESH_RETRY_GRACE = timedelta(days=7)
 IDEMPOTENT_SIGNUP_RETRY_GRACE = timedelta(days=7)
 
 logger = logging.getLogger("plantdiseases.account")
-
-
-def _as_utc(value: datetime) -> datetime:
-    if value.tzinfo is None:
-        return value.replace(tzinfo=UTC)
-    return value.astimezone(UTC)
 
 
 def _as_utc_optional(value: datetime | None) -> datetime | None:
@@ -105,7 +111,7 @@ class CurrentAccount:
     authorization_version: int
 
 
-class AccountService:
+class AccountService(EmailCodeFlows):
     def __init__(
         self,
         *,
@@ -120,6 +126,8 @@ class AccountService:
         notification_sink: Callable[[list[str], dict[str, str]], int] | None = None,
         deletion_dispatcher: Callable[[uuid.UUID], bool] | None = None,
         nickname_dispatcher: Callable[[uuid.UUID, str], bool] | None = None,
+        mail_sender: Callable[[MailMessage], None] | None = None,
+        email_limits: EmailAbuseLimits | None = None,
     ):
         self.repository = repository
         self.providers = dict(providers)
@@ -129,6 +137,9 @@ class AccountService:
         self.blocked_nicknames = blocked_nicknames
         self.password_hash_service = password_hash_service or PasswordHashService()
         self.clock = clock
+        # No sender means email sign-in is unavailable, like push below.
+        self.mail_sender = mail_sender
+        self.email_limits = email_limits or EmailAbuseLimits()
         # A missing sink means push is unavailable. Silently accepting device
         # registrations made the production API claim a delivery capability it
         # did not have and accumulated credentials that could never be used.
@@ -308,15 +319,25 @@ class AccountService:
         email: str,
         password: str,
         installation_id: uuid.UUID,
+        client_address: str = "unknown",
     ) -> dict:
-        """Begin the existing two-phase signup with a private password method."""
+        """Begin the two-phase signup and mail the code that proves the address.
 
+        An address that already signs in gets the same answer. Its pending row
+        carries a code nothing can match, and its owner gets a notice instead.
+        """
+
+        send = self._require_mail()
         try:
             normalized_email = normalize_email(email)
+            # Cheap, and ahead of the limits: a typo must not use them up.
+            validate_new_password(password)
         except ValueError:
             raise AccountAPIError("invalid_registration", status_code=400) from None
         email_fingerprint = self.push_protector.email_fingerprint(normalized_email)
-        self.limiter.check("subject:email-register", email_fingerprint.hex())
+        self.email_limits.check_send(
+            address_key=email_fingerprint.hex(), client_address=client_address
+        )
         try:
             password_hash = self.password_hash_service.hash_new(password)
         except ValueError:
@@ -346,20 +367,36 @@ class AccountService:
                         PasswordCredential.email_fingerprint == email_fingerprint
                     )
                 )
-                if existing is not None:
-                    raise AccountAPIError("registration_unavailable", status_code=409)
                 for pending in pending_rows:
                     if pending.consumed_at is None:
                         pending.cancelled_at = now
-                return self._new_email_pending(
+                pending_id, pending_token = self._new_email_pending(
                     transaction,
                     email_fingerprint=email_fingerprint,
+                    email_ciphertext=self.push_protector.encrypt_email(normalized_email),
                     password_hash=password_hash,
                     installation_id=installation_id,
                     now=now,
+                    verified_at=None,
+                )
+                message = self._issue_email_code(
+                    transaction,
+                    purpose="signup",
+                    fingerprint=email_fingerprint,
+                    address=normalized_email,
+                    pending_signup_id=pending_id,
+                    now=now,
+                    usable=existing is None,
                 )
         except IntegrityError:
             raise AccountAPIError("registration_unavailable", status_code=409) from None
+        send(message)
+        return {
+            "status": "verification_required",
+            "provider": "email",
+            "pending_signup_token": pending_token,
+            "expires_in": int(EMAIL_CODE_TTL.total_seconds()),
+        }
 
     def login_with_email(
         self,
@@ -441,6 +478,10 @@ class AccountService:
             )
             if account is None or credential is None:
                 raise _auth_error("invalid_credentials")
+            if account.state != "deletion_pending" and credential.email_verified_at is None:
+                # Stored before addresses were verified: password reset proves
+                # the address and makes the credential usable.
+                raise _auth_error("invalid_credentials")
             if account.state == "signup_pending":
                 completion = locked_completion
                 old_pending = locked_pending
@@ -454,6 +495,7 @@ class AccountService:
                 ):
                     raise AccountAPIError("signup_confirmation_required", status_code=409)
                 replacement_hash = verification.replacement_hash or credential.password_hash
+                verified_at = credential.email_verified_at
                 completion.account_id = None
                 completion.session_id = None
                 completion.cancelled_at = now
@@ -461,13 +503,21 @@ class AccountService:
                 transaction.flush()
                 transaction.delete(account)
                 transaction.flush()
-                return self._new_email_pending(
+                _, pending_token = self._new_email_pending(
                     transaction,
                     email_fingerprint=email_fingerprint,
+                    email_ciphertext=self.push_protector.encrypt_email(normalized_email),
                     password_hash=replacement_hash,
                     installation_id=installation_id,
                     now=now,
+                    verified_at=verified_at,
                 )
+                return {
+                    "status": "profile_required",
+                    "provider": "email",
+                    "pending_signup_token": pending_token,
+                    "expires_in": int(PENDING_SIGNUP_TTL.total_seconds()),
+                }
             if account.state == "deletion_pending":
                 raise AccountAPIError("deletion_pending", status_code=409)
             if account.state != "active":
@@ -553,6 +603,8 @@ class AccountService:
                         raise AccountAPIError("signup_completion_conflict", status_code=409)
                 elif pending_password is not None:
                     raise AccountAPIError("signup_completion_conflict", status_code=409)
+                if pending_password is not None and pending_password.email_verified_at is None:
+                    raise AccountAPIError("email_verification_required", status_code=409)
                 validated = validate_nickname(nickname, blocked=self.blocked_nicknames)
                 self.limiter.check(
                     "subject:signup", f"{pending.provider}:{pending.provider_subject}"
@@ -606,11 +658,15 @@ class AccountService:
                         PasswordCredential(
                             account_id=account.id,
                             email_fingerprint=pending_password.email_fingerprint,
+                            email_ciphertext=pending_password.email_ciphertext,
+                            email_verified_at=pending_password.email_verified_at,
                             password_hash=pending_password.password_hash,
                             password_changed_at=now,
                             created_at=now,
                         )
                     )
+                    # The credential now owns the address; keep no second copy.
+                    transaction.delete(pending_password)
                 pending.consumed_at = now
                 refresh_token = self.push_protector.derive_signup_refresh(
                     pending_token,
@@ -725,6 +781,11 @@ class AccountService:
                     return
                 self._require_live_pending(pending, now)
                 pending.cancelled_at = now
+                transaction.execute(
+                    delete(PendingPasswordCredential).where(
+                        PendingPasswordCredential.pending_signup_id == pending.id
+                    )
+                )
                 return
             if completion.id != completion_id or completion.installation_id != installation_id:
                 raise AccountAPIError("signup_completion_conflict", status_code=409)
@@ -1075,7 +1136,10 @@ class AccountService:
             if linked_identity is None:
                 raise AccountAPIError("reauth_required", status_code=401)
             target_provider = scope.removeprefix("link_") if scope.startswith("link_") else None
-            if target_provider is not None:
+            if target_provider == "email":
+                if self._has_password_credential(transaction, current.account_id):
+                    raise AccountAPIError("identity_already_linked", status_code=409)
+            elif target_provider is not None:
                 existing_target = transaction.scalar(
                     select(AccountIdentity.id).where(
                         AccountIdentity.account_id == current.account_id,
@@ -1558,6 +1622,7 @@ class AccountService:
             account.authorization_version += 1
             account.updated_at = now
             challenge.consumed_at = now
+            self._erase_email_address(transaction, account_id=account.id, now=now)
             sessions = transaction.scalars(
                 select(AccountSession).where(AccountSession.account_id == current.account_id)
             )
@@ -1870,6 +1935,9 @@ class AccountService:
             reauth = transaction.execute(
                 delete(ReauthChallenge).where(ReauthChallenge.expires_at <= now)
             ).rowcount
+            email_codes = transaction.execute(
+                delete(EmailCode).where(EmailCode.expires_at <= now)
+            ).rowcount
             security_events = transaction.execute(
                 delete(AccountSecurityEvent).where(AccountSecurityEvent.expires_at <= now)
             ).rowcount
@@ -1927,6 +1995,7 @@ class AccountService:
         return {
             "pending_signups": pending,
             "reauth_challenges": reauth,
+            "email_codes": email_codes,
             "security_events": security_events,
             "completed_deletion_jobs": completed_deletion_jobs,
             "sessions": sessions,
@@ -1971,11 +2040,14 @@ class AccountService:
         transaction,
         *,
         email_fingerprint: bytes,
+        email_ciphertext: bytes,
         password_hash: str,
         installation_id: uuid.UUID,
         now: datetime,
-    ) -> dict:
+        verified_at: datetime | None,
+    ) -> tuple[uuid.UUID, str]:
         pending_token = new_opaque_token()
+        lifetime = EMAIL_CODE_TTL if verified_at is None else PENDING_SIGNUP_TTL
         pending = PendingSignup(
             token_hash=hash_opaque_token(pending_token),
             provider="email",
@@ -1984,7 +2056,7 @@ class AccountService:
             provider_avatar_url=None,
             installation_id=installation_id,
             created_at=now,
-            expires_at=now + PENDING_SIGNUP_TTL,
+            expires_at=now + lifetime,
         )
         transaction.add(pending)
         transaction.flush()
@@ -1992,16 +2064,13 @@ class AccountService:
             PendingPasswordCredential(
                 pending_signup_id=pending.id,
                 email_fingerprint=email_fingerprint,
+                email_ciphertext=email_ciphertext,
+                email_verified_at=verified_at,
                 password_hash=password_hash,
                 created_at=now,
             )
         )
-        return {
-            "status": "profile_required",
-            "provider": "email",
-            "pending_signup_token": pending_token,
-            "expires_in": int(PENDING_SIGNUP_TTL.total_seconds()),
-        }
+        return pending.id, pending_token
 
     @staticmethod
     def _lock_provider_subject(

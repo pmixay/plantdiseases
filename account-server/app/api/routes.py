@@ -14,6 +14,8 @@ from app.api.errors import AccountAPIError
 from app.api.schemas import (
     AuthenticatedResponse,
     DeletionResponse,
+    EmailCodeSentResponse,
+    EmailVerificationResponse,
     EntitlementsResponse,
     ErrorResponse,
     InternalEntitlementDecision,
@@ -23,6 +25,7 @@ from app.api.schemas import (
     LinkResponse,
     MeResponse,
     NicknameResponse,
+    PasswordResetRequestedResponse,
     PendingSignupResponse,
     PushRegistrationResponse,
     ReauthResponse,
@@ -65,6 +68,32 @@ class EmailCredentialRequest(StrictRequest):
     installation_id: uuid.UUID
 
 
+class EmailVerifyRequest(StrictRequest):
+    pending_signup_token: SecretStr = Field(min_length=1, max_length=256)
+    code: SecretStr = Field(min_length=6, max_length=6)
+    installation_id: uuid.UUID
+
+
+class PasswordResetRequest(StrictRequest):
+    email: SecretStr = Field(min_length=3, max_length=254)
+
+
+class PasswordResetConfirmRequest(StrictRequest):
+    email: SecretStr = Field(min_length=3, max_length=254)
+    code: SecretStr = Field(min_length=6, max_length=6)
+    new_password: SecretStr = Field(min_length=1, max_length=128)
+
+
+class EmailAddRequest(StrictRequest):
+    email: SecretStr = Field(min_length=3, max_length=254)
+    password: SecretStr = Field(min_length=1, max_length=128)
+    reauth_token: SecretStr = Field(min_length=1, max_length=256)
+
+
+class EmailAddConfirmRequest(StrictRequest):
+    code: SecretStr = Field(min_length=6, max_length=6)
+
+
 class CompleteSignupRequest(StrictRequest):
     pending_signup_token: SecretStr = Field(min_length=1, max_length=256)
     completion_id: uuid.UUID
@@ -96,7 +125,7 @@ class LogoutRequest(StrictRequest):
 class ReauthRequest(StrictRequest):
     provider: Literal["yandex", "vk"]
     provider_access_token: SecretStr = Field(min_length=1, max_length=8192)
-    scope: Literal["deletion", "link_yandex", "link_vk"]
+    scope: Literal["deletion", "link_yandex", "link_vk", "link_email"]
 
 
 class EmailReauthRequest(StrictRequest):
@@ -234,21 +263,28 @@ def _current_account(
 
 
 def _limit_ip(request: Request, service: AccountService, operation: str) -> None:
-    address = request.client.host if request.client is not None else "unknown"
-    service.limit_ip(operation, address)
+    service.limit_ip(operation, _client_address(request))
 
 
 def _require_email_password_auth(request: Request) -> None:
     if not _email_password_auth_enabled(request):
-        # The implementation is intentionally available only in controlled
-        # beta environments until inbox verification, reset/recovery, and
-        # shared abuse controls close the documented production HOLD.
         raise AccountAPIError("email_auth_unavailable", status_code=503)
 
 
 def _email_password_auth_enabled(request: Request) -> bool:
+    """The operator switch is on and there is a way to mail codes."""
+
     settings = getattr(request.app.state, "settings", None)
-    return bool(settings is not None and settings.email_password_auth_enabled)
+    service = getattr(request.app.state, "account_service", None)
+    return bool(
+        settings is not None
+        and settings.email_password_auth_enabled
+        and getattr(service, "mail_available", False)
+    )
+
+
+def _client_address(request: Request) -> str:
+    return request.client.host if request.client is not None else "unknown"
 
 
 def _require_internal_service(request: Request) -> None:
@@ -313,7 +349,7 @@ async def exchange_vk(
 
 @router.post(
     "/v1/auth/email/register",
-    response_model=PendingSignupResponse,
+    response_model=EmailVerificationResponse,
     tags=["authentication"],
 )
 def register_email(
@@ -327,6 +363,110 @@ def register_email(
         email=body.email.get_secret_value(),
         password=body.password.get_secret_value(),
         installation_id=body.installation_id,
+        client_address=_client_address(request),
+    )
+
+
+@router.post(
+    "/v1/auth/email/verify",
+    response_model=PendingSignupResponse,
+    tags=["authentication"],
+)
+def verify_email(
+    body: EmailVerifyRequest,
+    request: Request,
+    service: Annotated[AccountService, Depends(_service)],
+) -> dict:
+    _require_email_password_auth(request)
+    _limit_ip(request, service, "email-verify")
+    return service.verify_email_signup(
+        pending_token=body.pending_signup_token.get_secret_value(),
+        code=body.code.get_secret_value(),
+        installation_id=body.installation_id,
+        client_address=_client_address(request),
+    )
+
+
+@router.post(
+    "/v1/auth/email/password-reset/request",
+    status_code=status.HTTP_202_ACCEPTED,
+    response_model=PasswordResetRequestedResponse,
+    tags=["authentication"],
+)
+def request_password_reset(
+    body: PasswordResetRequest,
+    request: Request,
+    service: Annotated[AccountService, Depends(_service)],
+) -> dict:
+    _require_email_password_auth(request)
+    _limit_ip(request, service, "email-reset-request")
+    return service.request_password_reset(
+        email=body.email.get_secret_value(),
+        client_address=_client_address(request),
+    )
+
+
+@router.post(
+    "/v1/auth/email/password-reset/confirm",
+    status_code=status.HTTP_204_NO_CONTENT,
+    tags=["authentication"],
+)
+def confirm_password_reset(
+    body: PasswordResetConfirmRequest,
+    request: Request,
+    service: Annotated[AccountService, Depends(_service)],
+) -> Response:
+    _require_email_password_auth(request)
+    _limit_ip(request, service, "email-reset-confirm")
+    service.confirm_password_reset(
+        email=body.email.get_secret_value(),
+        code=body.code.get_secret_value(),
+        new_password=body.new_password.get_secret_value(),
+        client_address=_client_address(request),
+    )
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post(
+    "/v1/auth/email/add",
+    status_code=status.HTTP_202_ACCEPTED,
+    response_model=EmailCodeSentResponse,
+    tags=["authentication"],
+)
+def add_email(
+    body: EmailAddRequest,
+    request: Request,
+    current: Annotated[CurrentAccount, Depends(_current_account)],
+    service: Annotated[AccountService, Depends(_service)],
+) -> dict:
+    _require_email_password_auth(request)
+    _limit_ip(request, service, "email-add")
+    return service.request_email_link(
+        current,
+        email=body.email.get_secret_value(),
+        password=body.password.get_secret_value(),
+        reauth_token=body.reauth_token.get_secret_value(),
+        client_address=_client_address(request),
+    )
+
+
+@router.post(
+    "/v1/auth/email/add/confirm",
+    response_model=LinkResponse,
+    tags=["authentication"],
+)
+def confirm_add_email(
+    body: EmailAddConfirmRequest,
+    request: Request,
+    current: Annotated[CurrentAccount, Depends(_current_account)],
+    service: Annotated[AccountService, Depends(_service)],
+) -> dict:
+    _require_email_password_auth(request)
+    _limit_ip(request, service, "email-add-confirm")
+    return service.confirm_email_link(
+        current,
+        code=body.code.get_secret_value(),
+        client_address=_client_address(request),
     )
 
 
@@ -478,6 +618,8 @@ async def reauth(
     current: Annotated[CurrentAccount, Depends(_current_account)],
     service: Annotated[AccountService, Depends(_service)],
 ) -> dict:
+    if body.scope == "link_email":
+        _require_email_password_auth(request)
     _limit_ip(request, service, "reauth")
     return await service.create_reauth_challenge(
         current,

@@ -28,7 +28,7 @@ PRODUCTION_COMPOSE = (
     REPOSITORY_ROOT / "deploy" / "production-vds" / "compose.production.yml"
 )
 
-ACCOUNT_SCHEMA_HEAD = "0011_community_roles_rewards"
+ACCOUNT_SCHEMA_HEAD = "0012_email_verification"
 ACCOUNT_TABLES = {
     "account_consents",
     "account_deletion_jobs",
@@ -57,6 +57,7 @@ ACCOUNT_TABLES = {
     "vendor_budget_receipts",
     "community_roles",
     "community_rewards",
+    "email_codes",
 }
 
 
@@ -513,14 +514,22 @@ def test_privacy_policy_matches_account_release():
     # The first release is Yandex-only with push and billing off (plan decision 3);
     # the policy must not offer or describe sign-in methods or services that are not live.
     assert "You can sign in with Yandex ID. We store" in privacy
-    for not_live in (
-        "VK ID",
-        "email address and password",
-        "Argon2id",
-        "Firebase Cloud Messaging",
-        "RuStore",
-    ):
+    for not_live in ("VK ID", "Firebase Cloud Messaging", "RuStore"):
         assert not_live not in privacy, f"policy still describes {not_live}"
+    # Email sign-in is the second method: both copies of the policy say what is
+    # stored for it and that deletion erases the address.
+    bundled = (
+        REPOSITORY_ROOT / "android" / "app" / "src" / "main" / "assets" / "privacy_policy.html"
+    ).read_text(encoding="utf-8")
+    for policy in (privacy, bundled):
+        assert "Where the app offers sign-in with an email address and password" in policy
+        assert "We then store your email address encrypted" in policy
+        assert "erases any stored email address at once" in policy
+        assert "сразу стирает сохранённый адрес электронной почты" in policy
+    gate_texts = json.loads(RELEASE_POLICY_GATES.read_text(encoding="utf-8"))
+    for key in ("disclosure_en", "disclosure_ru"):
+        disclosure = gate_texts["deleted_actor_tombstone"][key]
+        assert disclosure in privacy and disclosure in bundled, key
     assert "Publishing a scan or a forum post requires sign-in" in privacy
     assert "It currently has no automatic expiry" not in privacy
     assert "It is kept for 30 days after deletion and then erased" in privacy
@@ -650,6 +659,38 @@ def test_android_ci_signs_with_the_permanent_key_and_proves_it():
     assert "assembleRelease" in command
     assert "assembleRecoveryProduction" not in command
     assert "Staging" not in command
+
+
+def test_account_schema_constants_follow_the_models_and_migrations():
+    """A new table or revision must reach every grant script, or deploy fails."""
+
+    from alembic.config import Config
+    from alembic.script import ScriptDirectory
+    from app.db.models import Base
+
+    scripts = ScriptDirectory.from_config(
+        Config(str(REPOSITORY_ROOT / "account-server" / "alembic.ini"))
+    )
+    assert scripts.get_heads() == [ACCOUNT_SCHEMA_HEAD]
+    assert ACCOUNT_TABLES == set(Base.metadata.tables) | {"alembic_version"}
+    production_roles = (
+        REPOSITORY_ROOT / "deploy" / "production-vds" / "postgres-init" / "10-account-roles.sh"
+    ).read_text(encoding="utf-8")
+    for table in ACCOUNT_TABLES - {"alembic_version"}:
+        assert f"('{table}')" in production_roles, table
+
+
+def test_production_mail_settings_default_to_email_sign_in_off():
+    compose = _yaml(PRODUCTION_COMPOSE)
+    account = compose["x-account-environment"]
+    assert account["EMAIL_PASSWORD_AUTH_ENABLED"] == "${EMAIL_PASSWORD_AUTH_ENABLED:-false}"
+    for name in ("SMTP_HOST", "SMTP_PORT", "SMTP_USER", "SMTP_FROM", "SMTP_PASSWORD_FILE"):
+        assert account[name] == f"${{{name}:-}}", name
+    mounts = compose["services"]["prod-account-api"]["volumes"]
+    assert (
+        "${PROD_MAIL_SECRETS_DIR:-/etc/pd-account-prod/mail-secrets}:/run/mail-secrets:ro"
+        in mounts
+    )
 
 
 def test_database_role_provisioning_is_idempotent_and_url_safe():

@@ -147,7 +147,7 @@ def _load_billing_lifecycle_migration() -> ModuleType:
 def test_single_linear_migration_head():
     config = Config(str(ACCOUNT_SERVER_DIR / "alembic.ini"))
     scripts = ScriptDirectory.from_config(config)
-    assert scripts.get_heads() == ["0011_community_roles_rewards"]
+    assert scripts.get_heads() == ["0012_email_verification"]
 
 
 def test_long_signup_revision_widens_alembic_version_and_freezes_check_name():
@@ -198,6 +198,7 @@ def test_migration_upgrade_matches_model_columns_and_downgrades_cleanly():
                 "signup_completions",
                 "password_credentials",
                 "pending_password_credentials",
+                "email_codes",
                 "billing_customers",
                 "billing_purchase_fetches",
                 "subscriptions",
@@ -259,7 +260,7 @@ def test_postgres_offline_migration_is_explicit_and_contains_no_forbidden_column
 
     forbidden = {
         "normalized_email",
-        "email_ciphertext",
+        "email_address",
         "phone",
         "birthday",
         "gender",
@@ -282,6 +283,8 @@ def test_postgres_offline_migration_is_explicit_and_contains_no_forbidden_column
     assert "uq_push_devices_session_id" in sql
     assert "create table password_credentials" in sql
     assert "create table pending_password_credentials" in sql
+    assert "add column email_ciphertext bytea" in sql
+    assert "'link_yandex', 'link_vk', 'link_email'" in sql
 
 
 def test_retention_migration_adds_and_removes_the_session_expiry_index():
@@ -681,3 +684,36 @@ def test_community_roles_migration_matches_models_and_downgrades():
             assert set(inspect(connection).get_table_names()) == {"accounts"}
     finally:
         engine.dispose()
+
+
+def test_email_verification_migration_matches_models_and_downgrades_in_postgres_sql():
+    config = Config(str(ACCOUNT_SERVER_DIR / "alembic.ini"))
+
+    def render(direction, revisions: str) -> str:
+        output = io.StringIO()
+        config.output_buffer = output
+        direction(config, revisions, sql=True)
+        return " ".join(output.getvalue().split())
+
+    upgrade = render(command.upgrade, "0011_community_roles_rewards:0012_email_verification")
+    created = upgrade.split("CREATE TABLE email_codes (", maxsplit=1)[1]
+    created = created.split(");", maxsplit=1)[0]
+    for column in Base.metadata.tables["email_codes"].columns:
+        assert f"{column.name} " in created, column.name
+    for constraint in Base.metadata.tables["email_codes"].constraints:
+        assert f"CONSTRAINT {constraint.name} " in created, constraint.name
+    for index in Base.metadata.tables["email_codes"].indexes:
+        assert f"CREATE INDEX {index.name} ON email_codes" in upgrade
+    for table in ("password_credentials", "pending_password_credentials"):
+        for column in ("email_ciphertext", "email_verified_at"):
+            assert f"ALTER TABLE {table} ADD COLUMN {column}" in upgrade
+    assert "DROP CONSTRAINT ck_reauth_challenges_scope_allowed" in upgrade
+
+    downgrade = render(command.downgrade, "0012_email_verification:0011_community_roles_rewards")
+    assert "DROP TABLE email_codes" in downgrade
+    assert downgrade.index("DELETE FROM reauth_challenges WHERE scope = 'link_email'") < (
+        downgrade.index("ADD CONSTRAINT ck_reauth_challenges_scope_allowed")
+    )
+    for table in ("password_credentials", "pending_password_credentials"):
+        for column in ("email_ciphertext", "email_verified_at"):
+            assert f"ALTER TABLE {table} DROP COLUMN {column}" in downgrade

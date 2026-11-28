@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from sqlalchemy import create_engine, text
 from sqlalchemy.pool import NullPool
 
-SCHEMA_HEAD = "0011_community_roles_rewards"
+SCHEMA_HEAD = "0012_email_verification"
 APPLICATION_TABLES = (
     "account_consents",
     "account_deletion_jobs",
@@ -38,6 +38,7 @@ APPLICATION_TABLES = (
     "vendor_budget_receipts",
     "community_roles",
     "community_rewards",
+    "email_codes",
 )
 DATABASE_TABLES = frozenset((*APPLICATION_TABLES, "alembic_version"))
 

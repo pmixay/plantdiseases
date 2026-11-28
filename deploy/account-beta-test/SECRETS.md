@@ -17,7 +17,8 @@ cannot silently omit LoginSDK; the Yandex client secret is never used.
 | `BETA_POSTGRES_RUNTIME_PASSWORD` | Staging application-DML secret | Mode-0600 operator env file | Account API; SELECT-only on `alembic_version`, no sequence access | Recreate with disposable stack |
 | `BETA_POSTGRES_BACKUP_PASSWORD` | Staging read-only secret | Mode-0600 operator env file | Encrypted backup check | Recreate with disposable stack |
 | `YANDEX_CLIENT_ID`, `VKID_CLIENT_ID` | Public provider application IDs registered for `com.plantdiseases.app` | Yandex: tracked Android release config plus mode-0600 server env; VK: local build property plus server env | Account API/Android | Change only with provider registration |
-| `EMAIL_PASSWORD_AUTH_ENABLED` | Non-secret production-HOLD control | Mode-0600 operator env plus local Android build configuration; tracked German Compose default is `false` | Account API/Android | Explicit `true` only for a scheduled non-production exercise after the named-tester edge allowlist is active; return to `false`; production rejects it |
+| `EMAIL_PASSWORD_AUTH_ENABLED` | Non-secret production-HOLD control | Mode-0600 operator env plus local Android build configuration; tracked German Compose default is `false` | Account API/Android | In staging, explicit `true` only for a scheduled exercise after the named-tester edge allowlist is active; return to `false`. Email routes also need complete `SMTP_*` settings |
+| `SMTP_PASSWORD_FILE` | Mail account secret | Owner-only file on the host, mounted read-only | Account API | Rotate at the mail provider, replace the file, restart the account API |
 | `/etc/nginx/plantdisease-beta-testers.allow` | Restricted tester/VPN egress addresses; do not place names, emails, or roster metadata in this file | Root-owned host nginx configuration, least-readable mode accepted by `nginx -t`; roster/approval stays in the protected operator record | German host nginx | Replace exact `/32`/`/128` entries for each scheduled exercise and remove access immediately when a tester leaves |
 | Android `VKID_CLIENT_SECRET` | Extractable public mobile config | Local Android build property (public, extractable), never server env | VK ID SDK | Change only with provider registration |
 | `RUSTORE_APPLICATION_ID`, `RUSTORE_KEY_ID`, subscription product IDs, notification-key epoch | Public RuStore configuration | Mode-0600 operator env plus local Android build properties where applicable | Account API/Android | Change only with reviewed Console configuration; advance the epoch atomically with every AES-key rotation |
@@ -101,7 +102,8 @@ file, invalid file, unavailable authority, or disabled budget must fail closed
 before PlantNet network I/O.
 
 `ACCOUNT_ENCRYPTION_KEY_FILE` is not a push-only secret. The account service
-purpose-separates it to derive both private email lookup fingerprints and the
+purpose-separates it to derive private email lookup fingerprints, the encryption
+of stored email addresses, the digests of mailed codes, and the
 deterministic refresh-token successor that can be returned again after a lost
 refresh response; future push support would also use it for push-token
 encryption and fingerprints. A consumed refresh and
@@ -109,8 +111,8 @@ its matching `rotation_id` remain eligible for that idempotent retry for seven
 days. The current service loads one key, not an old/new key ring: replacing the
 key during that window prevents reproduction of the stored successor and the
 retry is treated as token reuse, revoking the session. It also makes existing
-password credentials unreachable through their email until their fingerprints
-are migrated. Production rotation must therefore add and test an overlap-capable
+password credentials unreachable through their email and stored addresses
+unreadable until both are migrated. Production rotation must therefore add and test an overlap-capable
 key/credential migration first, or be a communicated session revocation plus
 password-credential recovery event. Preserve the old key for rollback until
 that plan completes;

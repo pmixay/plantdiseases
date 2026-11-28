@@ -21,6 +21,7 @@ from app.billing.rustore import build_rustore_client
 from app.config import Settings
 from app.db.database import Database, DatabaseHandle
 from app.db.repository import AccountRepository
+from app.mail import MailQueue, build_mailer
 from app.providers.base import ProviderAdapter, ProviderName
 from app.providers.registry import build_provider_registry
 from app.security.internal import load_internal_service_token
@@ -50,15 +51,21 @@ def create_app(
     if not provider_registry or not set(provider_registry).issubset({"yandex", "vk"}):
         raise ValueError("At least one supported provider adapter is required")
     database_handle = database or Database(config.database_url)
+    mail_queue: MailQueue | None = None
     domain_service = account_service
     domain_entitlement_service = entitlement_service
     domain_vendor_budget_service = vendor_budget_service
     if domain_service is None and hasattr(database_handle, "session_factory"):
+        if config.email_password_auth_enabled:
+            # None when mail is not usable: the email routes then answer 503.
+            mailer = build_mailer(config)
+            mail_queue = MailQueue(mailer) if mailer is not None else None
         domain_service = build_account_service(
             config,
             database_handle=database_handle,
             providers=provider_registry,
             internal_service_token=internal_service_token,
+            mail_sender=mail_queue.send if mail_queue is not None else None,
         )
     if domain_entitlement_service is None and hasattr(
         database_handle, "session_factory"
@@ -143,6 +150,8 @@ def create_app(
             if maintenance_task is not None:
                 maintenance_stop.set()
                 await maintenance_task
+            if mail_queue is not None:
+                await asyncio.to_thread(mail_queue.close)
             database_handle.close()
 
     application = FastAPI(

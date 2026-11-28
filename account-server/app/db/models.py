@@ -103,7 +103,7 @@ class AccountIdentity(Base):
 
 
 class PasswordCredential(Base):
-    """A password login method with no recoverable email address."""
+    """A password login method: keyed lookup, hash and encrypted address."""
 
     __tablename__ = "password_credentials"
     __table_args__ = (
@@ -121,6 +121,9 @@ class PasswordCredential(Base):
     )
     email_fingerprint: Mapped[bytes] = mapped_column(LargeBinary(32), nullable=False)
     password_hash: Mapped[str] = mapped_column(String(512), nullable=False)
+    # NULL only on rows from before revision 0012 and after a deletion request.
+    email_ciphertext: Mapped[bytes | None] = mapped_column(LargeBinary(512))
+    email_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     password_changed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
@@ -225,9 +228,47 @@ class PendingPasswordCredential(Base):
     )
     email_fingerprint: Mapped[bytes] = mapped_column(LargeBinary(32), nullable=False, index=True)
     password_hash: Mapped[str] = mapped_column(String(512), nullable=False)
+    email_ciphertext: Mapped[bytes | None] = mapped_column(LargeBinary(512))
+    # Set once the mailed code is entered; sign-up cannot complete before.
+    email_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
+
+
+class EmailCode(Base):
+    """One mailed single-use code. Only a keyed digest of the code is stored."""
+
+    __tablename__ = "email_codes"
+    __table_args__ = (
+        CheckConstraint("purpose IN ('signup', 'reset', 'add')", name="purpose_allowed"),
+        CheckConstraint("length(email_fingerprint) = 32", name="email_fingerprint_sha256"),
+        CheckConstraint("length(code_mac) = 32", name="code_mac_sha256"),
+        CheckConstraint("attempts >= 0", name="attempts_nonnegative"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    purpose: Mapped[str] = mapped_column(String(8), nullable=False)
+    email_fingerprint: Mapped[bytes] = mapped_column(LargeBinary(32), nullable=False, index=True)
+    code_mac: Mapped[bytes] = mapped_column(LargeBinary(32), nullable=False)
+    pending_signup_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("pending_signups.id", ondelete="CASCADE"), index=True
+    )
+    account_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("accounts.id", ondelete="CASCADE"), index=True
+    )
+    session_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("sessions.id", ondelete="CASCADE")
+    )
+    # Only for purpose 'add': the credential waiting for its code.
+    password_hash: Mapped[str | None] = mapped_column(String(512))
+    email_ciphertext: Mapped[bytes | None] = mapped_column(LargeBinary(512))
+    attempts: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default=text("0")
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+    consumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class SignupCompletion(Base):
@@ -289,7 +330,8 @@ class ReauthChallenge(Base):
         CheckConstraint("length(token_hash) = 32", name="token_hash_sha256"),
         CheckConstraint("provider IN ('yandex', 'vk', 'email')", name="provider_allowed"),
         CheckConstraint(
-            "scope IN ('deletion', 'link_yandex', 'link_vk')", name="scope_allowed"
+            "scope IN ('deletion', 'link_yandex', 'link_vk', 'link_email')",
+            name="scope_allowed",
         ),
     )
 

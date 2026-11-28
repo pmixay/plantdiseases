@@ -124,7 +124,10 @@ the dedicated real-provider staging target and must use the same enabled-provide
 client IDs as the APK. Keep it limited to named testers and dedicated test accounts;
 it is not a public or production account service. German staging defaults
 `EMAIL_PASSWORD_AUTH_ENABLED` to `false`. Changing it to `true` is a scheduled
-operator action, not a general beta default.
+operator action, not a general beta default. Email routes also need the five
+`SMTP_*` settings (`DEPLOYMENT.md` §4), which these beta Compose files do not
+pass through: until they do, email routes in the local and German stacks answer
+`503 email_auth_unavailable`, even with the switch on.
 
 ## Build and run the parallel German real-provider beta
 
@@ -257,9 +260,9 @@ drop only that database before rerunning the check.
 
 ## Related documents
 
-- The email/password beta is a production HOLD: German staging defaults it
-  off and requires an explicit, edge-restricted tester exercise; production
-  settings reject an attempted enable.
+- German staging defaults email sign-in off; enabling it there still needs an
+  explicit, edge-restricted tester exercise. Production accepts the switch and
+  offers email sign-in only with complete mail settings.
 - `SECRETS.md` inventories environment and secret ownership without values.
 - `ROLLBACK.md` defines non-destructive beta rollback evidence.
 

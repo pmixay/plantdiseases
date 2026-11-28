@@ -1,7 +1,7 @@
 """Email normalization and memory-hard password verification.
 
-Email addresses are accepted only as login identifiers in this first slice. The
-normalized value is never persisted; callers store a keyed lookup fingerprint.
+Accounts are looked up by a keyed fingerprint of the normalized address. The
+address itself is stored only encrypted (see ``push_crypto.encrypt_email``).
 """
 
 from __future__ import annotations

@@ -34,14 +34,12 @@ as last recorded. Line counts are approximate; re-measure before acting on one.
       with the redirect URL `https://pdis.arbuz.lol/admin/` to the Android app's
       Yandex OAuth app, then sign in once and work a real queue
       (`DEPLOYMENT.md` §5.1).
-- [ ] **Finish verifying PR #191's app API.** The code is live (`35da1c5`,
+- [ ] **PR #191's app API: check the prompt cache.** The code is live (`35da1c5`,
       `plantdiseases.service`; `deploy/production-vds/README.md`). On 2026-11-28
-      telemetry was on, codex-lb required a key and served `gpt-5.6-luna`, and the
-      counters showed doctor output and 5 of 5 care-plan polishes accepted. Left:
-      - a first row in `/var/lib/plantdiseases/telemetry.db`: none yet, and the
-        journal since the 2026-11-27 12:42 UTC start showed no request to
-        `/api/telemetry/errors`;
-      - `/api/metrics` → `prompt_cache.hit_ratio`: 0.0 over 16 requests.
+      codex-lb required a key and served `gpt-5.6-luna`, doctor output and
+      care-plan polishes were counted, and a test error report was stored and then
+      removed. Left: `/api/metrics` → `prompt_cache.hit_ratio` stayed 0.0 (16
+      requests before the 13:47 UTC restart, 4 after it).
 
 ---
 
@@ -119,11 +117,18 @@ README status section and `docs/assets/per-class.svg` (its numbers are hand-copi
 
 ## P4 — Product
 
-- [ ] ★ **Email/password sign-in (the next auth item).** The account service and the
-      app hold a private beta slice, off by default; production settings and
-      production app builds reject `EMAIL_PASSWORD_AUTH_ENABLED=true`. Close the
-      production blockers first (`account-server/README.md`): verified email
-      ownership, password recovery, and abuse controls shared across replicas.
+- [ ] ★ **Ship email/password sign-in (the next auth item).** The account service
+      code is done and **not deployed**: mailed codes, password reset, an encrypted
+      address, and adding email to a Yandex account or Yandex to an email account
+      (`account-server/README.md`). Left:
+      - choose a mail provider, name it in both privacy policies if required,
+        and approve the new deletion wording in `release-policy-gates.json` (then
+        update its `approved_at_utc`);
+      - deploy it with the `SMTP_*` settings and migration `0012`
+        (`deploy/production-vds/README.md`);
+      - the app: code entry, password reset and linking screens. Production
+        builds still reject `EMAIL_PASSWORD_AUTH_ENABLED=true`, and the debug
+        mock-stack flow predates the code step.
 - [ ] ★ **Check `util/PlantHealth.kt` thresholds against real scan histories.**
       `PlantHealth` turns a plant's scans into the one status the plant header, the
       health card and the room list show. Each scan scores 0 to 100: a healthy

@@ -6,7 +6,7 @@ service identically.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 
 from app.community_deletion import (
     build_community_deletion_dispatcher,
@@ -14,6 +14,7 @@ from app.community_deletion import (
 )
 from app.config import Settings
 from app.db.repository import AccountRepository
+from app.mail import MailMessage
 from app.providers.base import ProviderAdapter, ProviderName
 from app.rate_limit import InMemoryRateLimiter
 from app.security.push_crypto import PushTokenProtector
@@ -27,8 +28,10 @@ def build_account_service(
     database_handle,
     providers: Mapping[ProviderName, ProviderAdapter],
     internal_service_token: str | None,
+    mail_sender: Callable[[MailMessage], None] | None = None,
 ) -> AccountService:
     return AccountService(
+        mail_sender=mail_sender,
         repository=AccountRepository(database_handle.session_factory),
         providers=providers,
         token_service=TokenService.from_settings(config),
