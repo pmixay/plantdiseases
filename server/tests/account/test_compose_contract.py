@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+from fnmatch import fnmatch
 from pathlib import Path
 
 import yaml
@@ -66,6 +67,18 @@ def test_api_images_disable_raw_uvicorn_access_logs():
     for path in (APP_DOCKERFILE_PATH, ACCOUNT_DOCKERFILE_PATH):
         dockerfile = path.read_text(encoding="utf-8")
         assert '"--no-access-log"' in dockerfile
+
+
+def test_account_image_contains_the_role_cli():
+    """The documented ``python manage_roles.py`` runs inside the account image."""
+    runtime = ACCOUNT_DOCKERFILE_PATH.read_text(encoding="utf-8").split(" AS runtime")[1]
+    lines = runtime.splitlines()
+    assert "WORKDIR /app" in lines
+    copy = lines.index("COPY manage_roles.py ./manage_roles.py")
+    assert copy > lines.index("WORKDIR /app")
+    assert (ACCOUNT_DOCKERFILE_PATH.parent / "manage_roles.py").is_file()
+    ignored = (ACCOUNT_DOCKERFILE_PATH.parent / ".dockerignore").read_text(encoding="utf-8")
+    assert not any(fnmatch("manage_roles.py", line) for line in ignored.splitlines())
 
 
 def test_postgres_is_private_versioned_and_persistent():

@@ -16,13 +16,16 @@ Android release gates. It does not replace `deploy/account-beta-test/`.
   `prod-account-migrate` and `prod-account-api`. There is no `prod-app-api`.
 - **Wrapper:** the installed `/opt/pd-account-prod/deploy/compose.sh` takes the release from
   `/opt/pd-account-prod/RELEASE_SHA`, passes every argument to `docker compose` and has no `build-images` command.
-- **Forum roles:** the account image does not contain `manage_roles.py` (the Dockerfile does not copy it). Pipe the
-  running release's copy into the container (`list`, `grant` or `revoke`):
+- **Forum roles** (`list`, `grant` or `revoke`):
 
   ```bash
-  /opt/pd-account-prod/deploy/compose.sh exec -T prod-account-api python -B - list \
-    < /opt/pd-account-prod/releases/$(cat /opt/pd-account-prod/RELEASE_SHA)/account-server/manage_roles.py
+  /opt/pd-account-prod/deploy/compose.sh exec prod-account-api python manage_roles.py list
   ```
+
+  The running `2f21f87538e6` image predates the Dockerfile line that copies the script, so until the account service
+  is rebuilt from a newer commit, pipe the release's copy in instead: replace `python manage_roles.py list` with
+  `python -B - list < /opt/pd-account-prod/releases/$(cat /opt/pd-account-prod/RELEASE_SHA)/account-server/manage_roles.py`
+  and add `-T` after `exec`.
 
 | File | Purpose |
 |---|---|

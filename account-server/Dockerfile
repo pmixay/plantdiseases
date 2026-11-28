@@ -19,6 +19,8 @@ COPY --from=builder /install /usr/local
 COPY app ./app
 COPY alembic.ini ./alembic.ini
 COPY migrations ./migrations
+# Operator CLI, run inside the container: python manage_roles.py ...
+COPY manage_roles.py ./manage_roles.py
 
 RUN mkdir -p /run/account-secrets /run/internal-token && \
     adduser --disabled-password --gecos "" --uid 10002 accountd && \
