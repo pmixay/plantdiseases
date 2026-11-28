@@ -15,9 +15,10 @@ AI verdict disagrees with the agreed label are flagged as hard examples, and
 posts where helpers push back on a confident AI answer without agreeing yet
 go to the experts' label-review list.
 
-Labels feed ``tools/export_community_labels.py``, which exports only posts
-whose author turned on training consent and that no admin excluded. All
-community labels are train-only weak labels until an offline review.
+Labels ride along as hints in ``tools/export_training_bundle.py``, which
+exports only photos whose author turned on training consent, from posts no
+admin excluded. All community labels are train-only weak labels until an
+offline review.
 """
 
 from __future__ import annotations

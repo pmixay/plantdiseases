@@ -1,9 +1,9 @@
 """Species screens' AI answers: common diseases and the bilingual species profile.
 
-Both are best-effort OpenRouter calls that return ``{"available": False}`` with no
-key or on any failure, cached in memory and on disk per species. Each keeps its own
-caches, config and parsers here; the transport (``_call_openrouter``), the shared
-prompt prefix, the cache classes and the key check stay in ``ai_services`` and are
+Both are best-effort chat-backend calls that return ``{"available": False}`` when
+it is not configured or on any failure, cached in memory and on disk per species. Each keeps its own
+caches, config and parsers here; the transport (``_call_llm``), the shared prompt
+prefix, the cache classes and the configured check stay in ``ai_services`` and are
 reached as ``ai_services.name`` at call time, so a test that patches one there is
 seen here.
 """
@@ -25,7 +25,7 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 
-# ── Species common-diseases (OpenRouter, structured) ────────────────
+# ── Species common-diseases (LLM, structured) ───────────────────────
 #
 # Powers the species-detail screen's "common problems" section. There is
 # no per-species disease dataset in the project, so we ask the chat model
@@ -56,7 +56,7 @@ SPECIES_DISEASES_REASONING_EFFORT = get_str(
 _SPECIES_DISEASES_CACHE = ai_services._LRU(SPECIES_DISEASES_CACHE_SIZE, SPECIES_DISEASES_CACHE_TTL_SECONDS)
 # Persistent layer behind the LRU: the species→diseases LLM answer is stable,
 # so once paid for it's reused across restarts and fresh installs instead of
-# re-running the ~10-20s OpenRouter call every time.
+# re-running the ~10-20s LLM call every time.
 # v2: the key set below widened, so answers cached under v1 carry doc_keys
 # chosen from the old, too-narrow list (root rot -> nutrient_deficiency).
 _SPECIES_DISEASES_DISK = ai_services._DiskCache("species_diseases_v2", SPECIES_DISEASES_CACHE_TTL_SECONDS)
@@ -82,7 +82,7 @@ _GUIDE_DOC_KEYS = frozenset({
 # carries what a schema can't: what makes an item correct and useful. Restating
 # the RULES in prose is exactly the redundancy that costs gpt-5.6 quality — but
 # the closing one-liner naming the keys stays, because it is the only contract
-# left if a model/provider rejects the schema and `_call_openrouter` retries
+# left if a model/provider rejects the schema and `_call_llm` retries
 # without it. Without it that fallback returns prose and the feature goes dark.
 # "prefer the boring problem", "generic active ingredients only" and the
 # care-guide key list are all in _HOUSE_PREAMBLE now — this block is composed
@@ -101,8 +101,8 @@ the sign), then the single most useful first action.
 
 Answer with the JSON object {"diseases": [{"name", "doc_key", "note"}]} and nothing else."""
 
-# Field descriptions are part of the contract the model sees — OpenRouter
-# forwards them with the schema, so they do the job the removed prose rules
+# Field descriptions are part of the contract the model sees — they travel
+# with the schema, so they do the job the removed prose rules
 # used to do, at the point where the model is actually filling the field.
 _SPECIES_DISEASES_SCHEMA = {
     "type": "object",
@@ -190,15 +190,15 @@ def species_common_diseases(
 
     Returns ``{"available": True, "species", "diseases": [...]}`` where each
     disease is ``{"name", "doc_key"|None, "note"}``. Returns
-    ``{"available": False, "diseases": []}`` when no OpenRouter key is set or
-    on any failure — the client then renders its offline disease guide, so the
+    ``{"available": False, "diseases": []}`` when the chat backend is not
+    configured or on any failure — the client then renders its offline disease guide, so the
     species screen's "common problems" section is never empty. Never raises.
     """
     name = (scientific_name or "").strip()
     if not name:
         return {"available": False, "diseases": [], "source": "no_species"}
     lang = "ru" if ai_services._is_russian(lang) else "en"
-    if not ai_services._chat_api_key_present():
+    if not ai_services.llm_configured():
         return {"available": False, "diseases": [], "source": "no_api_key"}
 
     # ``v3`` = this generation of the answer. Bumping the prefix retires every
@@ -222,14 +222,12 @@ def species_common_diseases(
     subject = ai_services._prompt_subject(name)
     user = f"Species: {subject}\nLanguage for name and note: {lang_word}."
     try:
-        # No cache_prefix/session_id here — those two are for a growing
-        # conversation. This is a one-shot call, and what makes it cache is
-        # simply that `_system_prompt` puts the shared house preamble in front
+        # What makes this one-shot call cache is simply that `_system_prompt` puts the shared house preamble in front
         # of it: every species-diseases request has a byte-identical ~1600-token
         # prefix (preamble + this task block), so only the trailing "Species:"
         # line is billed at full price. `prompt_cache_key` (set in
-        # `_call_openrouter`) is what routes them to the same warm cache.
-        text, _tin, _tout, _cache = ai_services._call_openrouter(
+        # `_call_llm`) is what routes them to the same warm cache.
+        text, _tin, _tout, _cache = ai_services._call_llm(
             ai_services._system_prompt(_SPECIES_DISEASES_TASK),
             [{"role": "user", "content": user}],
             max_tokens=SPECIES_DISEASES_MAX_TOKENS,
@@ -249,17 +247,17 @@ def species_common_diseases(
         "available": True,
         "species": name,
         "diseases": diseases,
-        "source": "openrouter",
+        "source": "llm",
     }
     _SPECIES_DISEASES_CACHE.put(cache_key, response)
     _SPECIES_DISEASES_DISK.put(cache_key, response)
     return response
 
 
-# ── Species profile (OpenRouter, structured) ────────────────────────
+# ── Species profile (LLM, structured) ───────────────────────────────
 #
 # Powers the species-detail screen's "flowering" + "native range" sections.
-# Same discipline as ``species_common_diseases`` above: one OpenRouter call
+# Same discipline as ``species_common_diseases`` above: one LLM call
 # per species, strict JSON parsing with a tolerant-but-strict sanitiser,
 # in-memory + disk cache, and a graceful ``available: False`` with no API key
 # or on any failure. The canonical bilingual profile contains the same geography and
@@ -606,7 +604,7 @@ def _profile_response(canonical: dict, species: str, lang: str) -> dict:
                 "native_range_summary": native["summary"].get("ru", ""),
             },
         },
-        "source": "openrouter",
+        "source": "llm",
     }
 
 
@@ -667,8 +665,8 @@ def species_profile(
     """Flowering pattern + native range for a species (best-effort, AI).
 
     Returns ``{"available": True, "species", "flowering", "flowering_conditions",
-    "native_range"}`` on success. Returns ``{"available": False}`` when no
-    OpenRouter key is set, the species name is blank, or on any failure — the
+    "native_range"}`` on success. Returns ``{"available": False}`` when the
+    chat backend is not configured, the species name is blank, or on any failure — the
     client then hides/omits the section, so the species screen degrades
     gracefully instead of showing bogus data. Never raises.
     """
@@ -676,7 +674,7 @@ def species_profile(
     if not name:
         return {"available": False, "source": "no_species"}
     lang = "ru" if ai_services._is_russian(lang) else "en"
-    if not ai_services._chat_api_key_present():
+    if not ai_services.llm_configured():
         return {"available": False, "source": "no_api_key"}
 
     # Generation v5 is deliberately keyed only by scientific name — and the
@@ -712,7 +710,7 @@ def species_profile(
         # Same caching shape as species_common_diseases: the shared preamble
         # plus this task block is a byte-identical prefix on every profile
         # request, so it is the one thing here that a warm cache can serve.
-        text, _tin, _tout, _cache = ai_services._call_openrouter(
+        text, _tin, _tout, _cache = ai_services._call_llm(
             ai_services._system_prompt(_SPECIES_PROFILE_TASK),
             [{"role": "user", "content": user}],
             max_tokens=SPECIES_PROFILE_MAX_TOKENS,

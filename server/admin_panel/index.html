@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <meta name="robots" content="noindex, nofollow">
+  <title>PlantDiseases moderation</title>
+  <link rel="stylesheet" href="admin.css">
+  <script src="admin.js" defer></script>
+</head>
+<body>
+  <header class="bar">
+    <h1 data-t="title">PlantDiseases moderation</h1>
+    <span id="who" class="who"></span>
+    <span class="spacer"></span>
+    <button id="lang" type="button" class="ghost">EN</button>
+    <button id="sign-out" type="button" class="ghost" hidden data-t="sign_out">Sign out</button>
+  </header>
+
+  <main>
+    <p id="status" class="status" role="status"></p>
+
+    <section id="signed-out" hidden>
+      <p data-t="intro">Sign in with the Yandex ID account you use in the app. Only staff roles see anything here.</p>
+      <button id="sign-in" type="button" data-t="sign_in">Sign in with Yandex ID</button>
+    </section>
+
+    <section id="signed-in" hidden>
+      <nav class="tabs" id="tabs"></nav>
+      <div id="view"></div>
+    </section>
+  </main>
+</body>
+</html>

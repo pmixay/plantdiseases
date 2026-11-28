@@ -277,7 +277,7 @@ services:
       PLANT_PHOTO_CACHE_DIR: /data/app-cache/plant-photos
       AI_CACHE_DIR: /data/app-cache/ai
       PLANTNET_API_KEY: ""
-      OPENROUTER_API_KEY: ""
+      LLM_BASE_URL: ""
       CORS_ORIGINS: ""
       TRUSTED_PROXIES: ${BETA_TRUSTED_PROXIES:?Set the exact trusted Docker proxy peer IPs}
       RATE_LIMIT_RPS: "25"

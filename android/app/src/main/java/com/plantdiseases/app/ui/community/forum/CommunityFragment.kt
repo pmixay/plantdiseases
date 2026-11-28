@@ -33,9 +33,10 @@ import javax.inject.Inject
 
 /**
  * The Community tab: the forum feed, search, recent activity and the Ask
- * button. What to show (For you / Needs help / Solved / Mine), the space and
- * the order are chosen in a filter sheet; only the filters that differ from
- * the default show under the header, each removable. The older map and
+ * button. What to show (For you / Needs help / Solved / Mine / Following),
+ * the space and the order are chosen in a filter sheet; only the filters that
+ * differ from the default show under the header, each removable. A space
+ * filter carries a Follow chip; Following lists followed spaces. The older map and
  * nearby-scans screens are in the overflow menu.
  */
 @AndroidEntryPoint
@@ -61,6 +62,8 @@ class CommunityFragment : Fragment() {
     private var sort = SORT_HOT
     private var space: String? = null
     private var spaces: List<ForumSpace> = emptyList()
+    private var followed: Set<String> = emptySet()
+    private var followInFlight = false
     private var nextCursor: String? = null
     private var loadJob: Job? = null
     private var staff: StaffMe? = null
@@ -195,6 +198,7 @@ class CommunityFragment : Fragment() {
         TAB_NEEDS_HELP -> R.string.forum_empty_needs_help
         TAB_SOLVED -> R.string.forum_empty_solved
         TAB_MINE -> R.string.forum_empty_mine
+        TAB_FOLLOWING -> R.string.forum_empty_following
         else -> R.string.forum_empty_all
     }
 
@@ -227,6 +231,37 @@ class CommunityFragment : Fragment() {
                 adapter.spaces = it
                 renderFilters()
             }
+        }
+        loadFollowed()
+    }
+
+    private fun loadFollowed() {
+        if (!forum.isSignedIn) return
+        viewLifecycleOwner.lifecycleScope.launch {
+            forum.followedSpaces().onSuccess {
+                followed = it
+                renderFilters()
+            }
+        }
+    }
+
+    /** Follow or unfollow [slug], shown at once and rolled back if refused. */
+    private fun toggleFollow(slug: String) {
+        if (followInFlight || !requireSignIn()) return
+        val previous = followed
+        val next = slug !in previous
+        followed = if (next) previous + slug else previous - slug
+        followInFlight = true
+        renderFilters()
+        viewLifecycleOwner.lifecycleScope.launch {
+            forum.followSpace(slug, next)
+                .onSuccess { if (tab == TAB_FOLLOWING) reload() }
+                .onFailure { error ->
+                    followed = previous
+                    renderFilters()
+                    toast(ForumUi.errorMessage(requireContext(), error))
+                }
+            followInFlight = false
         }
     }
 
@@ -266,7 +301,7 @@ class CommunityFragment : Fragment() {
         }
         sheet.btnApply.setOnClickListener {
             val nextTab = SHOW_CHIPS.entries.first { it.value == sheet.cgShow.checkedChipId }.key
-            if (nextTab == TAB_MINE && !requireSignIn()) {
+            if ((nextTab == TAB_MINE || nextTab == TAB_FOLLOWING) && !requireSignIn()) {
                 dialog.dismiss()
                 return@setOnClickListener
             }
@@ -313,12 +348,30 @@ class CommunityFragment : Fragment() {
             add(getString(SORT_LABELS.getValue(sort)), null) { applyFilters(nextSort = SORT_HOT) }
         }
         val count = group.childCount
+        space?.let { slug -> addFollowChip(group, slug) }
         b.activeFiltersScroll.visibility = if (count == 0) View.GONE else View.VISIBLE
         b.chipFilters.text = if (count == 0) {
             getString(R.string.forum_filters)
         } else {
             getString(R.string.forum_filters_active, count)
         }
+    }
+
+    /** Beside the applied space filter: Follow, or Following when followed. */
+    private fun addFollowChip(group: ViewGroup, slug: String) {
+        val chip = layoutInflater.inflate(R.layout.item_forum_filter_chip, group, false) as Chip
+        val isFollowing = slug in followed
+        val name = ForumUi.spaceName(requireContext(), slug, spaces)
+        chip.isCheckable = true
+        chip.isChecked = isFollowing
+        chip.text = getString(if (isFollowing) R.string.forum_following_space else R.string.forum_follow_space)
+        chip.setChipIconResource(if (isFollowing) R.drawable.ic_check else R.drawable.ic_bell)
+        chip.contentDescription = getString(
+            if (isFollowing) R.string.forum_unfollow_space_description else R.string.forum_follow_space_description,
+            name,
+        )
+        chip.setOnClickListener { toggleFollow(slug) }
+        group.addView(chip)
     }
 
     // ── activity, staff, menu ───────────────────────────────────────────
@@ -406,6 +459,7 @@ class CommunityFragment : Fragment() {
         if (_binding == null) return
         adapter.guest = false
         refreshStaff()
+        loadFollowed()
         reload()
     }
 
@@ -418,6 +472,7 @@ class CommunityFragment : Fragment() {
         const val TAB_NEEDS_HELP = "needs_help"
         const val TAB_SOLVED = "solved"
         const val TAB_MINE = "mine"
+        const val TAB_FOLLOWING = "following"
         const val SORT_HOT = "hot"
         const val SORT_NEW = "new"
         const val SORT_TOP = "top"
@@ -431,6 +486,7 @@ class CommunityFragment : Fragment() {
             TAB_NEEDS_HELP to R.id.chip_show_needs_help,
             TAB_SOLVED to R.id.chip_show_solved,
             TAB_MINE to R.id.chip_show_mine,
+            TAB_FOLLOWING to R.id.chip_show_following,
         )
         val SORT_CHIPS = mapOf(
             SORT_HOT to R.id.chip_sort_hot,
@@ -442,6 +498,7 @@ class CommunityFragment : Fragment() {
             TAB_NEEDS_HELP to R.string.forum_tab_needs_help,
             TAB_SOLVED to R.string.forum_tab_solved,
             TAB_MINE to R.string.forum_tab_mine,
+            TAB_FOLLOWING to R.string.forum_tab_following,
         )
         val SORT_LABELS = mapOf(
             SORT_HOT to R.string.forum_sort_hot,

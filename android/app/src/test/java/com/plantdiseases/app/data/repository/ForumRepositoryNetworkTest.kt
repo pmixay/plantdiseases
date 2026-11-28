@@ -122,6 +122,15 @@ class ForumRepositoryNetworkTest {
     }
 
     @Test
+    fun spaceFollowsRequireAnAccount() = runBlocking {
+        assertThat(repo.followedSpaces().exceptionOrNull())
+            .isInstanceOf(AuthenticationRequiredException::class.java)
+        assertThat(repo.followSpace("pests", following = true).exceptionOrNull())
+            .isInstanceOf(AuthenticationRequiredException::class.java)
+        assertThat(server.requestCount).isEqualTo(0)
+    }
+
+    @Test
     fun mediaUrlsUseTheApiOrigin() {
         assertThat(repo.mediaUrl("fmabc")).isEqualTo("${server.url("/")}api/community/media/fmabc")
     }

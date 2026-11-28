@@ -92,6 +92,17 @@
                 app:chipStrokeColor="@color/forum_chip_stroke"
                 android:textColor="@color/forum_chip_text" />
 
+            <com.google.android.material.chip.Chip
+                android:id="@+id/chip_show_following"
+                style="@style/Widget.Material3.Chip.Filter"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/forum_tab_following"
+                app:checkedIconEnabled="false"
+                app:chipBackgroundColor="@color/chip_bg_color"
+                app:chipStrokeColor="@color/forum_chip_stroke"
+                android:textColor="@color/forum_chip_text" />
+
         </com.google.android.material.chip.ChipGroup>
 
         <TextView

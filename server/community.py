@@ -15,8 +15,8 @@ public-token helpers, the actor-hook registry). The areas built on it live in
 siblings that reach this core as ``community.<name>`` at call time:
 ``community_scans`` (publication, thumbnails, analysis tokens),
 ``community_views``, ``community_feeds``, ``community_popular``,
-``community_safety`` (blocks, reports, removal), ``community_deletion``
-(retention, account deletion, cleanup jobs) and ``community_authors``.
+``community_safety`` (blocks, reports, removal) and ``community_deletion``
+(retention, account deletion, cleanup jobs).
 
 Threading model: mirrors ``feedback.py``. One connection per call (reused);
 a module-level RLock serialises writes so concurrent uploads don't race

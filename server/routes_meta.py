@@ -223,7 +223,7 @@ def register(router: APIRouter, m) -> None:
             "uptime_seconds": round(uptime, 1),
             **snap,
             "ai_doctor": m.plant_doctor.chat_metrics_snapshot(),
-            # Across every OpenRouter caller, not just the doctor — the number that
+            # Across every chat-backend caller, not just the doctor — the number that
             # answers "is prompt caching engaging at all" after a model switch.
             "prompt_cache": m.ai_services.prompt_cache_metrics_snapshot(),
             "care_plan_polish": m.care_plan.care_plan_metrics_snapshot(),

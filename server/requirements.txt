@@ -27,10 +27,11 @@ Pillow==13.0.0
 # this line resolves to whatever is newest once a later series ships.
 numpy>=2.5.4,<3.0
 onnxruntime>=1.31.1
-# Smart APIs (PlantNet identify, OpenRouter Plant Doctor, care plan
+# Smart APIs (PlantNet identify, the LLM-backed Plant Doctor, care plan
 # polish) are optional at runtime — the corresponding endpoints return
-# a graceful ``available: false`` when no API key is configured. Only
-# ``requests`` is required since OpenRouter speaks plain HTTPS JSON.
+# a graceful ``available: false`` when they are not configured. Only
+# ``requests`` is required: the OpenAI-compatible chat backend speaks
+# plain HTTPS JSON, so no vendor SDK is needed.
 requests>=2.34.2
 # Account-bound community writes verify Ed25519 JWTs locally before the
 # account service confirms the live session/authorization version.

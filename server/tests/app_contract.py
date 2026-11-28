@@ -50,6 +50,8 @@ ROUTES: dict[tuple[str, str], str] = {
     ("GET", "/api/community/safety/blocks"): "CommunityBlocksResponse",
     ("POST", "/api/community/scan"): "CommunityScanUploadResponse",
     ("GET", "/api/community/spaces"): "ForumSpacesResponse",
+    ("GET", "/api/community/spaces/following"): "ForumFollowedSpacesResponse",
+    ("POST", "/api/community/spaces/{slug}/follow"): "ForumSpaceFollowResponse",
     ("GET", "/api/community/feed"): "ForumPage",
     ("GET", "/api/community/search"): "ForumPage",
     ("GET", "/api/community/posts/{post_id}"): "ForumPost",
@@ -151,11 +153,10 @@ def _parse_params(body: str) -> list[Field]:
     return fields
 
 
-@cache
-def classes() -> dict[str, list[Field]]:
-    """Every ``@Serializable`` data class in the app's model files."""
+def parse_classes(*paths: Path) -> dict[str, list[Field]]:
+    """Every ``@Serializable`` data class in the given Kotlin files."""
     found: dict[str, list[Field]] = {}
-    for path in MODEL_FILES:
+    for path in paths:
         source = _strip_comments(path.read_text(encoding="utf-8"))
         for match in _CLASS.finditer(source):
             start = match.end()
@@ -165,6 +166,12 @@ def classes() -> dict[str, list[Field]]:
                 i += 1
             found[match.group(1)] = _parse_params(source[start : i - 1])
     return found
+
+
+@cache
+def classes() -> dict[str, list[Field]]:
+    """Every ``@Serializable`` data class in the app's model files."""
+    return parse_classes(*MODEL_FILES)
 
 
 _PRIMITIVES = {
@@ -177,7 +184,9 @@ _PRIMITIVES = {
 }
 
 
-def _type_violations(value: object, kotlin_type: str, where: str) -> list[str]:
+def _type_violations(
+    value: object, kotlin_type: str, where: str, known: dict[str, list[Field]],
+) -> list[str]:
     if kotlin_type == ANY or value is None:
         return []
     kotlin_type = kotlin_type.rstrip("?").strip()
@@ -192,7 +201,7 @@ def _type_violations(value: object, kotlin_type: str, where: str) -> list[str]:
             return [f"{where}: expected a list"]
         problems = []
         for index, item in enumerate(value):
-            problems += _type_violations(item, generic.group(2), f"{where}[{index}]")
+            problems += _type_violations(item, generic.group(2), f"{where}[{index}]", known)
         return problems
     if generic and generic.group(1) == "Map":
         if not isinstance(value, dict):
@@ -200,19 +209,28 @@ def _type_violations(value: object, kotlin_type: str, where: str) -> list[str]:
         value_type = _split_top_level(generic.group(2))[1]
         problems = []
         for key, item in value.items():
-            problems += _type_violations(item, value_type, f"{where}.{key}")
+            problems += _type_violations(item, value_type, f"{where}.{key}", known)
         return problems
-    if kotlin_type in classes():
-        return violations(value, kotlin_type, where)
+    if kotlin_type in known:
+        return violations(value, kotlin_type, where, known)
     return []  # an enum or a type this checker does not model
 
 
-def violations(payload: object, class_name: str, where: str = "$") -> list[str]:
-    """Why ``payload`` would fail to decode into ``class_name``; empty if it decodes."""
+def violations(
+    payload: object,
+    class_name: str,
+    where: str = "$",
+    known: dict[str, list[Field]] | None = None,
+) -> list[str]:
+    """Why ``payload`` would fail to decode into ``class_name``; empty if it decodes.
+
+    ``known`` is the set of models to decode with; by default, today's app.
+    """
+    known = classes() if known is None else known
     if not isinstance(payload, dict):
         return [f"{where}: expected an object for {class_name}"]
     problems = []
-    for field in classes()[class_name]:
+    for field in known[class_name]:
         path = f"{where}.{field.json_name}"
         if field.json_name not in payload:
             if not field.has_default:
@@ -223,5 +241,5 @@ def violations(payload: object, class_name: str, where: str = "$") -> list[str]:
             if not field.nullable and not field.has_default:
                 problems.append(f"{path}: null (required by {class_name})")
             continue
-        problems += _type_violations(value, field.kotlin_type, path)
+        problems += _type_violations(value, field.kotlin_type, path, known)
     return problems

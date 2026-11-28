@@ -8,10 +8,18 @@ it) is seen by the routes exactly as before.
 """
 
 import asyncio
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import (
+    AfterValidator,
+    BaseModel,
+    Field,
+    StringConstraints,
+    field_validator,
+    model_validator,
+)
 
 # Collaborator modules (never names patched on ``main``) are imported here;
 # flat (``uvicorn main:app`` from ``server/``) or as ``server.*``.
@@ -27,6 +35,25 @@ except ImportError:
     import community_http
 
 
+def _scan_id_charset(value: str) -> str:
+    if any(ch not in feedback_labels.SCAN_ID_ALLOWED for ch in value):
+        raise ValueError("invalid characters in id; expected [A-Za-z0-9_-]")
+    return value
+
+
+# One scan reference in a request body: a real scan_id (the server's analysis
+# token, or the app's own UUID for a scan it never sent) or a feed's public
+# token. Every one is 32 to 36 URL-safe characters; 8 to 128 leaves the app
+# room to change how it mints them.
+ScanId = Annotated[
+    str,
+    StringConstraints(min_length=8, max_length=128),
+    AfterValidator(_scan_id_charset),
+]
+# A batch of them, as feed-scroll impressions send.
+ScanIds = Annotated[list[ScanId], Field(max_length=50)]
+
+
 class CommunityScanRequest(BaseModel):
     """Upload metadata for a single community-shared scan. The image
     bytes ride on a separate multipart field on the upload endpoint
@@ -39,7 +66,7 @@ class CommunityScanRequest(BaseModel):
     in ``country`` and the leading segment in ``region``.
     """
 
-    scan_id: str = Field(..., min_length=8, max_length=64)
+    scan_id: ScanId
     country: str | None = Field(default=None, min_length=2, max_length=80)
     region: str = Field(default="", max_length=80)
     disease: str = Field(..., min_length=1, max_length=64)
@@ -47,13 +74,6 @@ class CommunityScanRequest(BaseModel):
     species: str | None = Field(default=None, max_length=128)
     species_score: float | None = Field(default=None, ge=0.0, le=1.0)
     locale: str | None = Field(default=None, max_length=8)
-    @field_validator("scan_id")
-    @classmethod
-    def _safe_token(cls, v: str) -> str:
-        if any(ch not in feedback_labels.SCAN_ID_ALLOWED for ch in v):
-            raise ValueError("invalid characters in id; expected [A-Za-z0-9_-]")
-        return v
-
     @field_validator("country")
     @classmethod
     def _safe_country(cls, v: str | None) -> str | None:
@@ -102,8 +122,8 @@ class CommunityViewRequest(BaseModel):
     # in name only — older installs still send it alone. ``scan_ids`` is the
     # newer batch shape for reporting many feed impressions in one call. A
     # request must carry at least one of the two; see the validator below.
-    scan_id: str | None = Field(None, max_length=128)
-    scan_ids: list[str] | None = Field(None, max_length=50)
+    scan_id: ScanId | None = None
+    scan_ids: ScanIds | None = None
 
     @model_validator(mode="after")
     def _require_a_target(self) -> "CommunityViewRequest":

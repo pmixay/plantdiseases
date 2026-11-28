@@ -363,6 +363,130 @@ class ResultActivity : AppCompatActivity() {
         animator.start()
     }
 
+    /** Leaf boxes over the photo, on a disease verdict only. */
+    private fun bindLeafBoxes(
+        scan: ScanEntity,
+        repository: ScanRepository,
+        isAbstained: Boolean,
+        isHealthyVerdict: Boolean,
+    ) = with(binding) {
+        // YOLOv8 bbox overlay — only on a disease verdict with regions. The
+        // bbox coords are in the server-side image's pixel space (the scan
+        // row carries those dims); render against them directly. Stage 1 is
+        // a single-class leaf detector and "diseased" is one whole-image
+        // verdict, so mark EVERY detected leaf red (not just the primary
+        // crop) — the primary box just gets a thicker stroke.
+        val regions = repository.parseRegions(scan.regions)
+        heatmapOverlay.visibility = if (isAbstained) View.GONE else View.VISIBLE
+        if (isAbstained) tvHeatmapLabel.visibility = View.GONE
+        if (!isAbstained && !isHealthyVerdict && regions.isNotEmpty()) {
+            val primaryIdx = scan.primaryRegionIndex ?: -1
+            val overlayBoxes = regions.mapIndexed { i, r ->
+                HeatmapOverlayView.Box(
+                    x = r.x,
+                    y = r.y,
+                    width = r.width,
+                    height = r.height,
+                    diseased = true,
+                    primary = i == primaryIdx,
+                )
+            }
+            heatmapOverlay.setBoxes(overlayBoxes, scan.detectionImageWidth, scan.detectionImageHeight)
+            heatmapOverlay.postDelayed({
+                heatmapOverlay.animateIn()
+                tvHeatmapLabel.visibility = View.VISIBLE
+                tvHeatmapLabel.alpha = 0f
+                tvHeatmapLabel.animate().alpha(1f).setDuration(600).start()
+            }, 500)
+        }
+    }
+
+    /** The confidence line, bar and sticky label; hidden on an abstention. */
+    private fun bindConfidence(scan: ScanEntity, isAbstained: Boolean) = with(binding) {
+        val confidencePercent = (scan.confidence * 100).toInt()
+        // On abstention the raw confidence is diagnostic, not an accepted
+        // diagnosis score, so keep it out of the user-facing status card.
+        if (isAbstained) {
+            tvConfidence.visibility = View.GONE
+            progressConfidence.visibility = View.GONE
+            tvStickyConfidence.visibility = View.GONE
+        } else {
+            tvConfidence.visibility = View.VISIBLE
+            progressConfidence.visibility = View.VISIBLE
+            tvStickyConfidence.visibility = View.VISIBLE
+            tvConfidence.text = getString(R.string.confidence_format, confidencePercent)
+            tvStickyConfidence.text = getString(R.string.confidence_format, confidencePercent)
+            progressConfidence.max = 100
+            progressConfidence.progress = 0
+            ValueAnimator.ofInt(0, confidencePercent).apply {
+                duration = 800
+                interpolator = DecelerateInterpolator(2.5f)
+                addUpdateListener { anim -> progressConfidence.progress = anim.animatedValue as Int }
+            }.start()
+        }
+    }
+
+    /** The status label and icon; returns the status card's background colour. */
+    private fun bindStatusLabel(
+        isInconclusive: Boolean,
+        isNotAPlant: Boolean,
+        isHealthyVerdict: Boolean,
+    ): Int = with(binding) {
+        when {
+            isInconclusive -> {
+                tvStatusLabel.text = getString(R.string.status_inconclusive)
+                tvStatusLabel.setTextColor(getColor(R.color.neutral_blue))
+                ivStatusIcon.setImageResource(R.drawable.ic_warning)
+                ivStatusIcon.setColorFilter(getColor(R.color.neutral_blue))
+                R.color.neutral_blue_bg
+            }
+            isNotAPlant -> {
+                tvStatusLabel.text = getString(R.string.status_not_a_plant)
+                tvStatusLabel.setTextColor(getColor(R.color.neutral_blue))
+                ivStatusIcon.setImageResource(R.drawable.ic_warning)
+                ivStatusIcon.setColorFilter(getColor(R.color.neutral_blue))
+                R.color.neutral_blue_bg
+            }
+            isHealthyVerdict -> {
+                tvStatusLabel.text = getString(R.string.status_healthy)
+                tvStatusLabel.setTextColor(getColor(R.color.healthy_green))
+                ivStatusIcon.setImageResource(R.drawable.ic_healthy)
+                ivStatusIcon.clearColorFilter()
+                R.color.healthy_green_bg
+            }
+            else -> {
+                tvStatusLabel.text = getString(R.string.status_disease)
+                tvStatusLabel.setTextColor(getColor(R.color.disease_red))
+                ivStatusIcon.setImageResource(R.drawable.ic_disease)
+                ivStatusIcon.clearColorFilter()
+                R.color.disease_red_bg
+            }
+        }
+    }
+
+    private fun bindFeedback(scan: ScanEntity, isAbstained: Boolean, isOfflineAqua: Boolean) = with(binding) {
+        // Toxicity renders for accepted plant verdicts only.
+        // Feedback binds to a server-issued scan_id; an offline Aqua scan
+        // has none, so it's hidden rather than offering an action that
+        // can't post. NAP gets a dedicated single-action variant: a
+        // wrongly-rejected plant photo is high-value retraining signal,
+        // so the card offers a structured "This is a plant" correction
+        // instead of the yes/no pair.
+        if (isAbstained) {
+            if (isOfflineAqua) {
+                cardFeedback.visibility = View.GONE
+            } else {
+                feedback.bindNotAPlant(scan)
+            }
+        } else {
+            if (isOfflineAqua) {
+                cardFeedback.visibility = View.GONE
+            } else {
+                feedback.bind(scan)
+            }
+        }
+    }
+
     private fun displayResult(scan: ScanEntity, repository: ScanRepository) {
         val isRu = LocaleHelper.isRussian(this)
         val isNotAPlant = repository.isNotAPlantScan(scan)
@@ -398,35 +522,7 @@ class ResultActivity : AppCompatActivity() {
                 .transform(CenterCrop(), RoundedCorners(24))
                 .into(ivPlant)
 
-            // YOLOv8 bbox overlay — only on a disease verdict with regions. The
-            // bbox coords are in the server-side image's pixel space (the scan
-            // row carries those dims); render against them directly. Stage 1 is
-            // a single-class leaf detector and "diseased" is one whole-image
-            // verdict, so mark EVERY detected leaf red (not just the primary
-            // crop) — the primary box just gets a thicker stroke.
-            val regions = repository.parseRegions(scan.regions)
-            heatmapOverlay.visibility = if (isAbstained) View.GONE else View.VISIBLE
-            if (isAbstained) tvHeatmapLabel.visibility = View.GONE
-            if (!isAbstained && !isHealthyVerdict && regions.isNotEmpty()) {
-                val primaryIdx = scan.primaryRegionIndex ?: -1
-                val overlayBoxes = regions.mapIndexed { i, r ->
-                    HeatmapOverlayView.Box(
-                        x = r.x,
-                        y = r.y,
-                        width = r.width,
-                        height = r.height,
-                        diseased = true,
-                        primary = i == primaryIdx,
-                    )
-                }
-                heatmapOverlay.setBoxes(overlayBoxes, scan.detectionImageWidth, scan.detectionImageHeight)
-                heatmapOverlay.postDelayed({
-                    heatmapOverlay.animateIn()
-                    tvHeatmapLabel.visibility = View.VISIBLE
-                    tvHeatmapLabel.alpha = 0f
-                    tvHeatmapLabel.animate().alpha(1f).setDuration(600).start()
-                }, 500)
-            }
+            bindLeafBoxes(scan, repository, isAbstained, isHealthyVerdict)
 
             tvDiseaseName.text = diseaseName
             tvStickyName.text = diseaseName
@@ -450,58 +546,9 @@ class ResultActivity : AppCompatActivity() {
                 }
             }
 
-            val confidencePercent = (scan.confidence * 100).toInt()
-            // On abstention the raw confidence is diagnostic, not an accepted
-            // diagnosis score, so keep it out of the user-facing status card.
-            if (isAbstained) {
-                tvConfidence.visibility = View.GONE
-                progressConfidence.visibility = View.GONE
-                tvStickyConfidence.visibility = View.GONE
-            } else {
-                tvConfidence.visibility = View.VISIBLE
-                progressConfidence.visibility = View.VISIBLE
-                tvStickyConfidence.visibility = View.VISIBLE
-                tvConfidence.text = getString(R.string.confidence_format, confidencePercent)
-                tvStickyConfidence.text = getString(R.string.confidence_format, confidencePercent)
-                progressConfidence.max = 100
-                progressConfidence.progress = 0
-                ValueAnimator.ofInt(0, confidencePercent).apply {
-                    duration = 800
-                    interpolator = DecelerateInterpolator(2.5f)
-                    addUpdateListener { anim -> progressConfidence.progress = anim.animatedValue as Int }
-                }.start()
-            }
+            bindConfidence(scan, isAbstained)
 
-            val statusBackgroundColor = when {
-                isInconclusive -> {
-                    tvStatusLabel.text = getString(R.string.status_inconclusive)
-                    tvStatusLabel.setTextColor(getColor(R.color.neutral_blue))
-                    ivStatusIcon.setImageResource(R.drawable.ic_warning)
-                    ivStatusIcon.setColorFilter(getColor(R.color.neutral_blue))
-                    R.color.neutral_blue_bg
-                }
-                isNotAPlant -> {
-                    tvStatusLabel.text = getString(R.string.status_not_a_plant)
-                    tvStatusLabel.setTextColor(getColor(R.color.neutral_blue))
-                    ivStatusIcon.setImageResource(R.drawable.ic_warning)
-                    ivStatusIcon.setColorFilter(getColor(R.color.neutral_blue))
-                    R.color.neutral_blue_bg
-                }
-                isHealthyVerdict -> {
-                    tvStatusLabel.text = getString(R.string.status_healthy)
-                    tvStatusLabel.setTextColor(getColor(R.color.healthy_green))
-                    ivStatusIcon.setImageResource(R.drawable.ic_healthy)
-                    ivStatusIcon.clearColorFilter()
-                    R.color.healthy_green_bg
-                }
-                else -> {
-                    tvStatusLabel.text = getString(R.string.status_disease)
-                    tvStatusLabel.setTextColor(getColor(R.color.disease_red))
-                    ivStatusIcon.setImageResource(R.drawable.ic_disease)
-                    ivStatusIcon.clearColorFilter()
-                    R.color.disease_red_bg
-                }
-            }
+            val statusBackgroundColor = bindStatusLabel(isInconclusive, isNotAPlant, isHealthyVerdict)
             bindInlineConfidenceAdvisory(confidenceAdvisory, statusBackgroundColor)
 
             // Rejections keep only neutral retry/correction content. The raw
@@ -534,26 +581,7 @@ class ResultActivity : AppCompatActivity() {
                 carePlan.bind(scan, repository, isRu)
             }
 
-            // Toxicity renders for accepted plant verdicts only.
-            // Feedback binds to a server-issued scan_id; an offline Aqua scan
-            // has none, so it's hidden rather than offering an action that
-            // can't post. NAP gets a dedicated single-action variant: a
-            // wrongly-rejected plant photo is high-value retraining signal,
-            // so the card offers a structured "This is a plant" correction
-            // instead of the yes/no pair.
-            if (isAbstained) {
-                if (isOfflineAqua) {
-                    cardFeedback.visibility = View.GONE
-                } else {
-                    feedback.bindNotAPlant(scan)
-                }
-            } else {
-                if (isOfflineAqua) {
-                    cardFeedback.visibility = View.GONE
-                } else {
-                    feedback.bind(scan)
-                }
-            }
+            bindFeedback(scan, isAbstained, isOfflineAqua)
 
             tvDate.text = ImageUtils.formatRelativeTime(this@ResultActivity, scan.timestamp)
 

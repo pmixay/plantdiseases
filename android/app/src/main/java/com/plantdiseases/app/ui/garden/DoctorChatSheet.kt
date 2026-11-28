@@ -20,6 +20,7 @@ import androidx.fragment.app.FragmentManager
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.widget.NestedScrollView
+import androidx.core.widget.doAfterTextChanged
 import androidx.lifecycle.lifecycleScope
 import com.google.android.material.bottomsheet.BottomSheetBehavior
 import com.google.android.material.bottomsheet.BottomSheetDialogFragment
@@ -140,6 +141,8 @@ class DoctorChatSheet : BottomSheetDialogFragment() {
         suggestionsContainer = binding.chatSuggestions
         inputField = binding.chatInput
         inputField.filters = arrayOf(InputFilter.LengthFilter(TEXT_FIELD_MAX_LENGTH))
+        // The round send arrow lights up only when there is something to send.
+        inputField.doAfterTextChanged { updateSendEnabled() }
 
         // Suggestion chips — label comes from the layout; tapping one
         // sends it verbatim.
@@ -170,7 +173,8 @@ class DoctorChatSheet : BottomSheetDialogFragment() {
         }
         ViewCompat.setOnApplyWindowInsetsListener(binding.chatInputRow) { v, insets ->
             val bottomInset = insets.getInsets(WindowInsetsCompat.Type.systemBars()).bottom
-            v.setPadding(20.dp(), 8.dp(), 20.dp(), 12.dp() + bottomInset)
+            // Matches the layout's padding; only the bottom inset is added.
+            v.setPadding(16.dp(), 4.dp(), 16.dp(), 12.dp() + bottomInset)
             insets
         }
 
@@ -247,10 +251,15 @@ class DoctorChatSheet : BottomSheetDialogFragment() {
         }
     }
 
+    private fun updateSendEnabled() {
+        val b = _binding ?: return
+        b.chatSendBtn.isEnabled = !isSending && !b.chatInput.text.isNullOrBlank()
+    }
+
     /** Lock / unlock the send controls while a reply is in flight. */
     private fun setSending(sending: Boolean) {
         isSending = sending
-        _binding?.chatSendBtn?.isEnabled = !sending
+        updateSendEnabled()
         _binding?.let { b ->
             listOf(b.chatChip1, b.chatChip2, b.chatChip3).forEach { it.isEnabled = !sending }
         }

@@ -53,6 +53,7 @@ COPY --from=builder /install /usr/local
 # Application code — flat copy keeps `from main import …` working.
 COPY *.py ./
 COPY tools ./tools
+COPY admin_panel ./admin_panel
 # Guide example photos served by /api/guide/photo/<key> (moved out of the APK
 # to shrink the app; the client downloads + disk-caches them).
 COPY static ./static

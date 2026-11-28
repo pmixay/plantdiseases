@@ -97,6 +97,7 @@ carry one of three statuses. Each stale section also carries an inline
 
 | section | status | why |
 |---|---|---|
+| v9 minimum round (2026-11-27), `docs/V9_MINIMUM_ROUND.md` | **current, overrides for its rows** | targets only the minimum strata (early/dull scorch, houseplant `leaf_spot`); agent review replaces P6's human adjudication; up to 5 % AI-generated photos (training-only) replace P3's real-photo rule |
 | Supplement routing — version-aware and fail-closed | **current** | matches notebook §2 (`STRICT_SUPPLEMENT_*`, `SUPPLEMENT_EVAL_THROUGH_MODEL_VERSION`) |
 | v9 collection protocol · OOD benchmark v3 · Locked test set · Sequencing (below) | **current** | written against the code on this branch; **P0 (2.7.5) is the minimum** — P1–P8 are the full protocol for `eval_ok` rows |
 | Acceptance criteria (every version) | **baseline, extended** | still true; the per-row contract is the light one in P0 (2.7.5), with P4 as the full record for eval rows |

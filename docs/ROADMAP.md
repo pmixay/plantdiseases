@@ -8,7 +8,7 @@ run, with its numbers, lives in `MODEL_HISTORY.md`. Companions: `DATASET_LABELIN
 ★ = needs a human decision or a human-only task. Tiers are in priority order, and so
 are the items inside each tier. Human (★) and code items run in parallel: a code item
 in a lower tier can start while a ★ item above it waits on a person. Code-checkable
-items were re-verified against the tree on 2026-11-24; data and human-task items are
+items were re-verified against the tree on 2026-11-28; data and human-task items are
 as last recorded. Line counts are approximate; re-measure before acting on one.
 
 ---
@@ -18,19 +18,30 @@ as last recorded. Line counts are approximate; re-measure before acting on one.
 | track | now |
 |---|---|
 | **App** | 1.9 / versionCode 19 on RuStore since 2026-11-22, and it stays the current version for now (no release planned). Later app work waits on the branch for the next release. PRO stays hidden (`ProUi.ENABLED = false`). |
-| **Server** | The branch's app API and account service have the second-opinion system retired and scan likes, author profiles and scan report/block removed (72 API operations); 1.9 still calls those routes, so a deploy of this branch drops those features for 1.9 users. |
+| **Server** | `main`'s app API and account service have the second-opinion system retired and scan likes, author profiles and scan report/block removed, and following spaces added (74 API operations). For 1.9, which still calls those routes, the reads answer empty (`routes_legacy_app.py`, outside the schema) so its opinion poll stops retrying; the retired writes and profiles answer 404, which 1.9 shows as a failed action. |
 | **Model** | 2.7.5 deployed (dataset v8). Weak spot: scorch read as healthy. A statistical tie with 2.7.2 on the shared holdout. |
 | **Accounts backend** | Live on the production VDS under `/id/`; real Yandex flow and deletion verified; privacy policy served at `/privacy.html`; a Telegram alert watches for stuck deletions. No backup job (owner's decision). |
-| **Data** | v8 is the corpus. v9 collection, locked test set T and OOD benchmark v3 are specified; none started. |
-| **Code / CI** | All work since 2026-11-19 is on `ccr-333aa3d6-u20r4l`; `main` has not moved since. The server job gates on ruff, mypy (every server module) and pytest; every app response is checked against the app's own models (`tests/app_contract.py`). |
+| **Data** | v8 is the corpus. The v9 minimum round is open (`docs/V9_MINIMUM_ROUND.md`): batch 1 (87 photos) reviewed, 13 early-scorch families usable after review. Locked test set T and OOD benchmark v3 are specified, not started. |
+| **Code / CI** | `main` is at #190. Work since 2026-11-24 is on `claude/likikikpa` (PR #191, open): OpenRouter replaced by an OpenAI-compatible backend (codex-lb), consented error reports enabled in production, the v9 screening harness, Android UI polish. The server job gates on ruff, mypy (every server module) and pytest; every app response is checked against the app's own models (`tests/app_contract.py`). |
 
 ---
 
 ## P0 — Production
 
-- [ ] ★ **Create the first forum admin** on production:
-      `python manage_roles.py grant --nickname … --role admin` in the account-api
-      container (migration 0011 must run first).
+- [ ] ★ **Turn on the desktop moderation panel** (`/admin/`): add a Web services
+      platform with the redirect URL `https://<host>/admin/` to the Android app's
+      Yandex OAuth app, set `admin_panel_yandex_client_id` in
+      `/etc/plantdiseases/config.json` (absent on 2026-11-28), restart
+      `plantdiseases.service`, then sign in once and work a real queue
+      (`DEPLOYMENT.md` §5.1).
+- [ ] **Finish verifying PR #191's app API.** The code is live (`35da1c5`,
+      `plantdiseases.service`; `deploy/production-vds/README.md`). On 2026-11-28
+      telemetry was on, codex-lb required a key and served `gpt-5.6-luna`, and the
+      counters showed doctor output and 5 of 5 care-plan polishes accepted. Left:
+      - a first row in `/var/lib/plantdiseases/telemetry.db`: none yet, and the
+        journal since the 2026-11-27 12:42 UTC start showed no request to
+        `/api/telemetry/errors`;
+      - `/api/metrics` → `prompt_cache.hit_ratio`: 0.0 over 16 requests.
 
 ---
 
@@ -42,30 +53,29 @@ without data. Specified in `DATASET_LABELING_PLAN.md`.
 - [ ] ★ **Carve T_v1.** Adjudicate the 80 export rows; carve T before any export row
       enters a supplement. It is the only slice fair to the deployed model and a
       candidate alike.
-- [ ] ★ **Scorch data.** Real v9 collection: early-stage marginal necrosis, 400
+- [ ] ★ **Scorch data: the v9 minimum round** (`docs/V9_MINIMUM_ROUND.md`, the
+      collection task). 187 early-scorch and 100 houseplant `leaf_spot` families
+      left, agent review, at most 5 % AI-generated photos (training-only), the v8
+      brown-tip negatives reviewed for relabelling, pre-screened with
+      `server/tools/screen_candidates.py`. The full plan target stays 400 early
       families with boxes (`brown_frac < 0.05`, edge-confined, blade mostly green),
       judged against `leaf_spot` exemplars; worth a run at ≥ 200 scorch and ≥ 100
       houseplant `leaf_spot` families. Boxes matter: Stage 1 returns no box on 21 % of
-      scorch vs 19 % of healthy. It takes calendar time. A second synthetic batch is
-      the alternative only if it meets the conditions under "Synthetic scorch" below.
-      The production recipe needs the Kaggle houseplant supplement at v9; the private
-      one was still at v8 at the last check (2026-08-23), which fails the strict v9
-      manifest contract (a compliant v9 under the same handle is picked up
-      automatically).
+      scorch vs 19 % of healthy. It takes calendar time. Publishing it as revision 9
+      of the same Kaggle handle is all the notebook needs to pick it up.
 - [ ] ★ **OOD benchmark v3**: 8–12 species plus a non-plant arm (the non-plant arm
       needs no plants; do it first). The tool is ready: declare the sources in a
       `--config sources.json` for `tools/build_ood_benchmark.py` (layout, class map,
       arms, rights), and §6 scores the negative arms. Put the benchmark's slug in
       §2's `KAGGLE_BENCHMARK_SLUGS`, not `KAGGLE_DENY_SLUGS` (§6 downloads it).
       `REQUIRE_OOD_BENCHMARK` stays `False` until it exists.
-- [ ] ★ **Augmentation ablation on Colab at `SEED=0`** (ready to run now). One `'off'`
-      run (§4 `TRAIN_AUGMENTATION`; geometry only, profile
-      `serve_parity_v2_geometry_only`) vs a default run on the same corpus; score with
-      `tools/eval_bootstrap.py` on capture families.
-- [ ] ★ **Ship Aqua's OOD floor** from the next notebook run: §5 writes it into the
-      Aqua sidecar (`ood`); copy that `classes.json` with the model into
-      `server/static/aqua/`. Until then Aqua serves without the gate, and only apps
-      from the next release (after 1.9) read it.
+- [ ] ★ **Augmentation ablation on Colab at `SEED=0`** (waits for supplement v9, owner's
+      decision 2026-11-27, so the runs are spent on the data that ships). Two fresh
+      runs on v9, `MODEL_VERSION='2.7.6'`, `TRAIN_MODE='gamma'`: a default run and an
+      `'off'` run (§4 `TRAIN_AUGMENTATION`; geometry only, profile
+      `serve_parity_v2_geometry_only`). 2.7.5 cannot be the control: §1/§4 now
+      enforce determinism before head training and the live sources drift. Score both
+      on the v9 holdout with `tools/paired_eval.py` + `tools/eval_bootstrap.py`.
 - [ ] **Watch feedback correcting "healthy" to scorch** (ongoing,
       `server/tools/analyse_training_data.py`). 15 of 2.7.5's 25 wrong "healthy" calls
       on the holdout are scorch; production feedback is the only real-distribution
@@ -75,27 +85,11 @@ without data. Specified in `DATASET_LABELING_PLAN.md`.
 
 ## P2 — Code that unblocks the data loop (no data needed)
 
-- [ ] **One server CLI that exports all training material as one bundle.** This is
-      the only path from production data to training: the owner runs the export,
-      processes the bundle offline and adds the labelled photos to the dataset.
-      No notebook cell reads a server export directly. Today there are two
-      tools with two formats: `tools/export_training_data.py` (the training store's
-      consented scans and feedback, a privacy-checked tar) and
-      `tools/export_community_labels.py` (consented forum photos that already have a
-      consensus label, a folder, whose docstring still points at notebook §2). One
-      command, run in the API container against the read-only databases, should
-      write one archive with every consented photo from both stores, one manifest,
-      the labels that exist (model verdict, user feedback, community consensus) as
-      hints rather than ground truth, capture-family ids so related photos stay in
-      one split, and today's de-identification and metadata stripping.
-- [ ] **Check that capture-family detection catches rotated copies.** In a
-      synthetic run of `build_ood_benchmark.py` a 90-degree rotated copy of an image
-      stayed its own family under SIFT/RANSAC. The matcher is unchanged and the
-      cause is not known; measure it on real photos before v3's families are
-      trusted, since a missed duplicate leaks across the split.
-- [ ] **Abstention reasons in `paired_eval`'s `preds.json`.** It writes `-1` for any
-      abstention, so `build_ood_benchmark --report` cannot tell an OOD-gate
-      rejection from a blur-gate one and counts both as a rejection.
+- [ ] **Per-row abstention reasons in `paired_eval`'s `preds.json`.** It already
+      records each model's abstentions counted by reason (`abstention_a` /
+      `abstention_b`), but every abstained row is still a bare `-1`, so
+      `build_ood_benchmark --report` cannot tell an OOD-gate rejection of a
+      non-plant from a blur-gate one and counts both as a rejection.
 - [ ] **OOD benchmark v3 follow-ups that block nothing yet** (details in
       `DATASET_LABELING_PLAN.md`): per-row rights for internet sources (a rights
       record is per source today; the non-plant arm doesn't need it), and per-arm
@@ -125,19 +119,24 @@ README status section and `docs/assets/per-class.svg` (its numbers are hand-copi
 
 ## P4 — Product
 
+- [ ] ★ **Email/password sign-in (the next auth item).** The account service and the
+      app hold a private beta slice, off by default; production settings and
+      production app builds reject `EMAIL_PASSWORD_AUTH_ENABLED=true`. Close the
+      production blockers first (`account-server/README.md`): verified email
+      ownership, password recovery, and abuse controls shared across replicas.
 - [ ] ★ **Check `util/PlantHealth.kt` thresholds against real scan histories.**
       `PlantHealth` turns a plant's scans into the one status the plant header, the
       health card and the room list show. Each scan scores 0 to 100: a healthy
       verdict 50 + 50 × confidence, a disease verdict 50 − 50 × confidence. The
       tunables: only scans from the last 60 days count; no score before 2 of them;
       HEALTHY needs the latest score ≥ 75 (healthy at ≥ 0.5 confidence) and no
-      decline; POOR needs the last 2 scores < 25 (disease at > 0.5 confidence each);
+      decline; POOR needs the last 2 or more scores < 25 (disease at > 0.5 confidence
+      each), the first of them at least a day before the latest, so retakes in one
+      sitting confirm nothing;
       a change of 10 points or more against a scan at least 7 days older is a trend,
       less is noise; under a treatment plan, RECOVERING needs ≥ 70 % of due work done
       and a healthy reading or a rising trend. They were reasoned, not measured:
       compare them with a few real plants before trusting a red "Poor condition".
-- [ ] **Following spaces** in the forum.
-- [ ] **Desktop web admin panel** for moderation.
 
 ---
 
@@ -145,28 +144,12 @@ README status section and `docs/assets/per-class.svg` (its numbers are hand-copi
 
 Each item is its own PR; don't fold one into another.
 
-**Server**
-
-- [ ] **Shared `Annotated` types for request models.** `scan_id` is `8..64` plus a
-      charset validator in `CommunityScanRequest` and `..128` with no charset in
-      `CommunityViewRequest`; `scan_ids` items are unbounded. Standardise on the
-      looser bound (the Android client mints these ids).
-- [ ] **`community_authors.py` is dead code.** `touch_author` and `lookup_author`
-      have no callers; the split moved them rather than change behaviour. Remove
-      them, or wire them if the durable forum identity is still meant to use them.
-
-**Android**
-
 - [ ] ★ **Check the XML-converted cards on a phone.** The plant-detail extra cards
       and the care-plan card were rebuilt from XML layouts without a device. Look
       for: 12sp captions now bold (they were regular), the "Not now" borderless
       button's padding, icon tints, the climate-chip gaps and the health-card heart.
-- [ ] **Ratchet detekt down** (`android/config/detekt/detekt.yml`). The XML
-      conversions shrank `DetailExtraCardsController` to ~760 body lines, so the
-      worst LargeClass is now `auth/AuthRepository` (1098 by the config's own
-      comment) under a threshold of 1200; LongMethod is 210 over
-      `ResultActivity.displayResult`'s 197. Re-measure with detekt in CI before
-      lowering either.
+      Also open a disease, a healthy, a not-a-plant and an offline result:
+      `ResultActivity.displayResult` was split without a test that renders it.
 
 ---
 
@@ -184,7 +167,8 @@ Each item is its own PR; don't fold one into another.
   starved classes); multi-label (sigmoid head, per-class thresholds and conformal,
   after the boundary is stable, never during); segmentation instead of a box, for
   measured lesion area and severity.
-- ★ **PRO subscriptions (distant future).** The purchase validation, callback inbox
+- ★ **PRO subscriptions (distant future).** Blocked on an owner with a confirmed
+  Gosuslugi account. The purchase validation, callback inbox
   and Android payment client stay in the code, switched off and invisible
   (`ProUi.ENABLED = false`, `RUSTORE_LIFECYCLE_ENABLED` / `RUSTORE_CHECKOUT_ENABLED`
   off). Reviving it needs RuStore keys and products, a sandbox purchase test and the
@@ -192,7 +176,15 @@ Each item is its own PR; don't fold one into another.
   already derives 2 % per achievement up to 40 % (`/v1/me/community-reward`), but
   RuStore has one price per product (21 discount products per period, or coarser
   steps; and whether a revoked discount changes an auto-renewing price).
-- **VK ID sign-in.** Merged, switched off until VK registration.
+- ★ **VK ID sign-in.** Blocked on an owner with a confirmed Gosuslugi account.
+  Merged and switched off; it also needs VK registration.
+- **Ship Aqua's OOD floor** with the first `combined` notebook run after the next app
+  release is planned: §5 writes it into the Aqua sidecar (`ood`); copy that
+  `classes.json` with the model into `server/static/aqua/`. Only apps after 1.9 read
+  it, and the v9 ablation runs are `gamma`-only.
+- **Delete `routes_legacy_app.py`** (with `tests/test_legacy_app_routes.py` and
+  `tests/fixtures/app_1_9_models.kt`) once few installs still run 1.9, i.e. after the
+  next app release: it answers 1.9's retired-feature reads with empty shapes.
 - Spider-mite split from `pests` (precision already high).
 - More UI languages (server content is already bilingual).
 - Expert-human consultation (ties into 2.8 safety escalation; builds on the forum).
@@ -204,24 +196,21 @@ Each item is its own PR; don't fold one into another.
 ### Synthetic scorch
 
 Owner's choice (2026-11-14): try generated images for the weak class. An independent
-review of batch 1 (`scorch_synthetic_100`) found the stage right (all early,
-edge-confined) but said do not train on it: only scorch is synthetic, so "generator
-look ⇒ scorch" is easier to learn than the rim; the 100 images are about 10 templates
-(lesion position tied to species, 10 fixed scenes); about 20 are ambiguous against
-healthy / `leaf_spot`; 3 fail the server's blur statistic and 11 boxes need redrawing.
-It also runs against plan rule P3 ("no … AI-looking images"): change that rule on
-purpose or not at all. Before a batch 2 is worth a run:
+review of the first synthetic batch (`scorch_synthetic_100`) found the stage right
+(all early, edge-confined) but said do not train on it as it stood: only scorch was
+synthetic, so "generator look ⇒ scorch" is easier to learn than the rim; the 100
+images are about 10 templates (lesion position tied to species, 10 fixed scenes);
+about 20 are ambiguous against healthy / `leaf_spot`; 3 fail the server's blur
+statistic and 11 boxes need redrawing.
 
-1. carve T_v1 (with ~39 unseen scorch rows in the holdout no result could be told
-   from noise);
-2. a matched synthetic *healthy* image per scorch image, same generator and scene;
-3. lesion position, extent and colour randomised independently of species, more
-   genera, fewer flat-lays, no tan backgrounds, every visible leaf boxed;
-4. human adjudication of each image;
-5. a `supplement_synthetic` source that sits in no `allowed_sources`, at reduced
-   weight, train-only, with template-level family ids.
-
-Then one paired `SEED=0` run, real-only evaluation, and stop if healthy false alarms
+The v9 minimum round (2026-11-27) settles the rule: AI-generated photos may be up to
+5 % of a round's kept photos, always `train_only`, one family per template, spread
+across classes, agent-reviewed like any other photo (`docs/V9_MINIMUM_ROUND.md`;
+`server/tools/screen_candidates.py` enforces the cap). A larger synthetic share
+would need its own run first: a matched synthetic healthy image per scorch image,
+lesion position, extent and colour randomised independently of species, a
+`supplement_synthetic` source at reduced weight in no `allowed_sources`, then one
+paired `SEED=0` run with real-only evaluation, stopping if healthy false alarms
 rise or scorch recall's CI straddles 0.
 
 ### Settled — do not retry
@@ -257,11 +246,22 @@ Run-to-run noise is ~2 pp at `SEED=0`; read any single-knob delta inside it as n
   planned; later app work waits on the branch for the next one.
 - **No backups of production data** (owner's decision, 2026-11-14). A lost VDS
   loses the accounts and the community store; there is nothing to restore from.
-- **Cost cap is the OpenRouter key's own spend limit**; no in-server price
-  ceiling and no dependency lockfile are planned.
+- **Cost cap is the LLM gateway's own limit** (codex-lb's per-key token/cost
+  limits and the pooled accounts' usage limits; OpenRouter is gone since
+  2026-11-27); no in-server price ceiling and no dependency lockfile are planned.
+- **No retention or training terms are required of the LLM backend** (owner's
+  decision, 2026-11-27): the privacy policy says OpenAI processes the requests
+  under its own terms.
+- **Consented error reports are recorded in production** (2026-11-26); staging
+  keeps them off.
 - **Release signing runs in CI** (owner's decision, 2026-11-14): the android job
   signs with the permanent key from repository secrets.
-- **VK ID stays switched off** until VK registration.
+- **Yandex is the only external sign-in** (owner's decision, 2026-11-28).
+  Email/password is the next auth item (P4).
+- **Yandex verification is not pursued** (owner's decision, 2026-11-28): the app
+  works unverified.
+- **VK ID and subscriptions wait in "Later"**, blocked on an owner with a
+  confirmed Gosuslugi account (2026-11-28). VK ID stays switched off.
 - **PRO is a distant-future idea, not a plan** (owner's decision, 2026-11-16).
   The app and server show no PRO wording and lock nothing behind it; only
   documents may mention it, and only as something far off. Signed-in accounts
@@ -289,17 +289,17 @@ Run-to-run noise is ~2 pp at `SEED=0`; read any single-knob delta inside it as n
 - **Responses are checked against the app, not described in OpenAPI**
   (2026-11-24): `server/tests/app_contract.py` reads the Android DTOs and the
   test client fails any 2xx JSON response from an app route that would not
-  decode in the app (39 routes, every one exercised). No `response_model`:
+  decode in the app (41 routes, every one exercised). No `response_model`:
   FastAPI would validate and filter live responses, so a wrong model becomes a
   production 500 or a silently dropped field.
 - **One JSON library on Android: kotlinx.serialization** (2026-11-24). Gson is
   gone; `@SerialName` names are unchanged, so rows and cache files written by the
   Gson-era app keep decoding.
-- **No Compose rewrite, single `:app` module.**
+- **No Compose migration, single `:app` module.**
 - **Stay free and honest.** Calibrated, OOD-aware, offline-capable, privacy-first.
   Diagnosis and Community reading need no account; Community writes need a verified
-  Yandex sign-in (no email/password in production). Posts stay linked to the
-  pseudonymous actor until the account is deleted.
+  Yandex sign-in (email/password is not in production yet). Posts stay linked to
+  the pseudonymous actor until the account is deleted.
 - **Not planned:** a first-launch intro video; room-level care defaults
   (`RoomEntity.baselineLux` stays unused).
 - **The data loop is local.** Collect and judge offline → Kaggle supplement → notebook pulls it.

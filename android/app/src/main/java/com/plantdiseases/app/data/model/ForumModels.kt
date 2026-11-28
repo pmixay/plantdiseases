@@ -117,6 +117,23 @@ data class ForumSpacesResponse(
     @SerialName("items") val items: List<ForumSpace> = emptyList(),
 )
 
+/** GET /api/community/spaces/following: the slugs the signed-in member follows. */
+@Serializable
+data class ForumFollowedSpacesResponse(
+    @SerialName("items") val items: List<String> = emptyList(),
+)
+
+@Serializable
+data class ForumSpaceFollowRequest(
+    @SerialName("following") val following: Boolean,
+)
+
+@Serializable
+data class ForumSpaceFollowResponse(
+    @SerialName("slug") val slug: String = "",
+    @SerialName("following") val following: Boolean = false,
+)
+
 @Serializable
 data class ForumMediaUpload(
     @SerialName("media_id") val mediaId: String,

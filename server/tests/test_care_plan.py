@@ -4,11 +4,11 @@ import os
 import pytest
 
 from tests import module_state
-from tests.openrouter_stub import mock_openrouter_post
+from tests.llm_stub import mock_llm_post
 
 # Make sure env-driven config doesn't accidentally enable the live API
 # during unit tests (CI machines may have leaked secrets).
-os.environ.pop("OPENROUTER_API_KEY", None)
+os.environ.pop("LLM_BASE_URL", None)
 
 
 @pytest.fixture(autouse=True)
@@ -28,10 +28,10 @@ def test_care_plan_polish_prompt_keeps_this_plans_numbers_last(tmp_path, monkeyp
     import care_plan
 
     captured = {}
-    mock_openrouter_post(
+    mock_llm_post(
         monkeypatch, finish_reason="stop", content="- bullet", captured=captured,
     )
-    monkeypatch.setattr(ai, "OPENROUTER_API_KEY", "k")
+    monkeypatch.setattr(ai, "LLM_BASE_URL", "http://llm.test/v1")
     monkeypatch.setattr(care_plan, "_enforce_canonical_dosages", lambda text, plan: True)
     # A polished summary from an earlier test would be served from the disk
     # cache and this call would never reach the stub.
@@ -77,12 +77,12 @@ def test_care_plan_offline_has_all_fields():
 
 
 def test_care_plan_polish_is_cached(tmp_path, monkeypatch):
-    """An identical care-plan request must hit the OpenRouter polish only
+    """An identical care-plan request must hit the LLM polish only
     once — the second call is served from the cache."""
     import ai_services as ai
     import care_plan
 
-    monkeypatch.setattr(ai, "OPENROUTER_API_KEY", "test-key")
+    monkeypatch.setattr(ai, "LLM_BASE_URL", "http://llm.test/v1")
     monkeypatch.setattr(care_plan._CARE_PLAN_DISK, "dir", tmp_path / "care_plan_polish")
     care_plan._CARE_PLAN_CACHE._d.clear()
 
@@ -94,7 +94,7 @@ def test_care_plan_polish_is_cached(tmp_path, monkeypatch):
         return ("- Water every 5 days\n- Bright indirect light", 5, 10,
                 {"cached_tokens": 0, "cache_write_tokens": 0})
 
-    monkeypatch.setattr(ai, "_call_openrouter", fake_call)
+    monkeypatch.setattr(ai, "_call_llm", fake_call)
 
     kwargs = dict(disease="powdery_mildew", species="Begonia",
                   light="bright_indirect", season="growing")
@@ -115,7 +115,7 @@ def test_care_plan_polish_prompt_echoes_canonical_numbers(tmp_path, monkeypatch)
     import ai_services as ai
     import care_plan
 
-    monkeypatch.setattr(ai, "OPENROUTER_API_KEY", "test-key")
+    monkeypatch.setattr(ai, "LLM_BASE_URL", "http://llm.test/v1")
     monkeypatch.setattr(care_plan._CARE_PLAN_DISK, "dir", tmp_path / "care_plan_polish")
     care_plan._CARE_PLAN_CACHE._d.clear()
 
@@ -127,7 +127,7 @@ def test_care_plan_polish_prompt_echoes_canonical_numbers(tmp_path, monkeypatch)
         captured["reasoning_effort"] = reasoning_effort
         return ("- polished", 5, 10, {"cached_tokens": 0, "cache_write_tokens": 0})
 
-    monkeypatch.setattr(ai, "_call_openrouter", fake_call)
+    monkeypatch.setattr(ai, "_call_llm", fake_call)
 
     plan = care_plan.generate_care_plan(disease="leaf_spot", species="Monstera deliciosa",
                                  light="medium", season="growing")
@@ -155,7 +155,7 @@ def test_care_plan_polish_rejection_is_counted(tmp_path, monkeypatch):
     import ai_services as ai
     import care_plan
 
-    monkeypatch.setattr(ai, "OPENROUTER_API_KEY", "test-key")
+    monkeypatch.setattr(ai, "LLM_BASE_URL", "http://llm.test/v1")
     monkeypatch.setattr(care_plan._CARE_PLAN_DISK, "dir", tmp_path / "care_plan_polish")
     care_plan._CARE_PLAN_CACHE._d.clear()
     for key in care_plan._care_plan_totals:
@@ -167,7 +167,7 @@ def test_care_plan_polish_rejection_is_counted(tmp_path, monkeypatch):
         return ("- Water every 99 days", 5, 10,
                 {"cached_tokens": 0, "cache_write_tokens": 0})
 
-    monkeypatch.setattr(ai, "_call_openrouter", fake_call)
+    monkeypatch.setattr(ai, "_call_llm", fake_call)
 
     plan = care_plan.generate_care_plan(disease="leaf_spot", species="Ficus",
                                  light="medium", season="growing")

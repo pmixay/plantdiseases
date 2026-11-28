@@ -39,7 +39,7 @@ job and never by an API.
 The German environment has dedicated values for each enabled provider; Yandex
 and VK do not depend on one another. Provider tokens pass once through memory
 for verification and are never persisted or
-logged. It has no FCM credentials, PlantNet/OpenRouter keys, production account
+logged. It has no FCM credentials, PlantNet/LLM gateway keys, production account
 keys, or production backup credential. Key generation has no network and
 refuses to overwrite an existing key file.
 
@@ -78,9 +78,9 @@ world-accessible, because it lives alone in a dedicated volume mounted
 read-only into the differently-UID app container.
 The app API applies the same absolute, regular, non-symlink, owner-only and
 bounded-file contract to optional vendor API keys. Production rejects direct
-`PLANTNET_API_KEY` / `OPENROUTER_API_KEY` environment/config values and any
-simultaneous direct and file setting. Leave each `*_API_KEY_FILE` blank to keep
-that feature off.
+`PLANTNET_API_KEY` / `LLM_API_KEY` environment/config values and any
+simultaneous direct and file setting. Leave `PLANTNET_API_KEY_FILE` blank to keep
+species ID off, and `LLM_BASE_URL` blank to keep the AI features off.
 Migrator/runtime/backup database passwords use a validated
 64-hex format; the bootstrap password is transported through `PGPASSWORD`, not
 embedded in a URL.

@@ -203,7 +203,7 @@ classifier.py          Stage 2 DINOv2+head ONNX runtime (fail-fast)
 conformal.py  ood.py   RAPS prediction sets · embedding-kNN / MaxLogit OOD
 diseases_data.py       bilingual disease database (content cards)
 feedback.py            append-only feedback store + per-class metrics
-ai_services.py         optional PlantNet / OpenRouter / care-plan (graceful)
+ai_services.py         optional PlantNet / LLM backend / care-plan (graceful)
 labeling.py labeling_auto.py   data-collection / labelling loop
 community.py feedback.py         nearby-scans feed · append-only training signal
 tools/eval_bootstrap.py    paired-bootstrap CIs (the trustworthy A/B)

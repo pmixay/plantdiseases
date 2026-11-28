@@ -20,6 +20,7 @@
     <string name="forum_tab_needs_help">Needs help</string>
     <string name="forum_tab_solved">Solved</string>
     <string name="forum_tab_mine">Mine</string>
+    <string name="forum_tab_following">Following</string>
     <string name="forum_all_spaces">All spaces</string>
     <string name="forum_spaces">Spaces</string>
     <string name="forum_sort_hot">Hot</string>
@@ -30,6 +31,7 @@
     <string name="forum_empty_needs_help">Every recent question has an answer. Thank you, helpers.</string>
     <string name="forum_empty_solved">No solved questions here yet.</string>
     <string name="forum_empty_mine">You haven\'t posted yet.</string>
+    <string name="forum_empty_following">Follow a space to see its posts here: open Filters, pick a space, then tap Follow.</string>
     <string name="forum_notif_answer_title">New answer</string>
     <string name="forum_notif_reply_title">New reply</string>
     <string name="forum_notif_accepted_title">Your answer helped</string>
@@ -317,6 +319,10 @@
     <string name="forum_filters_apply">Show posts</string>
     <string name="forum_filters_reset">Reset</string>
     <string name="forum_filter_remove">Remove filter: %1$s</string>
+    <string name="forum_follow_space">Follow</string>
+    <string name="forum_following_space">Following</string>
+    <string name="forum_follow_space_description">Follow %1$s</string>
+    <string name="forum_unfollow_space_description">Stop following %1$s</string>
     <string name="forum_post_edit">Edit</string>
     <string name="forum_compose_edit_title">Edit post</string>
     <string name="forum_edit_saved">Changes saved</string>

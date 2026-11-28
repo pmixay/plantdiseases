@@ -5,7 +5,7 @@ is commonly affected by indoors and returns a small sanitised list, each item
 optionally tagged with a guide ``doc_key`` the Android client can deep-link.
 It must degrade gracefully (``available=False``) with no API key or on any
 failure so the client always falls back to its offline disease guide. The
-OpenRouter call is fully mocked — no network.
+The chat-backend call is fully mocked — no network.
 """
 from __future__ import annotations
 
@@ -80,7 +80,7 @@ def test_parser_returns_empty_on_junk(text):
 # ── helper: graceful + structured paths ─────────────────────────────
 
 def test_no_api_key_is_graceful(monkeypatch):
-    monkeypatch.setattr(ai_services, "OPENROUTER_API_KEY", "")
+    monkeypatch.setattr(ai_services, "LLM_BASE_URL", "")
     out = species_ai.species_common_diseases("Ficus elastica", lang="en")
     assert out["available"] is False
     assert out["diseases"] == []
@@ -107,7 +107,7 @@ def test_schema_doc_keys_stay_in_step_with_the_guide():
 
 
 def test_structured_success_and_cache(monkeypatch):
-    monkeypatch.setattr(ai_services, "OPENROUTER_API_KEY", "test-key")
+    monkeypatch.setattr(ai_services, "LLM_BASE_URL", "http://llm.test/v1")
     calls = {"n": 0}
 
     def fake_call(system_text, history, *, max_tokens=None, require_complete=False,
@@ -127,7 +127,7 @@ def test_structured_success_and_cache(monkeypatch):
             {"name": "Edema", "doc_key": "edema", "note": "Blisters; water less."},
         ]}), 10, 20, {"cached_tokens": 0, "cache_write_tokens": 0})
 
-    monkeypatch.setattr(ai_services, "_call_openrouter", fake_call)
+    monkeypatch.setattr(ai_services, "_call_llm", fake_call)
 
     out = species_ai.species_common_diseases("Ficus elastica", lang="en")
     assert out["available"] is True
@@ -145,7 +145,7 @@ def test_disk_cache_survives_inmemory_wipe(monkeypatch):
     """A real result persists on disk, so after a server restart / fresh worker
     (in-memory LRU empty) it's reused without paying for the LLM again — this is
     why reopening a species no longer waits ~20s."""
-    monkeypatch.setattr(ai_services, "OPENROUTER_API_KEY", "test-key")
+    monkeypatch.setattr(ai_services, "LLM_BASE_URL", "http://llm.test/v1")
     calls = {"n": 0}
 
     def fake_call(system_text, history, *, max_tokens=None, require_complete=False,
@@ -156,7 +156,7 @@ def test_disk_cache_survives_inmemory_wipe(monkeypatch):
             {"name": "Root rot", "note": "Soggy soil; let it dry."},
         ]}), 5, 5, {"cached_tokens": 0, "cache_write_tokens": 0})
 
-    monkeypatch.setattr(ai_services, "_call_openrouter", fake_call)
+    monkeypatch.setattr(ai_services, "_call_llm", fake_call)
 
     first = species_ai.species_common_diseases("Calathea orbifolia", lang="en")
     assert first["available"] is True and calls["n"] == 1
@@ -201,12 +201,12 @@ def test_disk_cache_concurrent_writes_dont_corrupt(tmp_path):
 
 
 def test_api_error_is_graceful(monkeypatch):
-    monkeypatch.setattr(ai_services, "OPENROUTER_API_KEY", "test-key")
+    monkeypatch.setattr(ai_services, "LLM_BASE_URL", "http://llm.test/v1")
 
     def boom(*a, **k):
         raise RuntimeError("upstream down")
 
-    monkeypatch.setattr(ai_services, "_call_openrouter", boom)
+    monkeypatch.setattr(ai_services, "_call_llm", boom)
     out = species_ai.species_common_diseases("Monstera deliciosa", lang="en")
     assert out["available"] is False and out["source"] == "api_error"
 
@@ -214,7 +214,7 @@ def test_api_error_is_graceful(monkeypatch):
 # ── endpoint ────────────────────────────────────────────────────────
 
 def test_endpoint_graceful_without_key(client):
-    """With no OpenRouter key configured in the test env, the endpoint still
+    """With no chat backend configured in the test env, the endpoint still
     returns 200 with a graceful unavailable payload (never an error)."""
     r = client.get("/api/species-diseases", params={"name": "Ficus elastica"})
     assert r.status_code == 200

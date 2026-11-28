@@ -90,12 +90,14 @@ try:
         popular_bundle,
         popular_plants,
         progression,
+        routes_admin_panel,
         routes_assistant,
         routes_community,
         routes_content,
         routes_diagnosis,
         routes_forum,
         routes_internal,
+        routes_legacy_app,
         routes_meta,
         routes_moderation,
         runtime_paths,
@@ -135,12 +137,14 @@ except ImportError:
     import popular_bundle
     import popular_plants
     import progression  # noqa: F401 - the routes reach it as m.progression
+    import routes_admin_panel
     import routes_assistant
     import routes_community
     import routes_content
     import routes_diagnosis
     import routes_forum
     import routes_internal
+    import routes_legacy_app
     import routes_meta
     import routes_moderation
     import runtime_paths
@@ -1062,7 +1066,7 @@ def _consume_daily_write(operation: str, address: str, limit: int) -> bool:
 
 # Daily per-IP allowances on the endpoints that cost money or a shared
 # upstream quota. The write quotas above stop spam; these stop one client
-# from running up the OpenRouter bill or draining PlantNet's 500-a-day pool
+# from running up the LLM bill or draining PlantNet's 500-a-day pool
 # for everyone, which a 2 req/s bucket alone allows (~170k requests a day).
 # Sized far above any real user's day; ``0`` disables one.
 ANALYZE_DAILY_QUOTA = config.get_int("ANALYZE_DAILY_QUOTA", 300)
@@ -1205,7 +1209,7 @@ COMMUNITY_ANALYSIS_TOKEN_TTL_DAYS = config.get_int(
 # many-core host can raise this and lower ONNX_INTRA_OP_THREADS to match.
 #
 # ONLY ``pipeline.analyze`` runs on this executor. Slow external HTTP
-# (PlantNet / OpenRouter / Wikipedia) runs on the network executor below;
+# (PlantNet / the chat backend / Wikipedia) runs on the network executor below;
 # everything else that needs a thread (SQLite reads/writes, image decode /
 # hashing, FCM pushes) runs on the event loop's default thread pool —
 # putting it here would queue millisecond DB ops behind a 30-second
@@ -1215,7 +1219,7 @@ INFER_WORKERS = config.get_int("INFER_WORKERS", 1)
 _inference_executor: ThreadPoolExecutor | None = None
 _executor_lock = threading.Lock()
 
-# Dedicated pool for calls that WAIT on an external service (OpenRouter,
+# Dedicated pool for calls that WAIT on an external service (the chat backend,
 # PlantNet, Wikipedia — each can legitimately hold a thread for 10–20 s).
 # The event loop's default executor is sized from CPU count
 # (min(32, cores + 4) = 5 threads on a 1-vCPU host) and is shared by every
@@ -1976,7 +1980,7 @@ async def lifespan(app: FastAPI):
                 _inference_executor = None
             if _net_executor is not None:
                 # In-flight external calls drain within their own budgets
-                # (OPENROUTER_TOTAL_TIMEOUT / PLANTNET_TIMEOUT).
+                # (LLM_TOTAL_TIMEOUT / PLANTNET_TIMEOUT).
                 _net_executor.shutdown(wait=True, cancel_futures=True)
                 _net_executor = None
 
@@ -2388,6 +2392,7 @@ for _routes in (
     routes_forum,
     routes_moderation,
     routes_content,
+    routes_legacy_app,
 ):
     _registered = len(api_router.routes)
     _routes.register(api_router, sys.modules[__name__])
@@ -2396,6 +2401,8 @@ for _routes in (
 
 
 app.include_router(api_router)
+# The desktop moderation panel: static files outside /api (routes_admin_panel.py).
+routes_admin_panel.register(app)
 
 
 # Direct-run convenience only. The documented deployment paths (start.sh,

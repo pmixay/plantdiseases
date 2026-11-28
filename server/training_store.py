@@ -259,7 +259,7 @@ def _top_k(values: Sequence[dict] | Sequence[tuple[str, float]] | None) -> list[
     return cleaned
 
 
-def _perceptual_hash(image: Image.Image) -> str:
+def perceptual_hash(image: Image.Image) -> str:
     """Return a deterministic 64-bit DCT perceptual hash without extra deps."""
     pixels = np.asarray(
         image.convert("L").resize((32, 32), Image.Resampling.LANCZOS),
@@ -323,7 +323,7 @@ def sanitize_training_image(
     return SanitizedTrainingImage(
         body=body,
         sha256=hashlib.sha256(body).hexdigest(),
-        perceptual_hash=_perceptual_hash(clean),
+        perceptual_hash=perceptual_hash(clean),
         width=clean.width,
         height=clean.height,
     )
@@ -923,6 +923,7 @@ __all__ = [
     "init_db",
     "issue_feedback_receipt",
     "metadata_is_absent",
+    "perceptual_hash",
     "prune_training_data",
     "route_model_review",
     "sample_by_receipt",

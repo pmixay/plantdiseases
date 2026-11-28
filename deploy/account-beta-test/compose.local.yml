@@ -169,7 +169,7 @@ services:
       PLANT_PHOTO_CACHE_DIR: /data/app-cache/plant-photos
       AI_CACHE_DIR: /data/app-cache/ai
       PLANTNET_API_KEY: ""
-      OPENROUTER_API_KEY: ""
+      LLM_BASE_URL: ""
       CORS_ORIGINS: ${BETA_CORS_ORIGINS:-}
       TRUSTED_PROXIES: ""
       RATE_LIMIT_RPS: "100"

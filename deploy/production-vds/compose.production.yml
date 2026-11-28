@@ -234,7 +234,9 @@ services:
       FRONTIER_ENABLED: "false"
       TRAINING_CAPTURE_ENABLED: "false"
       TRAINING_CONSENT_VERSION: model-improvement-v1
-      TELEMETRY_ENABLED: "false"
+      # Consented, minimized error reports (server/telemetry.py: enums, app version
+      # and day only, no IP or IP hash). Staging keeps this off; production records.
+      TELEMETRY_ENABLED: "true"
       TELEMETRY_CONSENT_VERSION: telemetry-errors-v1
       ACCOUNT_API_BASE_URL: http://prod-account-api:8000/
       ACCOUNT_ISSUER: https://${PROD_PUBLIC_HOST:?Set the public host}/id
@@ -257,7 +259,10 @@ services:
       AI_CACHE_DIR: /data/app-cache/ai
       # Credentials are mode-0400 files owned by the app uid; never environment values.
       PLANTNET_API_KEY_FILE: ""
-      OPENROUTER_API_KEY_FILE: ${PROD_OPENROUTER_KEY_FILE:-}
+      # OpenAI-compatible chat backend for the AI features (a codex-lb gateway).
+      # Blank base URL leaves them off; the key file sits in /run/app-secrets.
+      LLM_BASE_URL: ${PROD_LLM_BASE_URL:-}
+      LLM_API_KEY_FILE: ${PROD_LLM_KEY_FILE:-}
       CORS_ORIGINS: ""
       TRUSTED_PROXIES: ${PROD_TRUSTED_PROXIES:?Set the exact trusted Docker proxy peer IPs}
       RATE_LIMIT_RPS: "25"

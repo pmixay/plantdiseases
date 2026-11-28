@@ -16,8 +16,9 @@ import kotlin.math.roundToInt
  * - An unsure reading scores near the midpoint ([scoreOf]), so on its own
  *   it can make a plant read neither HEALTHY nor POOR.
  * - The alarming POOR status needs [POOR_CONFIRM_SCANS] consecutive
- *   confident disease readings: one bad scan reads WATCH until another
- *   confirms it.
+ *   confident disease readings spread over at least [POOR_CONFIRM_SPAN_MS]:
+ *   one bad scan reads WATCH until another confirms it, and retakes in one
+ *   sitting (same leaf, same light) confirm nothing.
  * - A change smaller than [DECLINE_DELTA_PP] / [IMPROVE_DELTA_PP] is
  *   classifier noise, not a trend.
  *
@@ -33,7 +34,9 @@ object PlantHealth {
      *    [SCORE_HEALTHY_MIN]) or the [Trend] is IMPROVING; else TREATMENT
      *    (also while there is no score yet).
      * 2. Fewer than [MIN_SCANS_FOR_SCORE] recent scans: UNKNOWN.
-     * 3. The last [POOR_CONFIRM_SCANS] readings all below [SCORE_WATCH_MIN]: POOR.
+     * 3. The latest run of readings below [SCORE_WATCH_MIN] holds at least
+     *    [POOR_CONFIRM_SCANS] readings and spans at least
+     *    [POOR_CONFIRM_SPAN_MS]: POOR.
      * 4. Latest reading at least [SCORE_HEALTHY_MIN] and the [Trend] is not
      *    DECLINING: HEALTHY.
      * 5. Anything else: WATCH.
@@ -111,6 +114,11 @@ object PlantHealth {
     /** Consecutive poor readings, the latest included, needed for POOR. */
     const val POOR_CONFIRM_SCANS = 2
 
+    /** Minimum time from the first to the latest of those consecutive poor
+     *  readings. Scans minutes apart share the leaf, the light and the
+     *  framing, so they repeat one reading rather than confirm it. */
+    const val POOR_CONFIRM_SPAN_MS = 24L * 60 * 60 * 1000
+
     /** A [Verdict.weekDelta] at or below this is a real drop (Trend.DECLINING). */
     const val DECLINE_DELTA_PP = -10
 
@@ -156,8 +164,9 @@ object PlantHealth {
         val readsHealthy = latest.score >= SCORE_HEALTHY_MIN
         val treatmentWorking = adherence.ratio >= ADHERENCE_GOOD &&
             (readsHealthy || trend == Trend.IMPROVING)
-        val confirmedPoor = series.size >= POOR_CONFIRM_SCANS &&
-            series.takeLast(POOR_CONFIRM_SCANS).all { it.score < SCORE_WATCH_MIN }
+        val poorRun = series.takeLastWhile { it.score < SCORE_WATCH_MIN }
+        val confirmedPoor = poorRun.size >= POOR_CONFIRM_SCANS &&
+            latest.atMs - poorRun.first().atMs >= POOR_CONFIRM_SPAN_MS
 
         val status = when {
             hasActiveTreatmentPlan && treatmentWorking -> Status.RECOVERING
