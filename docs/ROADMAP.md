@@ -22,34 +22,33 @@ as last recorded. Line counts are approximate; re-measure before acting on one.
 | **Model** | 2.7.5 deployed (dataset v8). Weak spot: scorch read as healthy. A statistical tie with 2.7.2 on the shared holdout. |
 | **Accounts backend** | Live on the production VDS under `/id/`; real Yandex flow and deletion verified; privacy policy served at `/privacy.html`; a Telegram alert watches for stuck deletions. No backup job (owner's decision). |
 | **Data** | v8 is the corpus. The v9 minimum round is open (`docs/V9_MINIMUM_ROUND.md`): batch 1 (87 photos) reviewed, 13 early-scorch families usable after review. Locked test set T and OOD benchmark v3 are specified, not started. |
-| **Code / CI** | `main` is at #190. Work since 2026-11-24 is on `claude/likikikpa` (PR #191, open): OpenRouter replaced by an OpenAI-compatible backend (codex-lb), consented error reports recorded in production, the v9 screening harness, Android UI polish. The server job gates on ruff, mypy (every server module) and pytest; every app response is checked against the app's own models (`tests/app_contract.py`). |
+| **Code / CI** | `main` is at #190. Work since 2026-11-24 is on `claude/likikikpa` (PR #191, open): OpenRouter replaced by an OpenAI-compatible backend (codex-lb), consented error reports enabled in production, the v9 screening harness, Android UI polish. The server job gates on ruff, mypy (every server module) and pytest; every app response is checked against the app's own models (`tests/app_contract.py`). |
 
 ---
 
 ## P0 — Production
 
+- [ ] ★ **Re-copy `privacy.html` to the web root** (`/var/www/pdis`). The AI features
+      are live, but the published page is still the `53da7a3` version: it says the
+      operator must switch off model training before they are enabled. `35da1c5`
+      replaced that sentence (checked 2026-11-28).
 - [ ] ★ **Create the first forum admin** on production:
       `python manage_roles.py grant --nickname … --role admin` in the account-api
-      container (migration 0011 must run first).
+      container. Migration 0011 is applied; no role was active on 2026-11-28.
 - [ ] ★ **Turn on the desktop moderation panel** (`/admin/`): add a Web services
       platform with the redirect URL `https://<host>/admin/` to the Android app's
-      Yandex OAuth app, set `admin_panel_yandex_client_id`, restart the API, then
-      sign in once and work a real queue (`DEPLOYMENT.md` §5.1).
-- [ ] ★ **Deploy PR #191's app API.** Two production changes ride on it, and the
-      running container has neither: consented error reports (it still drops every
-      report 1.9 users opted into) and the codex-lb backend (OpenRouter is gone, so
-      the doctor chat, species AI sections and care-plan polish answer "not
-      configured" until codex-lb is set). Before `compose.sh up -d --no-build
-      prod-app-api`:
-      - `/run/app-config/config.json` sets no `telemetry_enabled` (the file wins over
-        the environment) and no `openrouter_*` keys (ignored, with a warning);
-      - codex-lb: API-key auth on, a key created, `PROD_LLM_BASE_URL` and
-        `PROD_LLM_KEY_FILE` set (`deploy/production-vds/README.md`), and
-        `GET /v1/models` serves `gpt-5.6-luna` (or set `llm_model`);
-      - re-copy `privacy.html` to the web root.
-      Then confirm `printenv TELEMETRY_ENABLED`, one doctor reply,
-      `/api/metrics` → `prompt_cache`, and rows in `/data/telemetry/telemetry.db`
-      within a day.
+      Yandex OAuth app, set `admin_panel_yandex_client_id` in
+      `/etc/plantdiseases/config.json` (absent on 2026-11-28), restart
+      `plantdiseases.service`, then sign in once and work a real queue
+      (`DEPLOYMENT.md` §5.1).
+- [ ] **Finish verifying PR #191's app API.** The code is live (`35da1c5`,
+      `plantdiseases.service`; `deploy/production-vds/README.md`). On 2026-11-28
+      telemetry was on, codex-lb required a key and served `gpt-5.6-luna`, and the
+      counters showed doctor output and 5 of 5 care-plan polishes accepted. Left:
+      - a first row in `/var/lib/plantdiseases/telemetry.db`: none yet, and the
+        journal since the 2026-11-27 12:42 UTC start showed no request to
+        `/api/telemetry/errors`;
+      - `/api/metrics` → `prompt_cache.hit_ratio`: 0.0 over 16 requests.
 
 ---
 
