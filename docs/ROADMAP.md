@@ -28,11 +28,11 @@ as last recorded. Line counts are approximate; re-measure before acting on one.
 
 ## P0 — Production
 
-- [ ] ★ **Turn on the desktop moderation panel** (`/admin/`): add a Web services
-      platform with the redirect URL `https://<host>/admin/` to the Android app's
-      Yandex OAuth app, set `admin_panel_yandex_client_id` in
-      `/etc/plantdiseases/config.json` (absent on 2026-11-28), restart
-      `plantdiseases.service`, then sign in once and work a real queue
+- [ ] ★ **Finish the desktop moderation panel: the owner's Yandex step.** The panel
+      is on since 2026-11-28 (`admin_panel_yandex_client_id` is set and
+      `/admin/config.json` reports it available). Left: add a Web services platform
+      with the redirect URL `https://pdis.arbuz.lol/admin/` to the Android app's
+      Yandex OAuth app, then sign in once and work a real queue
       (`DEPLOYMENT.md` §5.1).
 - [ ] **Finish verifying PR #191's app API.** The code is live (`35da1c5`,
       `plantdiseases.service`; `deploy/production-vds/README.md`). On 2026-11-28
