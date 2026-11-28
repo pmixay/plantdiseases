@@ -8,7 +8,7 @@ run, with its numbers, lives in `MODEL_HISTORY.md`. Companions: `DATASET_LABELIN
 ★ = needs a human decision or a human-only task. Tiers are in priority order, and so
 are the items inside each tier. Human (★) and code items run in parallel: a code item
 in a lower tier can start while a ★ item above it waits on a person. Code-checkable
-items were re-verified against the tree on 2026-11-24; data and human-task items are
+items were re-verified against the tree on 2026-11-28; data and human-task items are
 as last recorded. Line counts are approximate; re-measure before acting on one.
 
 ---
@@ -21,8 +21,8 @@ as last recorded. Line counts are approximate; re-measure before acting on one.
 | **Server** | `main`'s app API and account service have the second-opinion system retired and scan likes, author profiles and scan report/block removed, and following spaces added (74 API operations). For 1.9, which still calls those routes, the reads answer empty (`routes_legacy_app.py`, outside the schema) so its opinion poll stops retrying; the retired writes and profiles answer 404, which 1.9 shows as a failed action. |
 | **Model** | 2.7.5 deployed (dataset v8). Weak spot: scorch read as healthy. A statistical tie with 2.7.2 on the shared holdout. |
 | **Accounts backend** | Live on the production VDS under `/id/`; real Yandex flow and deletion verified; privacy policy served at `/privacy.html`; a Telegram alert watches for stuck deletions. No backup job (owner's decision). |
-| **Data** | v8 is the corpus. v9 collection, locked test set T and OOD benchmark v3 are specified; none started. |
-| **Code / CI** | All work since 2026-11-19 is on `ccr-333aa3d6-u20r4l`; `main` has not moved since. The server job gates on ruff, mypy (every server module) and pytest; every app response is checked against the app's own models (`tests/app_contract.py`). |
+| **Data** | v8 is the corpus. The v9 minimum round is open (`docs/V9_MINIMUM_ROUND.md`): batch 1 (87 photos) reviewed, 13 early-scorch families usable after review. Locked test set T and OOD benchmark v3 are specified, not started. |
+| **Code / CI** | `main` is at #190. Work since 2026-11-24 is on `claude/likikikpa` (PR #191, open): OpenRouter replaced by an OpenAI-compatible backend (codex-lb), consented error reports recorded in production, the v9 screening harness, Android UI polish. The server job gates on ruff, mypy (every server module) and pytest; every app response is checked against the app's own models (`tests/app_contract.py`). |
 
 ---
 
@@ -35,21 +35,21 @@ as last recorded. Line counts are approximate; re-measure before acting on one.
       platform with the redirect URL `https://<host>/admin/` to the Android app's
       Yandex OAuth app, set `admin_panel_yandex_client_id`, restart the API, then
       sign in once and work a real queue (`DEPLOYMENT.md` §5.1).
-- [ ] ★ **Redeploy `prod-app-api` to start recording error reports.** The compose
-      file now sets `TELEMETRY_ENABLED: "true"`; the running container still has
-      `false` and drops every report 1.9 users opted into. Check that
-      `/run/app-config/config.json` has no `telemetry_enabled` (the file wins over the
-      environment), run `compose.sh up -d --no-build prod-app-api`, confirm
-      `printenv TELEMETRY_ENABLED` in the container, and see rows appear in
-      `/data/telemetry/telemetry.db` within a day.
-- [ ] ★ **Point the AI features at codex-lb.** OpenRouter is gone from the server;
-      until this is done the doctor chat, species AI sections and care-plan polish
-      answer "not configured" after the next deploy. Turn on codex-lb's API-key auth
-      and create a key; set `PROD_LLM_BASE_URL` and `PROD_LLM_KEY_FILE`
-      (`deploy/production-vds/README.md`); check `GET /v1/models` serves
-      `gpt-5.6-luna` or set `llm_model`; redeploy `prod-app-api`; re-copy
-      `privacy.html` to the web root; then confirm one doctor reply and
-      `/api/metrics` → `prompt_cache`.
+- [ ] ★ **Deploy PR #191's app API.** Two production changes ride on it, and the
+      running container has neither: consented error reports (it still drops every
+      report 1.9 users opted into) and the codex-lb backend (OpenRouter is gone, so
+      the doctor chat, species AI sections and care-plan polish answer "not
+      configured" until codex-lb is set). Before `compose.sh up -d --no-build
+      prod-app-api`:
+      - `/run/app-config/config.json` sets no `telemetry_enabled` (the file wins over
+        the environment) and no `openrouter_*` keys (ignored, with a warning);
+      - codex-lb: API-key auth on, a key created, `PROD_LLM_BASE_URL` and
+        `PROD_LLM_KEY_FILE` set (`deploy/production-vds/README.md`), and
+        `GET /v1/models` serves `gpt-5.6-luna` (or set `llm_model`);
+      - re-copy `privacy.html` to the web root.
+      Then confirm `printenv TELEMETRY_ENABLED`, one doctor reply,
+      `/api/metrics` → `prompt_cache`, and rows in `/data/telemetry/telemetry.db`
+      within a day.
 
 ---
 
@@ -69,12 +69,8 @@ without data. Specified in `DATASET_LABELING_PLAN.md`.
       families with boxes (`brown_frac < 0.05`, edge-confined, blade mostly green),
       judged against `leaf_spot` exemplars; worth a run at ≥ 200 scorch and ≥ 100
       houseplant `leaf_spot` families. Boxes matter: Stage 1 returns no box on 21 % of
-      scorch vs 19 % of healthy. It takes calendar time. A second synthetic batch is
-      the alternative only if it meets the conditions under "Synthetic scorch" below.
-      The production recipe needs the Kaggle houseplant supplement at v9; the private
-      one was still at v8 at the last check (2026-08-23), which fails the strict v9
-      manifest contract (a compliant v9 under the same handle is picked up
-      automatically).
+      scorch vs 19 % of healthy. It takes calendar time. Publishing it as revision 9
+      of the same Kaggle handle is all the notebook needs to pick it up.
 - [ ] ★ **OOD benchmark v3**: 8–12 species plus a non-plant arm (the non-plant arm
       needs no plants; do it first). The tool is ready: declare the sources in a
       `--config sources.json` for `tools/build_ood_benchmark.py` (layout, class map,
@@ -88,10 +84,6 @@ without data. Specified in `DATASET_LABELING_PLAN.md`.
       `serve_parity_v2_geometry_only`). 2.7.5 cannot be the control: §1/§4 now
       enforce determinism before head training and the live sources drift. Score both
       on the v9 holdout with `tools/paired_eval.py` + `tools/eval_bootstrap.py`.
-- [ ] ★ **Ship Aqua's OOD floor** from the next notebook run: §5 writes it into the
-      Aqua sidecar (`ood`); copy that `classes.json` with the model into
-      `server/static/aqua/`. Until then Aqua serves without the gate, and only apps
-      from the next release (after 1.9) read it.
 - [ ] **Watch feedback correcting "healthy" to scorch** (ongoing,
       `server/tools/analyse_training_data.py`). 15 of 2.7.5's 25 wrong "healthy" calls
       on the holdout are scorch; production feedback is the only real-distribution
@@ -101,14 +93,11 @@ without data. Specified in `DATASET_LABELING_PLAN.md`.
 
 ## P2 — Code that unblocks the data loop (no data needed)
 
-- [ ] **Check that capture-family detection catches rotated copies.** In a
-      synthetic run of `build_ood_benchmark.py` a 90-degree rotated copy of an image
-      stayed its own family under SIFT/RANSAC. The matcher is unchanged and the
-      cause is not known; measure it on real photos before v3's families are
-      trusted, since a missed duplicate leaks across the split.
-- [ ] **Abstention reasons in `paired_eval`'s `preds.json`.** It writes `-1` for any
-      abstention, so `build_ood_benchmark --report` cannot tell an OOD-gate
-      rejection from a blur-gate one and counts both as a rejection.
+- [ ] **Per-row abstention reasons in `paired_eval`'s `preds.json`.** It already
+      records each model's abstentions counted by reason (`abstention_a` /
+      `abstention_b`), but every abstained row is still a bare `-1`, so
+      `build_ood_benchmark --report` cannot tell an OOD-gate rejection of a
+      non-plant from a blur-gate one and counts both as a rejection.
 - [ ] **OOD benchmark v3 follow-ups that block nothing yet** (details in
       `DATASET_LABELING_PLAN.md`): per-row rights for internet sources (a rights
       record is per source today; the non-plant arm doesn't need it), and per-arm
@@ -158,14 +147,6 @@ README status section and `docs/assets/per-class.svg` (its numbers are hand-copi
 
 Each item is its own PR; don't fold one into another.
 
-**Server**
-
-- [ ] **Delete `routes_legacy_app.py`** (with `tests/test_legacy_app_routes.py` and
-      `tests/fixtures/app_1_9_models.kt`) once few installs still run 1.9: it
-      answers 1.9's retired-feature reads with empty shapes.
-
-**Android**
-
 - [ ] ★ **Check the XML-converted cards on a phone.** The plant-detail extra cards
       and the care-plan card were rebuilt from XML layouts without a device. Look
       for: 12sp captions now bold (they were regular), the "Not now" borderless
@@ -198,6 +179,13 @@ Each item is its own PR; don't fold one into another.
   RuStore has one price per product (21 discount products per period, or coarser
   steps; and whether a revoked discount changes an auto-renewing price).
 - **VK ID sign-in.** Merged, switched off until VK registration.
+- **Ship Aqua's OOD floor** with the first `combined` notebook run after the next app
+  release is planned: §5 writes it into the Aqua sidecar (`ood`); copy that
+  `classes.json` with the model into `server/static/aqua/`. Only apps after 1.9 read
+  it, and the v9 ablation runs are `gamma`-only.
+- **Delete `routes_legacy_app.py`** (with `tests/test_legacy_app_routes.py` and
+  `tests/fixtures/app_1_9_models.kt`) once few installs still run 1.9, i.e. after the
+  next app release: it answers 1.9's retired-feature reads with empty shapes.
 - Spider-mite split from `pests` (precision already high).
 - More UI languages (server content is already bilingual).
 - Expert-human consultation (ties into 2.8 safety escalation; builds on the forum).
@@ -209,24 +197,21 @@ Each item is its own PR; don't fold one into another.
 ### Synthetic scorch
 
 Owner's choice (2026-11-14): try generated images for the weak class. An independent
-review of batch 1 (`scorch_synthetic_100`) found the stage right (all early,
-edge-confined) but said do not train on it: only scorch is synthetic, so "generator
-look ⇒ scorch" is easier to learn than the rim; the 100 images are about 10 templates
-(lesion position tied to species, 10 fixed scenes); about 20 are ambiguous against
-healthy / `leaf_spot`; 3 fail the server's blur statistic and 11 boxes need redrawing.
-It also runs against plan rule P3 ("no … AI-looking images"): change that rule on
-purpose or not at all. Before a batch 2 is worth a run:
+review of the first synthetic batch (`scorch_synthetic_100`) found the stage right
+(all early, edge-confined) but said do not train on it as it stood: only scorch was
+synthetic, so "generator look ⇒ scorch" is easier to learn than the rim; the 100
+images are about 10 templates (lesion position tied to species, 10 fixed scenes);
+about 20 are ambiguous against healthy / `leaf_spot`; 3 fail the server's blur
+statistic and 11 boxes need redrawing.
 
-1. carve T_v1 (with ~39 unseen scorch rows in the holdout no result could be told
-   from noise);
-2. a matched synthetic *healthy* image per scorch image, same generator and scene;
-3. lesion position, extent and colour randomised independently of species, more
-   genera, fewer flat-lays, no tan backgrounds, every visible leaf boxed;
-4. human adjudication of each image;
-5. a `supplement_synthetic` source that sits in no `allowed_sources`, at reduced
-   weight, train-only, with template-level family ids.
-
-Then one paired `SEED=0` run, real-only evaluation, and stop if healthy false alarms
+The v9 minimum round (2026-11-27) settles the rule: AI-generated photos may be up to
+5 % of a round's kept photos, always `train_only`, one family per template, spread
+across classes, agent-reviewed like any other photo (`docs/V9_MINIMUM_ROUND.md`;
+`server/tools/screen_candidates.py` enforces the cap). A larger synthetic share
+would need its own run first: a matched synthetic healthy image per scorch image,
+lesion position, extent and colour randomised independently of species, a
+`supplement_synthetic` source at reduced weight in no `allowed_sources`, then one
+paired `SEED=0` run with real-only evaluation, stopping if healthy false alarms
 rise or scorch recall's CI straddles 0.
 
 ### Settled — do not retry
@@ -265,6 +250,11 @@ Run-to-run noise is ~2 pp at `SEED=0`; read any single-knob delta inside it as n
 - **Cost cap is the LLM gateway's own limit** (codex-lb's per-key token/cost
   limits and the pooled accounts' usage limits; OpenRouter is gone since
   2026-11-27); no in-server price ceiling and no dependency lockfile are planned.
+- **No retention or training terms are required of the LLM backend** (owner's
+  decision, 2026-11-27): the privacy policy says OpenAI processes the requests
+  under its own terms.
+- **Consented error reports are recorded in production** (2026-11-26); staging
+  keeps them off.
 - **Release signing runs in CI** (owner's decision, 2026-11-14): the android job
   signs with the permanent key from repository secrets.
 - **VK ID stays switched off** until VK registration.
@@ -295,7 +285,7 @@ Run-to-run noise is ~2 pp at `SEED=0`; read any single-knob delta inside it as n
 - **Responses are checked against the app, not described in OpenAPI**
   (2026-11-24): `server/tests/app_contract.py` reads the Android DTOs and the
   test client fails any 2xx JSON response from an app route that would not
-  decode in the app (39 routes, every one exercised). No `response_model`:
+  decode in the app (41 routes, every one exercised). No `response_model`:
   FastAPI would validate and filter live responses, so a wrong model becomes a
   production 500 or a silently dropped field.
 - **One JSON library on Android: kotlinx.serialization** (2026-11-24). Gson is
