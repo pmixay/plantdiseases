@@ -127,6 +127,11 @@ README status section and `docs/assets/per-class.svg` (its numbers are hand-copi
 
 ## P4 — Product
 
+- [ ] ★ **Email/password sign-in (the next auth item).** The account service and the
+      app hold a private beta slice, off by default; production settings and
+      production app builds reject `EMAIL_PASSWORD_AUTH_ENABLED=true`. Close the
+      production blockers first (`account-server/README.md`): verified email
+      ownership, password recovery, and abuse controls shared across replicas.
 - [ ] ★ **Check `util/PlantHealth.kt` thresholds against real scan histories.**
       `PlantHealth` turns a plant's scans into the one status the plant header, the
       health card and the room list show. Each scan scores 0 to 100: a healthy
@@ -170,7 +175,8 @@ Each item is its own PR; don't fold one into another.
   starved classes); multi-label (sigmoid head, per-class thresholds and conformal,
   after the boundary is stable, never during); segmentation instead of a box, for
   measured lesion area and severity.
-- ★ **PRO subscriptions (distant future).** The purchase validation, callback inbox
+- ★ **PRO subscriptions (distant future).** Blocked on an owner with a confirmed
+  Gosuslugi account. The purchase validation, callback inbox
   and Android payment client stay in the code, switched off and invisible
   (`ProUi.ENABLED = false`, `RUSTORE_LIFECYCLE_ENABLED` / `RUSTORE_CHECKOUT_ENABLED`
   off). Reviving it needs RuStore keys and products, a sandbox purchase test and the
@@ -178,7 +184,8 @@ Each item is its own PR; don't fold one into another.
   already derives 2 % per achievement up to 40 % (`/v1/me/community-reward`), but
   RuStore has one price per product (21 discount products per period, or coarser
   steps; and whether a revoked discount changes an auto-renewing price).
-- **VK ID sign-in.** Merged, switched off until VK registration.
+- ★ **VK ID sign-in.** Blocked on an owner with a confirmed Gosuslugi account.
+  Merged and switched off; it also needs VK registration.
 - **Ship Aqua's OOD floor** with the first `combined` notebook run after the next app
   release is planned: §5 writes it into the Aqua sidecar (`ood`); copy that
   `classes.json` with the model into `server/static/aqua/`. Only apps after 1.9 read
@@ -257,7 +264,12 @@ Run-to-run noise is ~2 pp at `SEED=0`; read any single-knob delta inside it as n
   keeps them off.
 - **Release signing runs in CI** (owner's decision, 2026-11-14): the android job
   signs with the permanent key from repository secrets.
-- **VK ID stays switched off** until VK registration.
+- **Yandex is the only external sign-in** (owner's decision, 2026-11-28).
+  Email/password is the next auth item (P4).
+- **Yandex verification is not pursued** (owner's decision, 2026-11-28): the app
+  works unverified.
+- **VK ID and subscriptions wait in "Later"**, blocked on an owner with a
+  confirmed Gosuslugi account (2026-11-28). VK ID stays switched off.
 - **PRO is a distant-future idea, not a plan** (owner's decision, 2026-11-16).
   The app and server show no PRO wording and lock nothing behind it; only
   documents may mention it, and only as something far off. Signed-in accounts
@@ -291,11 +303,11 @@ Run-to-run noise is ~2 pp at `SEED=0`; read any single-knob delta inside it as n
 - **One JSON library on Android: kotlinx.serialization** (2026-11-24). Gson is
   gone; `@SerialName` names are unchanged, so rows and cache files written by the
   Gson-era app keep decoding.
-- **No Compose rewrite, single `:app` module.**
+- **No Compose migration, single `:app` module.**
 - **Stay free and honest.** Calibrated, OOD-aware, offline-capable, privacy-first.
   Diagnosis and Community reading need no account; Community writes need a verified
-  Yandex sign-in (no email/password in production). Posts stay linked to the
-  pseudonymous actor until the account is deleted.
+  Yandex sign-in (email/password is not in production yet). Posts stay linked to
+  the pseudonymous actor until the account is deleted.
 - **Not planned:** a first-launch intro video; room-level care defaults
   (`RoomEntity.baselineLux` stays unused).
 - **The data loop is local.** Collect and judge offline → Kaggle supplement → notebook pulls it.
